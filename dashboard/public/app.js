@@ -10,6 +10,8 @@ const FARM = 'snof';
 const STALE_FACTOR = 2.5;   // heartbeats missed before we call the bridge stale
 // "Zone 2" sorts before "Zone 10"; plain localeCompare puts 10 first.
 const NATURAL = { numeric: true, sensitivity: 'base' };
+// HA domains are slugs ("binary_sensor"); people read words.
+const humanDomain = (d) => String(d).replace(/_/g, ' ');
 
 const el = (id) => document.getElementById(id);
 const gate = el('gate'), app = el('app');
@@ -177,7 +179,7 @@ function renderEntity(ent) {
   return `<div class="ent" data-key="${escapeHtml(ent.key)}">
     <div class="ent-main">
       <div class="ent-name">${escapeHtml(ent.name || ent.entity_id)}</div>
-      <div class="ent-meta">${escapeHtml(ent.domain)}${subtitle(ent)}</div>
+      <div class="ent-meta">${escapeHtml(humanDomain(ent.domain))}${subtitle(ent)}</div>
     </div>
     <div class="ent-state ${cls}">${escapeHtml(formatState(ent))}</div>
   </div>`;
@@ -215,7 +217,7 @@ function renderFilters(ents) {
   if (box.dataset.sig === wanted) return;
   box.dataset.sig = wanted;
   box.innerHTML = domains.map((d) =>
-    `<button class="chip ${filters.domain === d ? 'on' : ''}" data-domain="${escapeHtml(d)}">${escapeHtml(d)}</button>`
+    `<button class="chip ${filters.domain === d ? 'on' : ''}" data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}</button>`
   ).join('');
   box.querySelectorAll('.chip').forEach((chip) => {
     chip.onclick = () => {
