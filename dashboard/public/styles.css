@@ -105,7 +105,7 @@ button{cursor:pointer}
 .room{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .room-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
   padding:13px 16px;border-bottom:1px solid var(--line);background:var(--panel-2)}
-.room-name{font-weight:600;letter-spacing:-.01em}
+.room-name{margin:0;font-size:14px;font-weight:600;letter-spacing:-.01em}
 .room-count{font-size:12px;color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
 .ent{display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:9px 16px;border-bottom:1px solid var(--line-soft)}

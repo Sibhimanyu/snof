@@ -160,9 +160,10 @@ function render() {
   const root = el('rooms');
   root.innerHTML = order.map((area) => {
     const list = byArea.get(area).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, NATURAL));
-    return `<section class="room">
+    const hid = `room-${escapeHtml(area)}`;
+    return `<section class="room" aria-labelledby="${hid}">
       <div class="room-head">
-        <span class="room-name">${escapeHtml(areaName(area))}</span>
+        <h2 class="room-name" id="${hid}">${escapeHtml(areaName(area))}</h2>
         <span class="room-count">${list.length}</span>
       </div>
       ${list.map(renderEntity).join('')}
