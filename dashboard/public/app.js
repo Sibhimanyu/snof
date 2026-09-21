@@ -64,6 +64,19 @@ function denied(user) {
 }
 
 function enter(user) {
+  // Hosting injects databaseURL only once an RTDB instance exists. Without this
+  // guard firebase.database() throws an opaque "Can't determine URL" error.
+  if (!firebase.app().options.databaseURL) {
+    gate.hidden = false;
+    app.hidden = true;
+    el('signin').hidden = true;
+    el('signout-gate').hidden = false;
+    el('gate-msg').innerHTML =
+      'No Realtime Database yet.<br><br>Create the default instance in the ' +
+      'Firebase console, then reload this page \u2014 no redeploy needed.';
+    return;
+  }
+
   gate.hidden = true;
   app.hidden = false;
 
