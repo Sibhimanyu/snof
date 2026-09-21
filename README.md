@@ -96,8 +96,24 @@ chatty farm inside it:
 - **rate limiting** — `min_interval_seconds` (2s) caps each entity individually,
   always sending its newest value
 
-A power meter emitting 5×/second therefore costs 0.5 writes/second, not 5.
+A power meter emitting 5x/second therefore costs 0.5 writes/second, not 5.
 If a specific sensor is still noisy, add it to `exclude_entities`.
+
+Writes also pass `?print=silent`, so RTDB answers 204 with an empty body
+instead of echoing back everything just written. The bridge never reads that
+echo and every byte of it is billed download.
+
+Measured on this farm (698 entities, 13 areas):
+
+| | |
+|---|---|
+| Stored tree | 207 KB (0.02% of the 1 GB limit) |
+| Write rate | 0.083/sec, ~7,200/day (40% of that is the heartbeat) |
+| Download per always-on dashboard viewer | ~60 MB/month |
+
+RTDB bills storage and download only - there is no per-operation charge, so
+the write count is not itself a quota item. Spark has no overage billing: if
+a limit is hit the database stops serving until the month rolls over.
 
 ## Liveness
 

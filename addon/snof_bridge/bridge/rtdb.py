@@ -65,7 +65,12 @@ class RTDBWriter:
     # ---- low level --------------------------------------------------------
 
     async def _request(self, method: str, path: str, payload: Any) -> None:
-        url = f"{self._cfg.firebase_db_url}/{path.strip('/')}.json"
+        # print=silent makes RTDB answer 204 with an empty body instead of
+        # echoing back everything just written. Every byte of that echo counts
+        # against the 10 GB/month download quota and we never read it, so this
+        # is pure waste on a farm writing ~7k times a day. Errors still come
+        # back with a 4xx/5xx body, so nothing diagnostic is lost.
+        url = f"{self._cfg.firebase_db_url}/{path.strip('/')}.json?print=silent"
         token = await self._token()
         async with self._session.request(
             method, url, json=payload,
@@ -75,6 +80,7 @@ class RTDBWriter:
             if resp.status >= 400:
                 body = (await resp.text())[:400]
                 raise RuntimeError(f"RTDB {method} {path} -> {resp.status}: {body}")
+            # 200 (echo) and 204 (print=silent) are both success.
         self.writes += 1
 
     async def put(self, path: str, value: Any) -> None:
