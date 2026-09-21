@@ -1,0 +1,22 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "farms": {
+      "$farm": {
+        ".read": "auth != null && root.child('acl/viewers').child(auth.uid).val() === true",
+        ".write": false
+      }
+    },
+
+    "acl": {
+      "viewers": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
+        }
+      }
+    }
+  }
+}

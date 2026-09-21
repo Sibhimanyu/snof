@@ -1,0 +1,8 @@
+node_modules/
+serviceAccount.json
+*.serviceAccount.json
+.firebaserc
+__pycache__/
+*.pyc
+.DS_Store
+.env

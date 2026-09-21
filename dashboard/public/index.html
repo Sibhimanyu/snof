@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1511">
+<title>SNOF · Live Farm State</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌾</text></svg>">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <div class="gate-mark">🌾</div>
+    <h1>Sibhi Natural Orchards<br>and Farms</h1>
+    <p id="gate-msg">Sign in to view live farm state.</p>
+    <button id="signin" class="btn-primary">Sign in with Google</button>
+    <button id="signout-gate" class="btn-ghost" hidden>Sign out</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🌾</span>
+      <div>
+        <div class="brand-name" id="farm-name">SNOF</div>
+        <div class="brand-sub" id="farm-sub">Live farm state</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="bridge-pill" class="pill pill-unknown">
+        <span class="dot"></span><span id="bridge-text">connecting</span>
+      </span>
+      <button id="signout" class="btn-ghost">Sign out</button>
+    </div>
+  </header>
+
+  <div class="controls">
+    <input id="search" type="search" placeholder="Search devices, rooms…" autocomplete="off" spellcheck="false">
+    <div id="domain-filters" class="chips"></div>
+  </div>
+
+  <main id="rooms" class="rooms"></main>
+
+  <p id="empty" class="empty" hidden>Nothing matches that filter.</p>
+
+  <footer class="foot">
+    <span id="stats">—</span>
+  </footer>
+</div>
+
+<!-- Config is injected by Firebase Hosting; nothing project-specific is committed. -->
+<script src="/__/firebase/10.14.1/firebase-app-compat.js"></script>
+<script src="/__/firebase/10.14.1/firebase-auth-compat.js"></script>
+<script src="/__/firebase/10.14.1/firebase-database-compat.js"></script>
+<script src="/__/firebase/init.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

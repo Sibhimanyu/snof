@@ -1,0 +1,14 @@
+{
+  "name": "snof-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "grant": "node grant-access.js",
+    "revoke": "node grant-access.js --revoke",
+    "list": "node grant-access.js --list"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}
