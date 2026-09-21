@@ -30,6 +30,13 @@ body{margin:0;background:var(--bg);color:var(--text);
   padding-top:var(--sat);padding-bottom:var(--sab);-webkit-font-smoothing:antialiased}
 button{font:inherit;cursor:pointer}
 
+/* ---- shared control states: one vocabulary for every control ---- */
+.btn-primary,.btn-ghost,.chip,#search{
+  transition:color .15s,background-color .15s,border-color .15s,filter .15s,transform .1s}
+.btn-primary:focus-visible,.btn-ghost:focus-visible,.chip:focus-visible,#search:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+.btn-primary:active,.btn-ghost:active,.chip:active{transform:translateY(1px)}
+
 /* ---- brand mark (single geometric monogram, no emoji) ---- */
 .mark{display:block;color:var(--accent)}
 .gate-mark .mark{width:44px;height:44px;margin:0 auto}
@@ -43,12 +50,11 @@ button{font:inherit;cursor:pointer}
 .gate-card h1{margin:0 0 10px;font-size:21px;line-height:1.3;font-weight:650;letter-spacing:-.01em}
 .gate-card p{margin:0 0 22px;color:var(--muted);font-size:13px}
 .btn-primary{width:100%;padding:12px 18px;border:0;border-radius:10px;
-  background:var(--accent);color:var(--on-accent);font-weight:600;transition:filter .15s,transform .1s}
+  background:var(--accent);color:var(--on-accent);font-weight:600}
 .btn-primary:hover{filter:brightness(1.08)}
-.btn-primary:active{transform:translateY(1px)}
 .btn-ghost{padding:8px 14px;border:1px solid var(--line);border-radius:9px;
-  background:transparent;color:var(--muted);transition:color .15s,border-color .15s}
-.btn-ghost:hover{color:var(--text);border-color:var(--accent-dim)}
+  background:transparent;color:var(--muted)}
+.btn-ghost:hover{color:var(--text);border-color:var(--accent)}
 .gate-card .btn-ghost{width:100%;margin-top:10px}
 
 /* ---- chrome ---- */
@@ -74,12 +80,13 @@ button{font:inherit;cursor:pointer}
 
 .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:18px 20px 6px}
 #search{flex:1 1 240px;min-width:0;padding:10px 14px;border-radius:10px;
-  border:1px solid var(--line);background:var(--panel);color:var(--text);outline:none}
+  border:1px solid var(--line);background:var(--panel);color:var(--text)}
 #search::placeholder{color:var(--muted)}
+#search:hover{border-color:var(--muted)}
 #search:focus{border-color:var(--accent)}
 .chips{display:flex;gap:7px;flex-wrap:wrap}
 .chip{padding:6px 12px;border-radius:999px;border:1px solid var(--line);
-  background:var(--panel);color:var(--muted);font-size:12px;transition:color .15s,background-color .15s,border-color .15s}
+  background:var(--panel);color:var(--muted);font-size:12px}
 .chip:hover{color:var(--text)}
 .chip.on{background:var(--accent-dim);border-color:var(--accent-dim);color:var(--on-accent-dim)}
 
@@ -120,5 +127,5 @@ button{font:inherit;cursor:pointer}
 @media (prefers-reduced-motion: reduce){
   .pill-online .dot{animation:none;box-shadow:none}
   .flash{animation:none}
-  .btn-primary,.btn-ghost,.chip{transition:none}
+  .btn-primary,.btn-ghost,.chip,#search{transition:none}
 }
