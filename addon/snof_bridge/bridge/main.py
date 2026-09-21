@@ -139,10 +139,16 @@ class Bridge:
         delay = 1.0
         while True:
             self.ha = HAClient(self.cfg.ha_ws_url, self.cfg.ha_token, self.session)
+            listen_task: asyncio.Task | None = None
             try:
                 await self.ha.connect()
                 self.connected = True
                 delay = 1.0
+
+                # The message pump has to be running before the first command:
+                # _command() awaits a future that only listen() ever resolves,
+                # so issuing commands first deadlocks until the 30s timeout.
+                listen_task = asyncio.create_task(self.ha.listen(self.on_event))
 
                 areas, devices, entities = await self.ha.get_registries()
                 self.registry.load(areas, devices, entities)
@@ -155,14 +161,17 @@ class Bridge:
                     await self.ha.subscribe(event)
                 _LOGGER.info("Streaming live state changes")
 
-                await self.ha.listen(self.on_event)
+                await listen_task
                 _LOGGER.warning("Home Assistant closed the connection")
             except asyncio.CancelledError:
                 raise
             except Exception as err:
-                _LOGGER.error("Bridge connection error: %s", err)
+                # TimeoutError stringifies to '', which says nothing in a log.
+                _LOGGER.error("Bridge connection error: %s", err or type(err).__name__)
             finally:
                 self.connected = False
+                if listen_task is not None:
+                    listen_task.cancel()
                 try:
                     await self.ha.close()
                 except Exception:

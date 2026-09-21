@@ -1,2 +1,5 @@
 aiohttp==3.10.11
 google-auth==2.35.0
+# google.auth.transport.requests imports this directly; google-auth does not
+# declare it as a hard dependency, so it must be pinned explicitly.
+requests==2.32.3

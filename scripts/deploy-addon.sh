@@ -23,11 +23,22 @@ if ! ssh -o BatchMode=yes -o ConnectTimeout=6 "$HOST" true 2>/dev/null; then
   echo
 fi
 
+# /addons is root-owned; the SSH add-on's user is usually not root, so extract
+# through sudo when it is available and fall back to a plain extract otherwise.
+if ssh "$HOST" 'sudo -n true' 2>/dev/null; then
+  SUDO="sudo "
+  echo "Using passwordless sudo on the remote."
+else
+  SUDO=""
+fi
+
+# COPYFILE_DISABLE stops macOS tar emitting ._AppleDouble members, which busybox
+# tar on HA OS refuses with "can't open '._name': Permission denied".
 # tar-over-ssh rather than rsync: the HA SSH add-on does not always ship rsync.
-tar -C "$(dirname "$SRC")" \
-    --exclude='__pycache__' --exclude='*.pyc' --exclude='tests' \
+COPYFILE_DISABLE=1 tar -C "$(dirname "$SRC")" \
+    --exclude='__pycache__' --exclude='*.pyc' --exclude='tests' --exclude='._*' \
     -czf - "$(basename "$SRC")" \
-  | ssh "$HOST" "mkdir -p '$(dirname "$REMOTE_DIR")' && tar -C '$(dirname "$REMOTE_DIR")' -xzf -"
+  | ssh "$HOST" "${SUDO}mkdir -p '$(dirname "$REMOTE_DIR")' && ${SUDO}tar -C '$(dirname "$REMOTE_DIR")' -xzf -"
 
 echo
 echo "Deployed. Next, in the Home Assistant UI:"
