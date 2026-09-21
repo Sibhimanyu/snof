@@ -37,6 +37,11 @@ button{cursor:pointer}
 .btn-primary:focus-visible,.btn-ghost:focus-visible,.chip:focus-visible,#search:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
 .btn-primary:active,.btn-ghost:active,.chip:active{transform:translateY(1px)}
+/* 44px vertical hit areas for the dense controls without inflating them visually
+   (wall tablet, phone, work gloves). Vertical only: chips are already wide. */
+.chip,.btn-ghost{position:relative}
+.chip::before,.btn-ghost::before{content:"";position:absolute;inset:-6px 0;border-radius:inherit}
+#search{min-height:44px}
 
 /* ---- brand mark (single geometric monogram, no emoji) ---- */
 .mark{display:block;color:var(--accent)}
