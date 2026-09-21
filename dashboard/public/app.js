@@ -73,7 +73,7 @@ function enter(user) {
     el('signout-gate').hidden = false;
     el('gate-msg').innerHTML =
       'No Realtime Database yet.<br><br>Create the default instance in the ' +
-      'Firebase console, then reload this page \u2014 no redeploy needed.';
+      'Firebase console, then reload this page. No redeploy needed.';
     return;
   }
 
@@ -130,7 +130,7 @@ function render() {
 
   const farmName = state.meta?.name || 'SNOF';
   el('farm-name').textContent = farmName;
-  el('farm-sub').textContent = `${ents.length} entities · ${Object.keys(state.areas || {}).length} areas`;
+  el('farm-sub').textContent = `${ents.length} entities in ${Object.keys(state.areas || {}).length} areas`;
   document.title = `${farmName} · Live`;
 
   const areaName = (id) => state.areas?.[id]?.name || 'Unassigned';
@@ -185,13 +185,14 @@ function subtitle(ent) {
   const a = ent.attrs || {};
   const bits = [];
   if (a.device_class) bits.push(a.device_class);
-  if (a.battery_level != null) bits.push(`${a.battery_level}% batt`);
-  return bits.length ? ' · ' + escapeHtml(bits.join(' · ')) : '';
+  if (a.battery_level != null) bits.push(`${a.battery_level}% battery`);
+  // One separator per line: domain, then the rest comma-joined.
+  return bits.length ? ' · ' + escapeHtml(bits.join(', ')) : '';
 }
 
 function formatState(ent) {
   const s = ent.state;
-  if (s == null || s === '') return '—';
+  if (s == null || s === '') return '-';
   const unit = ent.attrs?.unit_of_measurement;
   if (unit) return `${s} ${unit}`;
   if (s === 'on' || s === 'off') return s.toUpperCase();
