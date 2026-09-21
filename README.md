@@ -9,10 +9,36 @@ Home Assistant (NUC, HA OS)
         │  ws://supervisor/core/websocket   (SUPERVISOR_TOKEN, never leaves the box)
         │  filter → group by area → coalesce → rate-limit
         ▼
-   Realtime Database   /farms/snof/…      ← service account writes; clients cannot
-        ▼
-   Firebase Hosting dashboard             ← Google sign-in, UID allowlist, read-only
+   Realtime Database   /farms/snof/…      ← service account writes the mirror
+        ▼                ▲
+   Firebase Hosting dashboard             ← Google sign-in, UID allowlist
+                         │
+                  /farms/snof/commands    ← the one client-writable path:
+                                            append-only, controllers only,
+                                            four domains, four services
 ```
+
+The dashboard is an app, not a page: **Overview** (live totals, quick controls,
+anything unavailable), **Areas** (a card per room), an **area detail** view
+grouped by domain with toggles and brightness/speed sliders, and **All devices**
+for search across everything.
+
+## Controlling devices
+
+Off by default, and gated three times over:
+
+1. `allow_control: true` in the add-on options (plus `control_domains`).
+2. `npm run grant -- someone@example.com --control` — a tier above `viewers`.
+3. RTDB rules and `bridge/commands.py` both allow-list the same four domains
+   (`switch`, `light`, `fan`, `input_boolean`) and four services
+   (`turn_on`, `turn_off`, `toggle`, `set_percentage`).
+
+`cover`, `lock` and `alarm_control_panel` are excluded on purpose. The dashboard
+never reaches Home Assistant itself — it appends a command, and the bridge on the
+NUC is the only thing holding a credential that can act on one. Commands older
+than `control_max_age_seconds` (default 120) are dropped rather than run, so a
+queue that builds up while the bridge is down does not fire all at once when it
+returns.
 
 ## Layout
 

@@ -9,11 +9,24 @@ Architecture, data shape and setup are in README.md — read it first.
 - **Never commit `serviceAccount.json`** or any `*-firebase-adminsdk-*.json`.
   It is a full-admin credential. It lives at `~/.config/snof/serviceAccount.json`
   (mode 0600) and is passed via `GOOGLE_APPLICATION_CREDENTIALS`.
-- The dashboard is **read-only by design**. RTDB rules deny all client writes.
-  Do not add a `/commands` path without an explicit request — it is a path from
-  the internet to farm relays.
+- The dashboard can **operate devices**, added deliberately on 2026-09-21. The
+  one writable path in the whole tree is `/farms/<slug>/commands`, and it is
+  append-only, controller-only, and shape-validated in `database.rules.json`.
+  Everything else still denies client writes. Three gates, all of which must
+  keep holding:
+    1. RTDB rules — only `acl/controllers/<uid> === true` may append, only the
+       four domains, only the four services, `at` must equal server `now`.
+    2. `bridge/commands.py` — re-checks the same things against its own
+       allow-list, drops commands older than `control_max_age_seconds`, and
+       deletes every node whether it ran or was refused.
+    3. `allow_control` in the add-on options, **off by default**.
+  `cover`, `lock` and `alarm_control_panel` are deliberately excluded at every
+  layer. Adding one is a security decision, not a config tweak.
+- Attribute export and control are both **allow-lists**. Never invert either.
 - Attribute export is an **allow-list** (`mapper.py::ALLOWED_ATTRS`). Add fields
   there deliberately; never switch it to a deny-list.
+- Access has two tiers: `acl/viewers` (see) and `acl/controllers` (see + operate).
+  `cd tools && npm run grant -- someone@example.com --control` grants both.
 
 ## Deploying the add-on (easy to get silently wrong)
 
@@ -37,6 +50,14 @@ Bridge logs: `ssh ha-nuc 'sudo docker logs app_local_snof_bridge 2>&1 | tail -30
 - SSH alias `ha-nuc` → user `sibhiorchards` (passwordless sudo), key
   `~/.ssh/snof_ha`. The SSH add-on has `sftp: false`, so **`scp` fails** —
   stream files with `cat f | ssh ha-nuc 'sudo tee dest'`.
+- **Not every machine has that key or alias.** Check before assuming a deploy
+  can run: `ls ~/.ssh/snof_ha` and `ssh -G ha-nuc`. See "Working from a second
+  machine" in the README.
+- Some machines carry a managed, host-wildcard `ProxyCommand` in `~/.ssh/config`
+  (0Helper, `nc -X connect -x 127.0.0.1:3128`). It cannot reach a LAN address
+  and fails with `nc: Proxy error: HTTP/1.0 503`. Work around it per-command
+  with `-o ProxyCommand=none`, or `SSH_OPTS="-o ProxyCommand=none"` for
+  `deploy-addon.sh`. Do not edit that config file; it is generated.
 - macOS tar emits `._AppleDouble` members that busybox tar rejects; the deploy
   script sets `COPYFILE_DISABLE=1` for this.
 - Firebase project `snof-live`, RTDB in `asia-southeast1`. Hosting injects
@@ -45,9 +66,16 @@ Bridge logs: `ssh ha-nuc 'sudo docker logs app_local_snof_bridge 2>&1 | tail -30
 ## Testing
 
 `cd addon/snof_bridge && python3 tests/test_logic.py` — pure-logic tests only
-(mapping, filtering, room resolution, dedup stability). They do **not** cover
-the async websocket/RTDB orchestration in `main.py`, which is where every real
-bug so far has lived. Verify that path against the live NUC.
+(mapping, filtering, room resolution, dedup stability, and the command
+validator's refusal cases). They run with no dependencies installed, so keep
+`aiohttp` imported lazily inside `commands.py`. They do **not** cover the async
+websocket/RTDB orchestration in `main.py` or the command stream, which is where
+every real bug so far has lived. Verify that path against the live NUC.
+
+Dashboard: `.context/preview/` mocks Firebase so every screen — including the
+signed-out, denied, viewer-tier and loading states — can be screenshotted
+headlessly. `./sync.sh` re-copies the working tree into it; `node shoot.mjs`
+shoots all of them and fails on any console error.
 
 When writing verification shell, remember `grep -c` exits 1 on zero matches and
 `if cmd | head` tests `head`'s status — both produced false alarms here.
@@ -61,3 +89,7 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   have an area in HA. Fixing that is an HA-side task; it flows through live.
 - The SSH add-on config had a plaintext `password:`; the owner was advised to
   clear it now that key auth works. Confirm before assuming it was done.
+- Device control shipped in the dashboard and add-on 0.3.0 but was **not yet
+  deployed or exercised against the live NUC** as of 2026-09-21. It stays inert
+  until `allow_control: true` is set in the add-on options AND someone is
+  granted `--control`.
