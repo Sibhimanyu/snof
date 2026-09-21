@@ -23,6 +23,18 @@ Home Assistant (NUC, HA OS)
 | `tools/` | `grant-access.js` — manage the viewer allowlist. |
 | `scripts/` | `setup-firebase.sh`, `deploy-addon.sh`. |
 
+## This deployment
+
+| | |
+|---|---|
+| Firebase project | `snof-live` |
+| Dashboard | https://snof-live.web.app |
+| RTDB URL | `https://snof-live-default-rtdb.asia-southeast1.firebasedatabase.app` |
+| RTDB region | `asia-southeast1` (Singapore) |
+| HA host | `homeassistant.local` (Intel NUC, HA OS) |
+
+The RTDB URL is the value the add-on's `firebase_db_url` option needs.
+
 ## Setup order
 
 1. **Name the Firebase project**, then `./scripts/setup-firebase.sh <project-id>`.
