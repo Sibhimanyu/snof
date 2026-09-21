@@ -103,6 +103,12 @@ button{cursor:pointer}
 .rooms{display:grid;gap:16px;padding:16px 20px 40px;
   grid-template-columns:repeat(auto-fill,minmax(310px,1fr));align-items:start}
 .room{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+/* A room with many rows spans the grid and flows alphabetically down columns,
+   instead of one 310px column running 70,000px down the page. In HA most
+   entities have no area, so "Unassigned" is that room. */
+.room.wide{grid-column:1/-1}
+.room.wide .room-body{column-width:310px;column-gap:24px;column-rule:1px solid var(--line-soft)}
+.room.wide .ent{break-inside:avoid}
 .room-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
   padding:13px 16px;border-bottom:1px solid var(--line);background:var(--panel-2)}
 .room-name{margin:0;font-size:14px;font-weight:600;letter-spacing:-.01em}

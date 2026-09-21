@@ -10,6 +10,7 @@ const FARM = 'snof';
 const STALE_FACTOR = 2.5;   // heartbeats missed before we call the bridge stale
 // "Zone 2" sorts before "Zone 10"; plain localeCompare puts 10 first.
 const NATURAL = { numeric: true, sensitivity: 'base' };
+const WIDE_ROOM = 8;        // rows above which a room spans the grid and flows into columns
 // HA domains are slugs ("binary_sensor"); people read words.
 const humanDomain = (d) => String(d).replace(/_/g, ' ');
 
@@ -161,12 +162,12 @@ function render() {
   root.innerHTML = order.map((area) => {
     const list = byArea.get(area).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, NATURAL));
     const hid = `room-${escapeHtml(area)}`;
-    return `<section class="room" aria-labelledby="${hid}">
+    return `<section class="room${list.length > WIDE_ROOM ? ' wide' : ''}" aria-labelledby="${hid}">
       <div class="room-head">
         <h2 class="room-name" id="${hid}">${escapeHtml(areaName(area))}</h2>
         <span class="room-count">${list.length}</span>
       </div>
-      ${list.map(renderEntity).join('')}
+      <div class="room-body">${list.map(renderEntity).join('')}</div>
     </section>`;
   }).join('');
 
