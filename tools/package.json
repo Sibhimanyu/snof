@@ -6,7 +6,8 @@
   "scripts": {
     "grant": "node grant-access.js",
     "revoke": "node grant-access.js --revoke",
-    "list": "node grant-access.js --list"
+    "list": "node grant-access.js --list",
+    "await": "node await-grant.js"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0"
