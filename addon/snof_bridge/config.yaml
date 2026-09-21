@@ -1,5 +1,5 @@
 name: SNOF Firebase Bridge
-version: "0.2.0"
+version: "0.3.0"
 slug: snof_bridge
 description: Mirrors Home Assistant entity states to Firebase Realtime Database, grouped by area, for the SNOF dashboard.
 url: https://github.com/sibhimanyu/snof
@@ -37,6 +37,16 @@ options:
   min_interval_seconds: 2
   flush_interval_seconds: 1
   heartbeat_seconds: 30
+  # Device control. Leave false to keep the bridge strictly read-only; turning it
+  # on lets allowlisted controllers operate the domains listed below, and nothing
+  # else, through the /commands queue.
+  allow_control: false
+  control_domains:
+    - switch
+    - light
+    - fan
+    - input_boolean
+  control_max_age_seconds: 120
   log_level: info
 schema:
   firebase_db_url: url
@@ -53,4 +63,8 @@ schema:
   min_interval_seconds: float(0,3600)
   flush_interval_seconds: float(0.2,60)
   heartbeat_seconds: int(5,3600)
+  allow_control: bool
+  control_domains:
+    - list(switch|light|fan|input_boolean)
+  control_max_age_seconds: float(5,3600)
   log_level: list(trace|debug|info|warning|error)

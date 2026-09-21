@@ -18,6 +18,7 @@ import aiohttp
 from aiohttp import web
 
 from . import config
+from .commands import CommandConsumer
 from .ha_client import REGISTRY_EVENTS, HAClient
 from .mapper import StateMapper
 from .registry import Registry
@@ -37,6 +38,9 @@ class Bridge:
         self.mapper = StateMapper(cfg, self.registry)
         self.rtdb = RTDBWriter(cfg, session)
         self.ha: HAClient | None = None
+        # `lambda` rather than passing self.ha: the client is replaced on every
+        # reconnect, and the consumer must always get the live one.
+        self.commands = CommandConsumer(cfg, self.rtdb, lambda: self.ha if self.connected else None, session)
         self.connected = False
         # entity_id -> digest of the last node we published, so an event that
         # changes nothing visible costs no write at all.
@@ -178,6 +182,9 @@ class Bridge:
                     "pending": self.rtdb.pending_count(),
                     "writes": self.rtdb.writes,
                     "skippedNoop": self.skipped,
+                    "control": self.cfg.allow_control,
+                    "commandsRun": self.commands.executed,
+                    "commandsRefused": self.commands.refused,
                 })
             except Exception:
                 _LOGGER.exception("Heartbeat write failed")
@@ -290,6 +297,7 @@ async def amain() -> None:
             asyncio.create_task(bridge._flush_loop(), name="flush"),
             asyncio.create_task(bridge._heartbeat_loop(), name="heartbeat"),
             asyncio.create_task(bridge._registry_loop(), name="registry"),
+            asyncio.create_task(bridge.commands.run(), name="commands"),
         ]
 
         stop = asyncio.Event()

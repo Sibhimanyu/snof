@@ -6,8 +6,13 @@
  * string replace), so the allowlist is keyed by UID. This script resolves an
  * email to its UID and writes /acl/viewers/<uid>.
  *
- *   npm run grant  -- someone@example.com
- *   npm run revoke -- someone@example.com
+ * Two tiers. A viewer sees the farm; a controller may also operate lights,
+ * switches and fans from the dashboard. Granting control implies view.
+ *
+ *   npm run grant   -- someone@example.com
+ *   npm run grant   -- someone@example.com --control
+ *   npm run revoke  -- someone@example.com            (removes both tiers)
+ *   npm run revoke  -- someone@example.com --control  (demotes to view-only)
  *   npm run list
  *
  * The person must have signed in at least once so a Firebase Auth user exists.
@@ -33,12 +38,17 @@ const db = admin.database();
 const args = process.argv.slice(2);
 const revoke = args.includes('--revoke');
 const list = args.includes('--list');
+const control = args.includes('--control');
 const email = args.find((a) => !a.startsWith('--'));
 
 async function main() {
   if (list) {
-    const snap = await db.ref('acl/viewers').get();
-    const viewers = snap.val() || {};
+    const [viewSnap, ctlSnap] = await Promise.all([
+      db.ref('acl/viewers').get(),
+      db.ref('acl/controllers').get(),
+    ]);
+    const viewers = viewSnap.val() || {};
+    const controllers = ctlSnap.val() || {};
     const uids = Object.keys(viewers).filter((u) => viewers[u] === true);
     if (!uids.length) {
       console.log('No viewers on the allowlist yet.');
@@ -46,11 +56,12 @@ async function main() {
     }
     console.log(`${uids.length} viewer(s):`);
     for (const uid of uids) {
+      const tier = controllers[uid] === true ? 'control' : 'view';
       try {
         const user = await admin.auth().getUser(uid);
-        console.log(`  ${user.email || '(no email)'}  ${uid}`);
+        console.log(`  ${(user.email || '(no email)').padEnd(34)} ${tier.padEnd(8)} ${uid}`);
       } catch {
-        console.log(`  (deleted user)  ${uid}`);
+        console.log(`  ${'(deleted user)'.padEnd(34)} ${tier.padEnd(8)} ${uid}`);
       }
     }
     return;
@@ -73,12 +84,23 @@ async function main() {
     process.exit(1);
   }
 
-  const ref = db.ref(`acl/viewers/${user.uid}`);
-  if (revoke) {
-    await ref.remove();
-    console.log(`Revoked dashboard access for ${email} (${user.uid}).`);
+  const viewRef = db.ref(`acl/viewers/${user.uid}`);
+  const ctlRef = db.ref(`acl/controllers/${user.uid}`);
+
+  if (revoke && control) {
+    // Demote, do not lock out: they keep the dashboard, they lose the switches.
+    await ctlRef.remove();
+    console.log(`${email} can view the dashboard but no longer control devices.`);
+  } else if (revoke) {
+    await Promise.all([viewRef.remove(), ctlRef.remove()]);
+    console.log(`Revoked all dashboard access for ${email} (${user.uid}).`);
+  } else if (control) {
+    // Control without view would be a dashboard they cannot read, so grant both.
+    await viewRef.set(true);
+    await ctlRef.set(true);
+    console.log(`${email} (${user.uid}) can now view AND control farm devices.`);
   } else {
-    await ref.set(true);
+    await viewRef.set(true);
     console.log(`Granted dashboard access to ${email} (${user.uid}).`);
   }
 }

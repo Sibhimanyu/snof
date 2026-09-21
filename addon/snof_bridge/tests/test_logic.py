@@ -5,12 +5,14 @@ Run from the add-on directory:  python3 tests/test_logic.py
 import logging
 import re
 import sys
+import time
 import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logging.disable(logging.CRITICAL)
 
+from bridge.commands import CommandConsumer  # noqa: E402
 from bridge.mapper import StateMapper, filter_attributes  # noqa: E402
 from bridge.registry import Registry  # noqa: E402
 
@@ -139,6 +141,71 @@ def test_real_change_still_produces_a_new_node():
         ).hexdigest()
 
     assert digest("42.5") != digest("43.1"), "a real state change must still write"
+
+
+# ---------------------------------------------------------------- commands
+
+CTL_CFG = types.SimpleNamespace(
+    control_domains=frozenset({"switch", "light", "fan"}),
+    control_max_age_seconds=120.0,
+    root="farms/snof",
+    allow_control=True,
+)
+
+
+def consumer():
+    return CommandConsumer(CTL_CFG, None, lambda: None, None)
+
+
+def cmd(**over):
+    base = {
+        "entity_id": "switch.bore_pump",
+        "domain": "switch",
+        "service": "turn_on",
+        "data": {},
+        "uid": "u1",
+        "at": time.time() * 1000,
+    }
+    base.update(over)
+    return base
+
+
+def test_command_happy_path():
+    got = consumer().validate("c1", cmd())
+    assert got == ("switch", "turn_on", {}), got
+
+    got = consumer().validate("c2", cmd(entity_id="fan.shed", domain="fan",
+                                        service="set_percentage", data={"percentage": 60}))
+    assert got == ("fan", "set_percentage", {"percentage": 60}), got
+
+
+def test_command_refuses_dangerous_shapes():
+    """Every one of these must come back None. This is the only inbound path to
+    farm hardware, so the negative cases are the point of the test."""
+    bad = {
+        "domain off the allow-list": cmd(entity_id="lock.gate", domain="lock", service="turn_on"),
+        "service not allowed for domain": cmd(entity_id="switch.p", domain="switch",
+                                              service="set_percentage"),
+        "entity_id disagrees with domain": cmd(entity_id="lock.gate", domain="switch"),
+        "unknown data key": cmd(data={"transition": 5}),
+        "brightness out of range": cmd(entity_id="light.a", domain="light",
+                                       service="turn_on", data={"brightness": 900}),
+        "percentage out of range": cmd(entity_id="fan.a", domain="fan",
+                                       service="set_percentage", data={"percentage": -3}),
+        "no timestamp": cmd(at=None),
+        "stale": cmd(at=(time.time() - 900) * 1000),
+        "postdated far into the future": cmd(at=(time.time() + 3600) * 1000),
+        "not an object": "turn_on the pump please",
+        "missing fields": {"entity_id": "switch.p"},
+    }
+    for why, payload in bad.items():
+        assert consumer().validate("x", payload) is None, f"accepted a command that is {why}"
+
+
+def test_command_booleans_are_not_numbers():
+    """bool is a subclass of int in Python; True must not pass as a brightness."""
+    assert consumer().validate("x", cmd(entity_id="light.a", domain="light",
+                                        service="turn_on", data={"brightness": True})) is None
 
 
 if __name__ == "__main__":
