@@ -8,6 +8,8 @@ in HA disappear from the mirror, then switches to streaming state_changed deltas
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import signal
 import sys
@@ -36,13 +38,34 @@ class Bridge:
         self.rtdb = RTDBWriter(cfg, session)
         self.ha: HAClient | None = None
         self.connected = False
+        # entity_id -> digest of the last node we published, so an event that
+        # changes nothing visible costs no write at all.
+        self._fingerprints: dict[str, str] = {}
+        self._areas_digest: str | None = None
+        self.skipped = 0
         self.ha_version = "unknown"
         self._registry_reload = asyncio.Event()
 
     # ---- publishing -------------------------------------------------------
 
-    async def publish_snapshot(self, states: list[dict]) -> int:
-        """Replace /entities and /areas wholesale so deletions propagate."""
+    @staticmethod
+    def _digest(node: dict) -> str:
+        return hashlib.sha1(
+            json.dumps(node, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    def _queue_if_changed(self, domain: str, object_id: str, node: dict) -> bool:
+        """Stage a node only when it differs from what we last published."""
+        entity_id = node["entity_id"]
+        digest = self._digest(node)
+        if self._fingerprints.get(entity_id) == digest:
+            self.skipped += 1
+            return False
+        self._fingerprints[entity_id] = digest
+        self.rtdb.queue(entity_id, f"{self.cfg.root}/entities/{domain}/{object_id}", node)
+        return True
+
+    def _build_tree(self, states: list[dict]) -> dict[str, dict]:
         tree: dict[str, dict] = {}
         for state in states:
             entity_id = state.get("entity_id", "")
@@ -50,13 +73,52 @@ class Bridge:
                 continue
             domain, object_id, node = self.mapper.to_node(state)
             tree.setdefault(domain, {})[object_id] = node
+        return tree
 
+    async def publish_snapshot(self, states: list[dict]) -> int:
+        """Full replace. Only on (re)connect, so entities deleted in Home
+        Assistant while we were away disappear from the mirror."""
+        tree = self._build_tree(states)
+        self._fingerprints = {
+            n["entity_id"]: self._digest(n)
+            for objs in tree.values() for n in objs.values()
+        }
         root = self.cfg.root
         await self.rtdb.put(f"{root}/areas", self.registry.areas_payload())
+        self._areas_digest = self._digest(self.registry.areas_payload())
         await self.rtdb.put(f"{root}/entities", tree)
         count = sum(len(v) for v in tree.values())
         _LOGGER.info("Published snapshot: %d entities across %d domains", count, len(tree))
         return count
+
+    async def resync(self, states: list[dict]) -> int:
+        """Reconcile after a registry edit WITHOUT rewriting the world.
+
+        Home Assistant emits registry events often, and almost none of them
+        change anything we publish. The old code answered each one with a full
+        PUT of every entity, so an idle farm rewrote ~200 KB repeatedly. Now
+        each node goes through the same fingerprint check as a live update, so
+        an event that changes nothing costs zero writes."""
+        tree = self._build_tree(states)
+        changed = 0
+        for domain, objs in tree.items():
+            for object_id, node in objs.items():
+                if self._queue_if_changed(domain, object_id, node):
+                    changed += 1
+
+        areas = self.registry.areas_payload()
+        areas_digest = self._digest(areas)
+        if areas_digest != self._areas_digest:
+            await self.rtdb.put(f"{self.cfg.root}/areas", areas)
+            self._areas_digest = areas_digest
+            _LOGGER.info("Areas changed; republished")
+
+        if changed:
+            _LOGGER.info("Registry resync: %d of %d entities changed", changed,
+                         sum(len(v) for v in tree.values()))
+        else:
+            _LOGGER.debug("Registry resync: nothing changed, no writes")
+        return changed
 
     async def publish_meta(self, entity_count: int) -> None:
         await self.rtdb.patch(f"{self.cfg.root}/meta", {
@@ -77,12 +139,15 @@ class Bridge:
             if "." in entity_id:
                 domain, object_id = entity_id.split(".", 1)
                 self.rtdb.queue(entity_id, f"{root}/entities/{domain}/{object_id}", None)
+                self._fingerprints.pop(entity_id, None)
             return
 
         if not self.mapper.should_publish(entity_id):
             return
         domain, object_id, node = self.mapper.to_node(new_state)
-        self.rtdb.queue(entity_id, f"{root}/entities/{domain}/{object_id}", node)
+        # Home Assistant fires state_changed for attribute-only updates too, so
+        # events that carry no new information are common. Skip those.
+        self._queue_if_changed(domain, object_id, node)
 
     def on_event(self, event_type: str, data: dict) -> None:
         if event_type == "state_changed":
@@ -112,6 +177,7 @@ class Bridge:
                     "heartbeatSeconds": self.cfg.heartbeat_seconds,
                     "pending": self.rtdb.pending_count(),
                     "writes": self.rtdb.writes,
+                    "skippedNoop": self.skipped,
                 })
             except Exception:
                 _LOGGER.exception("Heartbeat write failed")
@@ -128,8 +194,7 @@ class Bridge:
                 areas, devices, entities = await self.ha.get_registries()
                 self.registry.load(areas, devices, entities)
                 states = await self.ha.get_states()
-                await self.publish_snapshot(states)
-                _LOGGER.info("Registry changed; snapshot republished")
+                await self.resync(states)
             except Exception:
                 _LOGGER.exception("Registry reload failed")
 

@@ -104,8 +104,10 @@ class StateMapper:
             "name": (attrs.get("friendly_name") or object_id.replace("_", " ").title())[:MAX_STRING_LEN],
             "state": _clean_value(state.get("state")),
             "area": self.registry.area_for(entity_id),
+            # Deliberately no lastUpdated: Home Assistant bumps it on every
+            # update including attribute-only ones, so including it would make
+            # every node differ every time and force a redundant write.
             "lastChanged": state.get("last_changed"),
-            "lastUpdated": state.get("last_updated"),
         }
         filtered = filter_attributes(attrs, domain=domain, expose_location=self.cfg.expose_location)
         filtered.pop("friendly_name", None)  # already promoted to `name`

@@ -94,6 +94,53 @@ def test_value_capping():
     assert len(out["effect"]) == 16
 
 
+def test_node_is_stable_for_unchanged_state():
+    """The dedup fingerprint only works if an unchanged entity maps to an
+    identical node. lastUpdated used to break this: HA bumps it on every
+    update, including attribute-only ones, so every node looked new and every
+    event cost a write."""
+    import hashlib
+    import json
+
+    _, m = build()
+
+    def digest(last_updated):
+        _, _, node = m.to_node({
+            "entity_id": "sensor.soil", "state": "42.5",
+            "attributes": {"friendly_name": "Soil Moisture", "unit_of_measurement": "%"},
+            "last_changed": "2026-09-21T05:00:00+00:00",
+            "last_updated": last_updated,
+        })
+        assert "lastUpdated" not in node, "lastUpdated defeats deduplication"
+        return hashlib.sha1(
+            json.dumps(node, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    # Same state, different HA update timestamps -> must be the same write.
+    assert digest("2026-09-21T05:00:00+00:00") == digest("2026-09-21T05:59:59+00:00")
+
+
+def test_real_change_still_produces_a_new_node():
+    """Dedup must not swallow genuine changes."""
+    import hashlib
+    import json
+
+    _, m = build()
+
+    def digest(state):
+        _, _, node = m.to_node({
+            "entity_id": "sensor.soil", "state": state,
+            "attributes": {"friendly_name": "Soil Moisture"},
+            "last_changed": "2026-09-21T05:00:00+00:00",
+            "last_updated": "2026-09-21T05:00:00+00:00",
+        })
+        return hashlib.sha1(
+            json.dumps(node, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    assert digest("42.5") != digest("43.1"), "a real state change must still write"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
