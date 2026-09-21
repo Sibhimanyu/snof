@@ -15,7 +15,7 @@
   <div class="gate-card">
     <div class="gate-mark"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><text x="16" y="22.5" text-anchor="middle" font-size="18" font-weight="700" font-family="ui-sans-serif,system-ui,sans-serif" fill="var(--on-accent)">S</text></svg></div>
     <h1>Sibhi Natural Orchards<br>and Farms</h1>
-    <p id="gate-msg">Sign in to view live farm state.</p>
+    <p id="gate-msg" role="status">Sign in to view live farm state.</p>
     <button id="signin" class="btn-primary">Sign in with Google</button>
     <button id="signout-gate" class="btn-ghost" hidden>Sign out</button>
   </div>
@@ -31,7 +31,7 @@
       </div>
     </div>
     <div class="topbar-right">
-      <span id="bridge-pill" class="pill pill-unknown">
+      <span id="bridge-pill" class="pill pill-unknown" role="status" aria-label="Bridge status">
         <span class="dot"></span><span id="bridge-text">connecting</span>
       </span>
       <button id="signout" class="btn-ghost">Sign out</button>
@@ -45,10 +45,10 @@
 
   <main id="rooms" class="rooms"></main>
 
-  <p id="empty" class="empty" hidden>Nothing matches that filter.</p>
+  <p id="empty" class="empty" role="status" hidden>Nothing matches that filter.</p>
 
   <footer class="foot">
-    <span id="stats">Connecting</span>
+    <span id="stats" role="status">Connecting</span>
   </footer>
 </div>
 
