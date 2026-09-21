@@ -83,6 +83,9 @@ function enter(user) {
 
   gate.hidden = true;
   app.hidden = false;
+  // Say something in the content area right away; the footer alone is easy to miss.
+  el('empty').textContent = 'Connecting to the farm…';
+  el('empty').hidden = false;
 
   const db = firebase.database();
   // Server time offset lets us judge heartbeat staleness without trusting the
@@ -166,7 +169,16 @@ function render() {
     </section>`;
   }).join('');
 
-  el('empty').hidden = shown > 0 || ents.length === 0;
+  const empty = el('empty');
+  if (ents.length === 0) {
+    empty.textContent = 'Connecting to the farm…';
+    empty.hidden = false;
+  } else if (shown === 0) {
+    empty.textContent = 'Nothing matches that filter.';
+    empty.hidden = false;
+  } else {
+    empty.hidden = true;
+  }
   el('stats').textContent = ents.length
     ? `Showing ${shown} of ${ents.length} entities · updated ${new Date().toLocaleTimeString()}`
     : 'Waiting for the bridge to publish its first snapshot…';
