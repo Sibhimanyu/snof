@@ -216,8 +216,13 @@ function renderFilters(ents) {
   const wanted = domains.join(',') + '|' + filters.domain;
   if (box.dataset.sig === wanted) return;
   box.dataset.sig = wanted;
+  // Rebuilding the row destroys the focused button; remember it so a keyboard
+  // user toggling a filter is not dropped back to <body>.
+  const active = document.activeElement;
+  const focused = active && active.classList.contains('chip') ? active.dataset.domain : null;
   box.innerHTML = domains.map((d) =>
-    `<button class="chip ${filters.domain === d ? 'on' : ''}" data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}</button>`
+    `<button class="chip ${filters.domain === d ? 'on' : ''}" aria-pressed="${filters.domain === d}" ` +
+    `data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}</button>`
   ).join('');
   box.querySelectorAll('.chip').forEach((chip) => {
     chip.onclick = () => {
@@ -225,6 +230,10 @@ function renderFilters(ents) {
       render();
     };
   });
+  if (focused) {
+    const again = box.querySelector(`.chip[data-domain="${CSS.escape(focused)}"]`);
+    if (again) again.focus();
+  }
 }
 
 function renderBridgeStatus() {
