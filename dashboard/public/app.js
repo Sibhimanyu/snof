@@ -198,6 +198,7 @@ function formatState(ent) {
   const s = ent.state;
   if (s == null || s === '') return '-';
   const unit = ent.attrs?.unit_of_measurement;
+  if (unit === '%') return `${s}%`;          // "34.2%", but "31.4 °C"
   if (unit) return `${s} ${unit}`;
   if (s === 'on' || s === 'off') return s.toUpperCase();
   return String(s);
