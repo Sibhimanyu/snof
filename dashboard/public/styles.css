@@ -90,13 +90,14 @@ button{cursor:pointer}
 #search:hover{border-color:var(--muted)}
 #search:focus{border-color:var(--accent)}
 .chips{display:flex;gap:7px;flex-wrap:wrap}
-.chip{padding:6px 12px;border-radius:999px;font-size:12px;color:var(--muted);
+.chip{padding:7px 12px;border-radius:999px;font-size:12px;color:var(--muted);
   background:var(--panel);background-clip:padding-box;
   border:6px solid transparent;margin:-6px 0;               /* 32px visual, 44px hit box */
   box-shadow:inset 0 0 0 1px var(--line)}                    /* the visible 1px ring */
 .chip:hover{color:var(--text)}
 .chip:focus-visible{outline-offset:-4px}                     /* ring hugs the visual pill */
-.chip.on{background:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent-dim);color:var(--on-accent-dim)}
+.chip.on{background-color:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent-dim);color:var(--on-accent-dim)}
+/* (background-color, not the shorthand: the shorthand would reset background-clip) */
 
 /* ---- rooms ---- */
 .rooms{display:grid;gap:16px;padding:16px 20px 40px;
