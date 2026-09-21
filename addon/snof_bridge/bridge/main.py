@@ -143,6 +143,7 @@ class Bridge:
             try:
                 await self.ha.connect()
                 self.connected = True
+                self.ha_version = self.ha.ha_version
                 delay = 1.0
 
                 # The message pump has to be running before the first command:

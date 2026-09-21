@@ -27,6 +27,7 @@ class HAClient:
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._ids = itertools.count(1)
         self._pending: dict[int, asyncio.Future] = {}
+        self.ha_version = "unknown"
 
     async def connect(self) -> None:
         _LOGGER.debug("Connecting to %s", self._url)
@@ -38,7 +39,8 @@ class HAClient:
         reply = await self._ws.receive_json()
         if reply.get("type") != "auth_ok":
             raise RuntimeError(f"Home Assistant rejected our token: {reply!r}")
-        _LOGGER.info("Authenticated with Home Assistant %s", reply.get("ha_version", "?"))
+        self.ha_version = reply.get("ha_version") or "unknown"
+        _LOGGER.info("Authenticated with Home Assistant %s", self.ha_version)
 
     async def close(self) -> None:
         if self._ws is not None and not self._ws.closed:
