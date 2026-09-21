@@ -56,6 +56,69 @@ The RTDB URL is the value the add-on's `firebase_db_url` option needs.
    npm run grant -- you@example.com     # npm run list / npm run revoke
    ```
 
+## Working from a second machine
+
+Everything here is in git except one file, deliberately: the Firebase service
+account key. It is a full-admin credential for the database, so it is never
+committed. Get it onto the new machine yourself:
+
+1. Copy it from the machine that has it (`~/.config/snof/serviceAccount.json`),
+   or download a fresh one from
+   [the console](https://console.firebase.google.com/project/snof-live/settings/serviceaccounts/adminsdk).
+   Generating a new key does not revoke the old one, so the running add-on
+   keeps working either way.
+
+   ```bash
+   mkdir -p ~/.config/snof && chmod 700 ~/.config/snof
+   # ...place the JSON at ~/.config/snof/serviceAccount.json...
+   chmod 600 ~/.config/snof/serviceAccount.json
+   ```
+
+2. Tooling:
+
+   ```bash
+   cd tools && npm install
+   firebase login          # same Google account that owns snof-live
+   ```
+
+3. To deploy the add-on you also need SSH to the NUC. Either copy
+   `~/.ssh/snof_ha` across, or generate a new key and add its public half to
+   the Advanced SSH & Web Terminal add-on's `authorized_keys`, then add to
+   `~/.ssh/config`:
+
+   ```
+   Host ha-nuc
+       HostName homeassistant.local
+       User sibhiorchards
+       IdentityFile ~/.ssh/snof_ha
+       IdentitiesOnly yes
+   ```
+
+### Deploying a change to the add-on
+
+```bash
+./scripts/deploy-addon.sh ha-nuc /addons/snof_bridge
+```
+
+Then in Home Assistant: **Settings > Apps > Check for updates**, open
+**SNOF Firebase Bridge**, press **Update**, and press **Update again in the
+confirmation dialog**. That dialog is easy to miss - the first click only
+opens it, and skipping the confirm silently leaves the old image running.
+Bump `version:` in `addon/snof_bridge/config.yaml` or Supervisor will not
+offer the update at all.
+
+Verify the new code really landed rather than trusting the button:
+
+```bash
+ssh ha-nuc 'sudo docker ps --filter name=app_local_snof_bridge --format "{{.Image}}"'
+```
+
+### Deploying the dashboard
+
+```bash
+cd dashboard && firebase deploy --only hosting,database
+```
+
 ## Data shape
 
 ```
