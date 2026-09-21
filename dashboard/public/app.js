@@ -1,33 +1,65 @@
 /* SNOF live farm dashboard.
  *
- * Reads the mirror the Home Assistant add-on writes, groups entities by area and
- * re-renders on every RTDB delta. Read-only by design: the rules deny client
- * writes outright, so there is no path from this page to farm hardware.
+ * Reads the mirror the Home Assistant add-on writes and renders it as an app:
+ * Overview -> Areas -> one area -> its devices. Sensors are read-only; lights,
+ * switches and fans can be operated, which happens by appending a command to
+ * /farms/<farm>/commands. The bridge on the NUC is the only thing that can act
+ * on it — this page never talks to farm hardware directly, and RTDB rules let
+ * a client write nothing else anywhere in the tree.
  */
 'use strict';
 
 const FARM = 'snof';
-const STALE_FACTOR = 2.5;   // heartbeats missed before we call the bridge stale
-// "Zone 2" sorts before "Zone 10"; plain localeCompare puts 10 first.
-const NATURAL = { numeric: true, sensitivity: 'base' };
-const WIDE_ROOM = 8;        // rows above which a room spans the grid and flows into columns
-// HA domains are slugs ("binary_sensor"); people read words.
-const humanDomain = (d) => String(d).replace(/_/g, ' ');
+const STALE_FACTOR = 2.5;    // heartbeats missed before we call the bridge stale
+const NATURAL = { numeric: true, sensitivity: 'base' };   // "Zone 2" before "Zone 10"
+const CMD_TIMEOUT_MS = 12000;
+
+/* Domains this page offers controls for. Deliberately excludes cover, lock and
+ * alarm_control_panel: opening a gate or unlocking a door from a browser tab is
+ * a different risk conversation, and the bridge refuses them regardless. */
+const CONTROLLABLE = new Set(['switch', 'light', 'fan', 'input_boolean']);
+const ON_STATES = new Set(['on', 'open', 'opening', 'home', 'playing', 'unlocked', 'detected']);
+const OFF_STATES = new Set(['off', 'closed', 'closing', 'not_home', 'idle', 'standby', 'locked']);
+const BAD_STATES = new Set(['unavailable', 'unknown']);
 
 const el = (id) => document.getElementById(id);
-const gate = el('gate'), app = el('app');
+const humanDomain = (d) => String(d).replace(/_/g, ' ');
 
 let state = { meta: {}, areas: {}, entities: {} };
-let filters = { text: '', domain: null };
-let prevStates = new Map();
+let canControl = false;
+let currentUser = null;
+let search = '';
+let domainFilter = null;
 let refs = [];
 let clockSkewMs = 0;
+let statusTimer = null;
+let firstSnapshot = false;
+const prevStates = new Map();
+const pending = new Map();   // entity_id -> { want, timer } while a command is in flight
 
-/* ---------- auth ---------- */
+/* ================= theme ================= */
 
-firebase.auth().onAuthStateChanged((user) => {
-  if (user) enter(user); else leave();
-});
+const applyTheme = (t) => {
+  if (t) document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+  const dark = t ? t === 'dark'
+    : !window.matchMedia('(prefers-color-scheme: light)').matches;
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0a0f0d' : '#f3f6f4');
+};
+applyTheme(localStorage.getItem('snof-theme'));
+
+el('theme-btn').onclick = () => {
+  const dark = !document.documentElement.matches('[data-theme=light]') &&
+    (document.documentElement.matches('[data-theme=dark]') ||
+     !window.matchMedia('(prefers-color-scheme: light)').matches);
+  const next = dark ? 'light' : 'dark';
+  localStorage.setItem('snof-theme', next);
+  applyTheme(next);
+};
+
+/* ================= auth ================= */
+
+const setView = (v) => { document.body.dataset.view = v; };
 
 el('signin').onclick = () => {
   const provider = new firebase.auth.GoogleAuthProvider();
@@ -38,165 +70,500 @@ el('signin').onclick = () => {
 };
 const doSignOut = () => firebase.auth().signOut();
 el('signout').onclick = doSignOut;
+el('signout-menu').onclick = doSignOut;
 el('signout-gate').onclick = doSignOut;
 
-function leave() {
-  refs.forEach(({ ref, cb }) => ref.off('value', cb));
+function detach() {
+  refs.forEach(({ ref, ev, cb }) => ref.off(ev, cb));
   refs = [];
+  if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+}
+
+function leave() {
+  detach();
   state = { meta: {}, areas: {}, entities: {} };
-  prevStates.clear();
-  app.hidden = true;
-  gate.hidden = false;
+  canControl = false; currentUser = null; firstSnapshot = false;
+  prevStates.clear(); pending.clear();
+  setView('gate');
   el('signin').hidden = false;
   el('signout-gate').hidden = true;
-  el('gate-msg').textContent = 'Sign in to view live farm state.';
+  el('gate-msg').textContent = 'Sign in with the Google account on the farm allowlist.';
+}
+
+function gateWith(html) {
+  detach();
+  setView('gate');
+  el('signin').hidden = true;
+  el('signout-gate').hidden = false;
+  el('gate-msg').innerHTML = html;
 }
 
 function denied(user) {
-  // Surfacing the UID turns "access denied" into a one-command fix:
-  //   cd tools && npm run grant -- <email>
-  refs.forEach(({ ref, cb }) => ref.off('value', cb));
-  refs = [];
-  app.hidden = true;
-  gate.hidden = false;
-  el('signin').hidden = true;
-  el('signout-gate').hidden = false;
-  el('gate-msg').innerHTML =
-    `<strong>${escapeHtml(user.email || 'This account')}</strong> is not on the ` +
-    `dashboard allowlist.<br><br>Ask the farm owner to run:<br>` +
-    `<code style="display:inline-block;margin-top:6px;font-size:11px;opacity:.8">` +
-    `npm run grant -- ${escapeHtml(user.email || '')}</code>`;
+  // Surfacing the address turns "access denied" into a one-command fix.
+  const who = escapeHtml(user.email || 'This account');
+  gateWith(`<strong>${who}</strong> is not on the dashboard allowlist.<br><br>` +
+    `Ask the farm owner to run:<br><code>npm run grant -- ${escapeHtml(user.email || '')}</code>`);
 }
 
 function enter(user) {
   // Hosting injects databaseURL only once an RTDB instance exists. Without this
   // guard firebase.database() throws an opaque "Can't determine URL" error.
   if (!firebase.app().options.databaseURL) {
-    gate.hidden = false;
-    app.hidden = true;
-    el('signin').hidden = true;
-    el('signout-gate').hidden = false;
-    el('gate-msg').innerHTML =
-      'No Realtime Database yet.<br><br>Create the default instance in the ' +
-      'Firebase console, then reload this page. No redeploy needed.';
+    gateWith('No Realtime Database yet.<br><br>Create the default instance in the ' +
+             'Firebase console, then reload this page. No redeploy needed.');
     return;
   }
 
-  gate.hidden = true;
-  app.hidden = false;
-  // Say something in the content area right away; the footer alone is easy to miss.
-  el('empty').textContent = 'Connecting to the farm…';
-  el('empty').hidden = false;
+  currentUser = user;
+  setView('app');
+  const name = user.displayName || (user.email || '').split('@')[0] || 'Signed in';
+  el('acct-name').textContent = name;
+  el('acct-initial').textContent = (name[0] || '·');
+  el('acct-email').textContent = user.email || '';
 
   const db = firebase.database();
   // Server time offset lets us judge heartbeat staleness without trusting the
   // viewer's clock, which on a wall tablet is often wrong.
-  db.ref('.info/serverTimeOffset').on('value', (s) => { clockSkewMs = s.val() || 0; });
+  const skewRef = db.ref('.info/serverTimeOffset');
+  const skewCb = skewRef.on('value', (s) => { clockSkewMs = s.val() || 0; });
+  refs.push({ ref: skewRef, ev: 'value', cb: skewCb });
+
+  // A viewer sees everything; a controller may also operate devices. Two tiers,
+  // so handing someone the dashboard is not the same as handing them the pumps.
+  const ctlRef = db.ref(`acl/controllers/${user.uid}`);
+  const ctlCb = ctlRef.on('value',
+    (s) => { canControl = s.val() === true; setRole(); render(); },
+    () => { canControl = false; setRole(); });
+  refs.push({ ref: ctlRef, ev: 'value', cb: ctlCb });
 
   const watch = (path, key) => {
     const ref = db.ref(`farms/${FARM}/${path}`);
     const cb = ref.on('value',
-      (snap) => { state[key] = snap.val() || {}; render(); },
-      (err) => { if (err.code === 'PERMISSION_DENIED') denied(user); else console.error(err); }
-    );
-    refs.push({ ref, cb });
+      (snap) => { state[key] = snap.val() || {}; if (key === 'entities') firstSnapshot = true; render(); },
+      (err) => { if (err.code === 'PERMISSION_DENIED') denied(user); else console.error(err); });
+    refs.push({ ref, ev: 'value', cb });
   };
   watch('meta', 'meta');
   watch('areas', 'areas');
   watch('entities', 'entities');
 
-  setInterval(renderBridgeStatus, 5000);
+  statusTimer = setInterval(renderBridgeStatus, 5000);
+  render();
 }
 
-/* ---------- filtering ---------- */
+const setRole = () => { el('acct-role').textContent = canControl ? 'Controller' : 'Viewer'; };
 
-el('search').oninput = (e) => { filters.text = e.target.value.trim().toLowerCase(); render(); };
+/* ================= data helpers ================= */
 
 function flatEntities() {
   const out = [];
   for (const [domain, objs] of Object.entries(state.entities || {})) {
     for (const [objectId, node] of Object.entries(objs || {})) {
-      if (node && typeof node === 'object') out.push({ ...node, domain, objectId, key: `${domain}.${objectId}` });
+      if (node && typeof node === 'object') {
+        out.push({ ...node, domain, objectId, key: `${domain}.${objectId}`, area: node.area || 'unassigned' });
+      }
     }
   }
   return out;
 }
 
-function matches(ent, areaName) {
-  if (filters.domain && ent.domain !== filters.domain) return false;
-  if (!filters.text) return true;
-  const hay = `${ent.name} ${ent.entity_id} ${ent.state} ${areaName}`.toLowerCase();
-  return hay.includes(filters.text);
+const areaName = (id) => (id === 'unassigned' ? 'Unassigned' : state.areas?.[id]?.name || id);
+const isOn = (e) => ON_STATES.has(e.state);
+const isBad = (e) => e.state == null || e.state === '' || BAD_STATES.has(e.state);
+
+function matches(ent) {
+  if (!search) return true;
+  return `${ent.name} ${ent.entity_id} ${ent.state} ${areaName(ent.area)}`.toLowerCase().includes(search);
 }
 
-/* ---------- render ---------- */
+function groupByArea(ents) {
+  const map = new Map();
+  for (const e of ents) {
+    if (!map.has(e.area)) map.set(e.area, []);
+    map.get(e.area).push(e);
+  }
+  return [...map.entries()].sort((a, b) => {
+    if (a[0] === 'unassigned') return 1;
+    if (b[0] === 'unassigned') return -1;
+    return areaName(a[0]).localeCompare(areaName(b[0]), undefined, NATURAL);
+  });
+}
+
+const byName = (a, b) => (a.name || a.key).localeCompare(b.name || b.key, undefined, NATURAL);
+
+/* ================= commands ================= */
+
+/* One write, one path, one shape. RTDB rules reject anything else, and the
+ * bridge additionally refuses domains outside its own allow-list — so a bug
+ * here cannot become a bug at the relay. */
+function sendCommand(ent, service, data = {}) {
+  if (!canControl) { toast('err', 'Your account can view, but not control.'); return; }
+  const [domain] = ent.key.split('.');
+  const ref = firebase.database().ref(`farms/${FARM}/commands`).push();
+  return ref.set({
+    entity_id: ent.entity_id || ent.key,
+    domain,
+    service,
+    data,
+    uid: currentUser.uid,
+    at: firebase.database.ServerValue.TIMESTAMP,
+  }).catch((err) => {
+    clearPending(ent.key);
+    toast('err', err.code === 'PERMISSION_DENIED'
+      ? 'The database refused that command.'
+      : `Could not send: ${err.message}`);
+    render();
+  });
+}
+
+/* Optimistic UI with a deadline. The control snaps to the requested position
+ * immediately, and if the farm has not confirmed within CMD_TIMEOUT_MS we put
+ * it back and say so, rather than leaving a toggle lying about the world. */
+function markPending(key, want) {
+  clearPending(key);
+  pending.set(key, {
+    want,
+    timer: setTimeout(() => {
+      pending.delete(key);
+      toast('err', 'No response from the farm — the control was reset.');
+      render();
+    }, CMD_TIMEOUT_MS),
+  });
+}
+function clearPending(key) {
+  const p = pending.get(key);
+  if (p) { clearTimeout(p.timer); pending.delete(key); }
+}
+
+function onToggle(ent) {
+  const want = !isOn(ent);
+  markPending(ent.key, want ? 'on' : 'off');
+  render();
+  sendCommand(ent, want ? 'turn_on' : 'turn_off');
+}
+
+function onLevel(ent, pct) {
+  const [domain] = ent.key.split('.');
+  if (domain === 'fan') sendCommand(ent, 'set_percentage', { percentage: pct });
+  // HA takes 0-255 for brightness; the slider speaks percent.
+  else sendCommand(ent, 'turn_on', { brightness: Math.round((pct / 100) * 255) });
+}
+
+/* ================= toasts ================= */
+
+function toast(kind, message) {
+  const node = document.createElement('div');
+  node.className = `toast ${kind}`;
+  node.innerHTML = `<svg class="ico"><use href="#i-${kind === 'ok' ? 'check' : 'alert'}"/></svg>` +
+                   `<span>${escapeHtml(message)}</span>`;
+  el('toasts').appendChild(node);
+  setTimeout(() => {
+    node.classList.add('out');
+    node.addEventListener('animationend', () => node.remove(), { once: true });
+  }, 4200);
+}
+
+/* ================= router ================= */
+
+const route = () => {
+  const h = (location.hash || '#/').slice(1);
+  const [, head, arg] = h.match(/^\/([^/]*)\/?(.*)$/) || [, '', ''];
+  return { name: head || 'overview', arg: decodeURIComponent(arg || '') };
+};
+window.addEventListener('hashchange', () => { render(); el('view').focus(); closeNav(); });
+
+/* ================= chrome ================= */
+
+el('search').oninput = (e) => { search = e.target.value.trim().toLowerCase(); render(); };
+
+const openNav = () => { document.body.classList.add('nav-open'); el('scrim').hidden = false; };
+const closeNav = () => { document.body.classList.remove('nav-open'); el('scrim').hidden = true; };
+el('nav-open').onclick = openNav;
+el('nav-close').onclick = closeNav;
+el('scrim').onclick = closeNav;
+
+el('acct-btn').onclick = (e) => {
+  e.stopPropagation();
+  const open = el('acct-menu').hidden;
+  el('acct-menu').hidden = !open;
+  el('acct-btn').setAttribute('aria-expanded', String(open));
+};
+document.addEventListener('click', () => {
+  if (!el('acct-menu').hidden) {
+    el('acct-menu').hidden = true;
+    el('acct-btn').setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  closeNav();
+  el('acct-menu').hidden = true;
+  el('acct-btn').setAttribute('aria-expanded', 'false');
+});
+
+/* ================= render ================= */
 
 function render() {
-  const ents = flatEntities();
-  renderFilters(ents);
-  renderBridgeStatus();
+  if (document.body.dataset.view !== 'app') return;
+  const all = flatEntities();
+  const r = route();
 
   const farmName = state.meta?.name || 'SNOF';
-  el('farm-name').textContent = farmName;
-  el('farm-sub').textContent = `${ents.length} entities in ${Object.keys(state.areas || {}).length} areas`;
   document.title = `${farmName} · Live`;
+  document.querySelector('.side-brand-sub').textContent =
+    farmName.replace(/^Sibhi\s*/i, '').replace(/\s*and Farms$/i, '') || 'Live farm state';
 
-  const areaName = (id) => state.areas?.[id]?.name || 'Unassigned';
-  const byArea = new Map();
-  let shown = 0;
-  for (const ent of ents) {
-    const area = ent.area || 'unassigned';
-    if (!matches(ent, areaName(area))) continue;
-    if (!byArea.has(area)) byArea.set(area, []);
-    byArea.get(area).push(ent);
-    shown++;
-  }
+  const areas = groupByArea(all);
+  el('nav-areas-n').textContent = areas.length || '';
+  el('nav-devices-n').textContent = all.length || '';
+  document.querySelectorAll('.nav-item[data-nav]').forEach((n) =>
+    n.classList.toggle('on', n.dataset.nav === (r.name === 'area' ? 'areas' : r.name)));
 
-  const order = [...byArea.keys()].sort((a, b) => {
-    if (a === 'unassigned') return 1;
-    if (b === 'unassigned') return -1;
-    return areaName(a).localeCompare(areaName(b), undefined, NATURAL);
-  });
+  renderBridgeStatus();
 
-  const root = el('rooms');
-  root.innerHTML = order.map((area) => {
-    const list = byArea.get(area).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, NATURAL));
-    const hid = `room-${escapeHtml(area)}`;
-    return `<section class="room${list.length > WIDE_ROOM ? ' wide' : ''}" aria-labelledby="${hid}">
-      <div class="room-head">
-        <h2 class="room-name" id="${hid}">${escapeHtml(areaName(area))}</h2>
-        <span class="room-count">${list.length}</span>
-      </div>
-      <div class="room-body">${list.map(renderEntity).join('')}</div>
-    </section>`;
-  }).join('');
+  const view = el('view');
+  if (!firstSnapshot) { view.innerHTML = skeletonView(); }
+  else if (r.name === 'areas') view.innerHTML = areasView(all);
+  else if (r.name === 'area') view.innerHTML = areaView(all, r.arg);
+  else if (r.name === 'devices') view.innerHTML = devicesView(all);
+  else view.innerHTML = overviewView(all, areas);
 
-  const empty = el('empty');
-  if (ents.length === 0) {
-    empty.textContent = 'Connecting to the farm…';
-    empty.hidden = false;
-  } else if (shown === 0) {
-    empty.textContent = 'Nothing matches that filter.';
-    empty.hidden = false;
-  } else {
-    empty.hidden = true;
-  }
-  el('stats').textContent = ents.length
-    ? `Showing ${shown} of ${ents.length} entities · updated ${new Date().toLocaleTimeString()}`
+  wire(all);
+
+  el('stats').textContent = all.length
+    ? `${all.length} entities · ${areas.length} areas · updated ${new Date().toLocaleTimeString()}`
     : 'Waiting for the bridge to publish its first snapshot…';
 
-  flashChanged(ents);
+  flashChanged(all);
 }
 
-function renderEntity(ent) {
-  const cls = stateClass(ent.state);
-  return `<div class="ent" data-key="${escapeHtml(ent.key)}">
-    <div class="ent-main">
-      <div class="ent-name">${escapeHtml(ent.name || ent.entity_id)}</div>
-      <div class="ent-meta">${escapeHtml(humanDomain(ent.domain))}${subtitle(ent)}</div>
-    </div>
-    <div class="ent-state ${cls}">${escapeHtml(formatState(ent))}</div>
+/* ---- views ---- */
+
+const head = (title, sub, right = '') =>
+  `<div class="page-head"><div><h1 class="page-title">${escapeHtml(title)}</h1>` +
+  `<p class="page-sub">${escapeHtml(sub)}</p></div><div class="spacer"></div>${right}</div>`;
+
+const sectionHead = (symbol, title) =>
+  `<div class="section-head"><svg class="ico"><use href="#${symbol}"/></svg>` +
+  `<span class="section-title">${escapeHtml(title)}</span><span class="section-rule"></span></div>`;
+
+function skeletonView() {
+  return head('Overview', 'Connecting to the farm…') +
+    `<div class="sk-grid">${'<div class="sk-card"></div>'.repeat(8)}</div>`;
+}
+
+function statTiles(ents) {
+  const on = ents.filter(isOn).length;
+  const bad = ents.filter(isBad).length;
+  const areas = new Set(ents.map((e) => e.area)).size;
+  return `<div class="stats">
+    <div class="stat stat-accent"><span class="stat-label">Live entities</span>
+      <span class="stat-value">${ents.length}</span><span class="stat-note">mirrored from Home Assistant</span></div>
+    <div class="stat"><span class="stat-label">Areas</span>
+      <span class="stat-value">${areas}</span><span class="stat-note">rooms and zones</span></div>
+    <div class="stat stat-on"><span class="stat-label">Active now</span>
+      <span class="stat-value">${on}</span><span class="stat-note">on, open or running</span></div>
+    <div class="stat stat-bad${bad ? '' : ' is-clear'}"><span class="stat-label">Needs a look</span>
+      <span class="stat-value">${bad}</span><span class="stat-note">${bad ? 'unavailable or unknown' : 'everything reporting'}</span></div>
   </div>`;
+}
+
+function overviewView(all, areas) {
+  const controllable = all.filter((e) => CONTROLLABLE.has(e.domain)).sort(byName);
+  const quick = controllable.filter(isOn).concat(controllable.filter((e) => !isOn(e))).slice(0, 8);
+  const attention = all.filter(isBad).sort(byName).slice(0, 8);
+
+  const areaCards = areas.slice(0, 8).map(([id, list]) => areaCard(id, list)).join('');
+
+  return head(state.meta?.name || 'SNOF', 'Everything the farm is doing, right now.') +
+    statTiles(all) +
+    (quick.length ? sectionHead('i-switch', canControl ? 'Quick controls' : 'Controllable devices') +
+      `<div class="dev-grid">${quick.map(deviceCard).join('')}</div>` : '') +
+    (attention.length ? sectionHead('i-alert', 'Needs a look') +
+      `<div class="list">${attention.map(row).join('')}</div>` : '') +
+    sectionHead('n-areas', 'Areas') +
+    (areaCards ? `<div class="grid">${areaCards}</div>` : emptyBlock('No areas yet', 'Assign entities to an area in Home Assistant and they will group themselves here.'));
+}
+
+function areasView(all) {
+  const areas = groupByArea(all.filter(matches));
+  if (!areas.length) return head('Areas', 'Nothing matches that search.') + noMatch();
+  return head('Areas', `${areas.length} areas · ${all.length} entities`) +
+    `<div class="grid">${areas.map(([id, list]) => areaCard(id, list)).join('')}</div>`;
+}
+
+function areaCard(id, list) {
+  const on = list.filter(isOn).length;
+  const bad = list.filter(isBad).length;
+  return `<a class="area-card" href="#/area/${encodeURIComponent(id)}">
+    <div class="area-top">
+      <span class="area-icon"><svg class="ico"><use href="#i-${iconForArea(list)}"/></svg></span>
+      <svg class="ico ico-chevron"><use href="#i-chevron"/></svg>
+    </div>
+    <div>
+      <div class="area-name">${escapeHtml(areaName(id))}</div>
+      <div class="area-meta">
+        <span class="area-count">${list.length} ${list.length === 1 ? 'device' : 'devices'}</span>
+        ${on ? `<span class="tag tag-on">${on} active</span>` : ''}
+        ${bad ? `<span class="tag tag-bad">${bad} offline</span>` : ''}
+      </div>
+    </div>
+  </a>`;
+}
+
+function areaView(all, id) {
+  const inArea = all.filter((e) => e.area === id);
+  const list = inArea.filter(matches);
+  const back = `<a class="back" href="#/areas"><svg class="ico ico-sm"><use href="#i-back"/></svg>All areas</a>`;
+  if (!list.length) {
+    // An area that is empty and an area whose contents the search hid are
+    // different problems, and only one of them is the user's to fix.
+    return inArea.length
+      ? head(areaName(id), 'Nothing here matches that search.', back) + noMatch()
+      : head(areaName(id), 'No devices here yet.', back) +
+        emptyBlock('This area is empty',
+                   'Nothing in Home Assistant is assigned to this area yet.');
+  }
+  const on = list.filter(isOn).length;
+  const byDomain = new Map();
+  for (const e of list) {
+    if (!byDomain.has(e.domain)) byDomain.set(e.domain, []);
+    byDomain.get(e.domain).push(e);
+  }
+  // Operable domains first: the reason to open a room is usually to do something.
+  const order = [...byDomain.keys()].sort((a, b) => {
+    const ca = CONTROLLABLE.has(a) ? 0 : 1, cb = CONTROLLABLE.has(b) ? 0 : 1;
+    return ca - cb || a.localeCompare(b);
+  });
+
+  return head(areaName(id), `${list.length} devices · ${on} active`, back) +
+    order.map((d) => {
+      const items = byDomain.get(d).sort(byName);
+      return sectionHead(`i-${iconName(d)}`, humanDomain(d)) + (CONTROLLABLE.has(d)
+        ? `<div class="dev-grid">${items.map(deviceCard).join('')}</div>`
+        : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map(row).join('')}</div>`);
+    }).join('');
+}
+
+function devicesView(all) {
+  const domains = [...new Set(all.map((e) => e.domain))].sort();
+  const list = all.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
+  const chips = `<div class="chips">` + domains.map((d) => {
+    const n = all.filter((e) => e.domain === d).length;
+    return `<button class="chip${domainFilter === d ? ' on' : ''}" aria-pressed="${domainFilter === d}" ` +
+      `data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}<span class="n">${n}</span></button>`;
+  }).join('') + `</div>`;
+
+  return head('All devices', `${list.length} of ${all.length} entities`) + chips +
+    (list.length ? `<div class="list${list.length > 8 ? ' cols' : ''}">${list.map((e) => row(e, true)).join('')}</div>`
+                 : noMatch());
+}
+
+/* ---- pieces ---- */
+
+function deviceCard(ent) {
+  const want = pending.get(ent.key)?.want;
+  const on = want ? want === 'on' : isOn(ent);
+  const bad = isBad(ent);
+  const level = levelOf(ent);
+  const cls = bad ? 'is-bad' : on ? 'is-on' : '';
+  const canOperate = canControl && !bad;
+
+  return `<div class="dev-card ${cls}" data-key="${escapeHtml(ent.key)}">
+    <div class="dev-top">
+      <span class="dev-icon"><svg class="ico"><use href="#i-${iconFor(ent)}"/></svg></span>
+      <span class="dev-text">
+        <span class="dev-name">${escapeHtml(ent.name || ent.entity_id)}</span>
+        <span class="dev-meta">${escapeHtml(humanDomain(ent.domain))}${subtitle(ent)}</span>
+      </span>
+      ${canControl
+        ? `<button class="toggle${want ? ' busy' : ''}" role="switch" aria-checked="${on}" ` +
+          `aria-label="${escapeHtml(ent.name || ent.entity_id)}" data-act="toggle"${canOperate ? '' : ' disabled'}></button>`
+        : `<span class="dev-state ${stateClass(ent)}">${escapeHtml(formatState(ent))}</span>`}
+    </div>
+    ${level !== null && canControl ? `<div class="ctl-row">
+      <span class="ctl-label">${ent.domain === 'fan' ? 'Speed' : 'Bright'}</span>
+      <input type="range" min="0" max="100" step="1" value="${level}" style="--fill:${level}%"
+             aria-label="${escapeHtml(ent.name || '')} level" data-act="level"${canOperate ? '' : ' disabled'}>
+      <span class="ctl-val">${level}%</span>
+    </div>` : ''}
+    <div class="dev-foot">
+      <span>${escapeHtml(areaName(ent.area))}</span>
+      ${canControl ? `<span>${escapeHtml(formatState(ent))}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function row(ent, withArea = false) {
+  return `<div class="row ${isBad(ent) ? 'is-bad' : isOn(ent) ? 'is-on' : ''}" data-key="${escapeHtml(ent.key)}">
+    <span class="row-icon"><svg class="ico ico-sm"><use href="#i-${iconFor(ent)}"/></svg></span>
+    <span class="row-main">
+      <span class="row-name">${escapeHtml(ent.name || ent.entity_id)}</span>
+      <span class="row-meta">${escapeHtml(withArea ? areaName(ent.area) : humanDomain(ent.domain))}${subtitle(ent)}</span>
+    </span>
+    <span class="dev-state ${stateClass(ent)}">${escapeHtml(formatState(ent))}</span>
+  </div>`;
+}
+
+const emptyBlock = (title, body) => `<div class="empty">
+  <span class="empty-mark"><svg class="ico"><use href="#i-search"/></svg></span>
+  <h3>${escapeHtml(title)}</h3><p>${escapeHtml(body)}</p></div>`;
+
+const noMatch = () => emptyBlock('Nothing matches', 'Try a different search term, or clear the filter.');
+
+/* ---- event wiring (delegated once per render) ---- */
+
+function wire(all) {
+  const index = new Map(all.map((e) => [e.key, e]));
+  const view = el('view');
+
+  view.querySelectorAll('[data-act="toggle"]').forEach((btn) => {
+    btn.onclick = () => {
+      const ent = index.get(btn.closest('[data-key]').dataset.key);
+      if (ent) onToggle(ent);
+    };
+  });
+
+  view.querySelectorAll('[data-act="level"]').forEach((input) => {
+    input.oninput = () => {
+      input.style.setProperty('--fill', `${input.value}%`);
+      input.parentElement.querySelector('.ctl-val').textContent = `${input.value}%`;
+    };
+    input.onchange = () => {
+      const ent = index.get(input.closest('[data-key]').dataset.key);
+      if (ent) onLevel(ent, Number(input.value));
+    };
+  });
+
+  view.querySelectorAll('.chip[data-domain]').forEach((chip) => {
+    chip.onclick = () => {
+      domainFilter = domainFilter === chip.dataset.domain ? null : chip.dataset.domain;
+      render();
+    };
+  });
+}
+
+/* ---- formatting ---- */
+
+function iconName(domain) {
+  return document.getElementById(`i-${domain}`) ? domain : 'default';
+}
+function iconFor(ent) {
+  return ent ? iconName(ent.domain) : 'default';
+}
+
+/** The icon for a room is its most common domain — a shed full of sensors
+ *  should not be labelled by the one light that happened to sort first. */
+function iconForArea(list) {
+  const tally = new Map();
+  for (const e of list) tally.set(e.domain, (tally.get(e.domain) || 0) + 1);
+  let best = null, bestN = -1;
+  for (const [domain, n] of tally) {
+    // Ties go to a controllable domain: it is the more useful thing to show.
+    const score = n * 2 + (CONTROLLABLE.has(domain) ? 1 : 0);
+    if (score > bestN) { bestN = score; best = domain; }
+  }
+  return best ? iconName(best) : 'default';
 }
 
 function subtitle(ent) {
@@ -204,51 +571,32 @@ function subtitle(ent) {
   const bits = [];
   if (a.device_class) bits.push(a.device_class);
   if (a.battery_level != null) bits.push(`${a.battery_level}% battery`);
-  // One separator per line: domain, then the rest comma-joined.
-  return bits.length ? ' · ' + escapeHtml(bits.join(', ')) : '';
+  return bits.length ? ' · ' + bits.join(', ') : '';
+}
+
+/** Slider position in percent, or null when the entity has no level to set. */
+function levelOf(ent) {
+  const a = ent.attrs || {};
+  if (ent.domain === 'fan') return a.percentage != null ? Math.round(a.percentage) : null;
+  if (ent.domain === 'light') return a.brightness != null ? Math.round((a.brightness / 255) * 100) : null;
+  return null;
 }
 
 function formatState(ent) {
   const s = ent.state;
-  if (s == null || s === '') return '-';
+  if (s == null || s === '') return '—';
   const unit = ent.attrs?.unit_of_measurement;
-  if (unit === '%') return `${s}%`;          // "34.2%", but "31.4 °C"
+  if (unit === '%') return `${s}%`;              // "34.2%", but "31.4 °C"
   if (unit) return `${s} ${unit}`;
   if (s === 'on' || s === 'off') return s.toUpperCase();
   return String(s);
 }
 
-function stateClass(s) {
-  if (s === 'unavailable' || s === 'unknown' || s == null) return 'unavail';
-  if (s === 'on' || s === 'open' || s === 'home' || s === 'playing') return 'on';
-  if (s === 'off' || s === 'closed' || s === 'not_home' || s === 'idle') return 'off';
+function stateClass(ent) {
+  if (isBad(ent)) return 'unavail';
+  if (isOn(ent)) return 'on';
+  if (OFF_STATES.has(ent.state)) return 'off';
   return '';
-}
-
-function renderFilters(ents) {
-  const domains = [...new Set(ents.map((e) => e.domain))].sort();
-  const box = el('domain-filters');
-  const wanted = domains.join(',') + '|' + filters.domain;
-  if (box.dataset.sig === wanted) return;
-  box.dataset.sig = wanted;
-  // Rebuilding the row destroys the focused button; remember it so a keyboard
-  // user toggling a filter is not dropped back to <body>.
-  const active = document.activeElement;
-  const focused = active && active.classList.contains('chip') ? active.dataset.domain : null;
-  box.innerHTML = domains.map((d) =>
-    `<button class="chip ${filters.domain === d ? 'on' : ''}" aria-pressed="${filters.domain === d}" ` +
-    `data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}</button>`
-  ).join('');
-  box.querySelectorAll('.chip').forEach((chip) => {
-    chip.onclick = () => {
-      filters.domain = filters.domain === chip.dataset.domain ? null : chip.dataset.domain;
-      render();
-    };
-  });
-  if (focused) {
-    const again = box.querySelector(`.chip[data-domain="${CSS.escape(focused)}"]`);
-    if (again) again.focus();
-  }
 }
 
 function renderBridgeStatus() {
@@ -260,8 +608,7 @@ function renderBridgeStatus() {
   if (hb.status === 'offline') { pill.className = 'pill pill-offline'; text.textContent = 'bridge offline'; return; }
 
   const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
-  const budget = (hb.heartbeatSeconds || 30) * STALE_FACTOR;
-  if (ageSec > budget) {
+  if (ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
     pill.className = 'pill pill-stale';
     text.textContent = `stale ${humanAge(ageSec)}`;
   } else {
@@ -274,14 +621,17 @@ function flashChanged(ents) {
   for (const ent of ents) {
     const before = prevStates.get(ent.key);
     if (before !== undefined && before !== ent.state) {
-      const node = document.querySelector(`.ent[data-key="${CSS.escape(ent.key)}"]`);
+      // The farm confirmed it: the optimistic control was telling the truth.
+      const want = pending.get(ent.key)?.want;
+      if (want && ((want === 'on') === isOn(ent))) clearPending(ent.key);
+      const node = document.querySelector(`[data-key="${CSS.escape(ent.key)}"]`);
       if (node) { node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); }
     }
     prevStates.set(ent.key, ent.state);
   }
 }
 
-/* ---------- utils ---------- */
+/* ---- utils ---- */
 
 function humanAge(sec) {
   if (sec < 90) return `${Math.round(sec)}s`;
@@ -293,3 +643,10 @@ function escapeHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+/* ================= start ================= */
+
+/* Registered last, deliberately. onAuthStateChanged can fire synchronously, and
+ * enter()/leave() touch handlers and helpers defined throughout this file — so
+ * everything above has to exist before auth is allowed to resolve. */
+firebase.auth().onAuthStateChanged((user) => { if (user) enter(user); else leave(); });

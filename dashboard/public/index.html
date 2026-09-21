@@ -3,54 +3,157 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f1511" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f4f7f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a0f0d">
 <title>SNOF Live Farm State</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%235bd08a'/><text x='16' y='22.5' text-anchor='middle' font-size='18' font-weight='700' font-family='system-ui,sans-serif' fill='%2308140d'>S</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%2345d483'/><text x='16' y='22.5' text-anchor='middle' font-size='18' font-weight='700' font-family='system-ui,sans-serif' fill='%23071009'>S</text></svg>">
 <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
+<!-- data-view mounts exactly one screen: boot, gate or app. The previous build
+     relied on the [hidden] attribute alone, which .gate{display:grid} silently
+     outranked — so the sign-in card stayed on screen with the dashboard
+     rendering underneath it. Display now has a single source of truth. -->
+<body data-view="boot">
 
+<!-- Icon set: one <g> per HA domain / UI affordance, drawn by <use>. -->
+<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <g id="i-sensor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></g>
+  <g id="i-binary_sensor"><path d="M4 8h10a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Z"/><circle cx="14" cy="12" r="2.2"/></g>
+  <g id="i-switch"><path d="M12 3v9"/><path d="M6.2 6.2a8 8 0 1 0 11.6 0"/></g>
+  <g id="i-light"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.5.7.5 1.1h6c0-.4.1-.8.5-1.1A6 6 0 0 0 12 3Z"/></g>
+  <g id="i-climate"><path d="M12 3v11"/><circle cx="12" cy="17" r="4"/><path d="M15 6h3M15 9.5h3"/></g>
+  <g id="i-cover"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18"/></g>
+  <g id="i-lock"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></g>
+  <g id="i-camera"><path d="M3 7h11v10H3z"/><path d="m14 11 7-4v10l-7-4"/></g>
+  <g id="i-media_player"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="m10 8.5 5 2.5-5 2.5z"/></g>
+  <g id="i-person"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></g>
+  <g id="i-device_tracker"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></g>
+  <g id="i-fan"><circle cx="12" cy="12" r="1.8"/><path d="M12 10.2c0-4 1-7 3.5-7S18 7 14 10.2M13.8 12c4 0 7 1 7 3.5S17 18 13.8 14M10.2 14c0 4-1 7-3.5 7S6 17 10.2 13.8M10.2 12c-4 0-7-1-7-3.5S7 6 10.2 10"/></g>
+  <g id="i-number"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16"/></g>
+  <g id="i-select"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 11 3 3 3-3"/></g>
+  <g id="i-button"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></g>
+  <g id="i-input_boolean"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="2.6"/></g>
+  <g id="i-update"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 18h16"/></g>
+  <g id="i-event"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></g>
+  <g id="i-automation"><path d="M4 12h4l2-5 4 10 2-5h4"/></g>
+  <g id="i-water_heater"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M6 20h12"/></g>
+  <g id="i-valve"><circle cx="12" cy="12" r="4"/><path d="M2 12h6M16 12h6M12 2v6"/></g>
+  <g id="i-scene"><path d="m12 3 2.6 5.6 6.4.8-4.7 4.3 1.2 6.3L12 17l-5.5 3 1.2-6.3L3 9.4l6.4-.8Z"/></g>
+  <g id="i-script"><path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V6"/><path d="M5 6a2 2 0 1 0-4 0v0h4M9 9h6M9 13h6"/></g>
+  <g id="i-default"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="2"/></g>
+
+  <g id="n-overview"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></g>
+  <g id="n-areas"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></g>
+  <g id="n-devices"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1.5"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></g>
+  <g id="n-signout"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></g>
+  <g id="i-search"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></g>
+  <g id="i-chevron"><path d="m9 5 7 7-7 7"/></g>
+  <g id="i-back"><path d="M19 12H5M11 18l-6-6 6-6"/></g>
+  <g id="i-sun"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2M4.6 4.6 6 6M18 18l1.4 1.4M19.4 4.6 18 6M6 18l-1.4 1.4"/></g>
+  <g id="i-moon"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></g>
+  <g id="i-alert"><path d="M12 8v5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></g>
+  <g id="i-menu"><path d="M4 6h16M4 12h16M4 18h16"/></g>
+  <g id="i-check"><path d="m4 12.5 5 5L20 6.5"/></g>
+  <g id="i-close"><path d="M6 6l12 12M18 6 6 18"/></g>
+</defs></svg>
+
+<!-- ---------- boot ---------- -->
+<div id="boot" class="boot" role="status" aria-label="Loading"><span class="boot-mark"></span></div>
+
+<!-- ---------- sign-in: its own full-screen page ---------- -->
 <div id="gate" class="gate">
-  <div class="gate-card">
-    <div class="gate-mark"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><text x="16" y="22.5" text-anchor="middle" font-size="18" font-weight="700" font-family="ui-sans-serif,system-ui,sans-serif" fill="var(--on-accent)">S</text></svg></div>
-    <h1>Sibhi Natural Orchards<br>and Farms</h1>
-    <p id="gate-msg" role="status">Sign in to view live farm state.</p>
-    <button id="signin" class="btn-primary">Sign in with Google</button>
-    <button id="signout-gate" class="btn-ghost" hidden>Sign out</button>
-  </div>
+  <div class="gate-bg" aria-hidden="true"><i></i><i></i><i></i></div>
+  <main class="gate-card">
+    <span class="logo logo-lg" aria-hidden="true">S</span>
+    <h1>Sibhi Natural Orchards<br>&amp; Farms</h1>
+    <p class="gate-tag">Every sensor, pump and gate on the farm — live, and controllable from here.</p>
+    <p id="gate-msg" class="gate-msg" role="status">Sign in with the Google account on the farm allowlist.</p>
+    <button id="signin" class="btn btn-google btn-block">
+      <svg class="g" viewBox="0 0 48 48" aria-hidden="true">
+        <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-2.8-.4-4H24v7.3h12.1c-.2 2-1.6 5-4.5 7l-.1.3 6.5 5 .4.1c4.2-3.8 6.7-9.5 6.7-15.7"/>
+        <path fill="#34A853" d="M24 46c5.9 0 10.9-1.9 14.5-5.3l-6.9-5.3c-1.8 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-.3.1-6.7 5.2-.1.3C8 40.4 15.4 46 24 46"/>
+        <path fill="#FBBC05" d="M11.5 28.5c-.5-1.4-.7-2.9-.7-4.5s.3-3.1.7-4.5v-.3l-6.8-5.3-.2.1a22 22 0 0 0 0 20l7-5.5"/>
+        <path fill="#EA4335" d="M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.4 29.9 1 24 1 15.4 1 8 6.6 4.5 14l7 5.5c1.8-5.3 6.7-9 12.5-9"/>
+      </svg>
+      <span>Continue with Google</span>
+    </button>
+    <button id="signout-gate" class="btn btn-ghost btn-block" hidden>Use a different account</button>
+    <p class="gate-foot">Control is limited to lights, switches and fans on the allowlist.</p>
+  </main>
 </div>
 
-<div id="app" hidden>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><text x="16" y="22.5" text-anchor="middle" font-size="18" font-weight="700" font-family="ui-sans-serif,system-ui,sans-serif" fill="var(--on-accent)">S</text></svg></span>
-      <div>
-        <div class="brand-name" id="farm-name">SNOF</div>
-        <div class="brand-sub" id="farm-sub">Live farm state</div>
-      </div>
-    </div>
-    <div class="topbar-right">
-      <span id="bridge-pill" class="pill pill-unknown" role="status" aria-label="Bridge status">
-        <span class="dot"></span><span id="bridge-text">connecting</span>
+<!-- ---------- app shell ---------- -->
+<div id="app">
+  <div id="scrim" class="scrim" hidden></div>
+
+  <aside id="sidebar" class="sidebar">
+    <div class="side-brand">
+      <span class="logo" aria-hidden="true">S</span>
+      <span class="side-brand-text">
+        <span class="side-brand-name">SNOF</span>
+        <span class="side-brand-sub">Natural Orchards</span>
       </span>
-      <button id="signout" class="btn-ghost">Sign out</button>
+      <button id="nav-close" class="icon-btn only-narrow" aria-label="Close menu">
+        <svg class="ico"><use href="#i-close"/></svg>
+      </button>
     </div>
-  </header>
 
-  <div class="controls">
-    <input id="search" type="search" aria-label="Search devices and rooms" placeholder="Search devices, rooms…" autocomplete="off" spellcheck="false">
-    <div id="domain-filters" class="chips" role="group" aria-label="Filter by device type"></div>
+    <nav class="side-nav" aria-label="Main">
+      <p class="side-label">Main menu</p>
+      <a class="nav-item" href="#/" data-nav="overview"><svg class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
+      <a class="nav-item" href="#/areas" data-nav="areas"><svg class="ico"><use href="#n-areas"/></svg><span>Areas</span><span class="nav-n" id="nav-areas-n"></span></a>
+      <a class="nav-item" href="#/devices" data-nav="devices"><svg class="ico"><use href="#n-devices"/></svg><span>All devices</span><span class="nav-n" id="nav-devices-n"></span></a>
+    </nav>
+
+    <div class="side-foot">
+      <div class="side-bridge">
+        <span id="bridge-pill" class="pill pill-unknown" role="status">
+          <span class="dot"></span><span id="bridge-text">connecting</span>
+        </span>
+      </div>
+      <button id="signout" class="nav-item nav-btn"><svg class="ico"><use href="#n-signout"/></svg><span>Sign out</span></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button id="nav-open" class="icon-btn only-narrow" aria-label="Open menu" aria-controls="sidebar">
+        <svg class="ico"><use href="#i-menu"/></svg>
+      </button>
+
+      <div class="search-wrap">
+        <svg class="ico search-icon"><use href="#i-search"/></svg>
+        <input id="search" type="search" aria-label="Search devices and areas" placeholder="Search devices, areas…" autocomplete="off" spellcheck="false">
+      </div>
+
+      <div class="topbar-right">
+        <button id="theme-btn" class="icon-btn" aria-label="Switch theme">
+          <svg class="ico ico-sun"><use href="#i-sun"/></svg>
+          <svg class="ico ico-moon"><use href="#i-moon"/></svg>
+        </button>
+        <div class="acct">
+          <button id="acct-btn" class="acct-btn" aria-haspopup="menu" aria-expanded="false">
+            <span class="avatar" id="acct-initial">·</span>
+            <span class="acct-text">
+              <span class="acct-name" id="acct-name">Signed in</span>
+              <span class="acct-role" id="acct-role">Viewer</span>
+            </span>
+            <svg class="ico ico-sm acct-caret"><use href="#i-chevron"/></svg>
+          </button>
+          <div id="acct-menu" class="acct-menu" role="menu" hidden>
+            <p class="acct-email" id="acct-email"></p>
+            <button id="signout-menu" class="btn btn-ghost btn-block" role="menuitem">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="view" class="view" tabindex="-1"></main>
+
+    <footer class="foot"><span id="stats" role="status">Connecting…</span></footer>
   </div>
-
-  <main id="rooms" class="rooms"></main>
-
-  <p id="empty" class="empty" role="status" hidden>Nothing matches that filter.</p>
-
-  <footer class="foot">
-    <span id="stats" role="status">Connecting</span>
-  </footer>
 </div>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
 <!-- Config is injected by Firebase Hosting; nothing project-specific is committed. -->
 <script src="/__/firebase/10.14.1/firebase-app-compat.js"></script>
