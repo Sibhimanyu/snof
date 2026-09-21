@@ -37,11 +37,10 @@ button{cursor:pointer}
 .btn-primary:focus-visible,.btn-ghost:focus-visible,.chip:focus-visible,#search:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
 .btn-primary:active,.btn-ghost:active,.chip:active{transform:translateY(1px)}
-/* 44px vertical hit areas for the dense controls without inflating them visually
-   (wall tablet, phone, work gloves). Vertical only: chips are already wide. */
-.chip,.btn-ghost{position:relative}
-.chip::before,.btn-ghost::before{content:"";position:absolute;inset:-6px 0;border-radius:inherit}
-#search{min-height:44px}
+/* 44px hit areas (wall tablet, phone, work gloves). Ghost buttons and search grow
+   to 44px; chips keep their 32px look and fold a 6px transparent border into
+   their own box instead, so the hit box is the element, not a pseudo-element. */
+.btn-ghost,#search{min-height:44px}
 
 /* ---- brand mark (single geometric monogram, no emoji) ---- */
 .mark{display:block;color:var(--accent)}
@@ -91,10 +90,13 @@ button{cursor:pointer}
 #search:hover{border-color:var(--muted)}
 #search:focus{border-color:var(--accent)}
 .chips{display:flex;gap:7px;flex-wrap:wrap}
-.chip{padding:6px 12px;border-radius:999px;border:1px solid var(--line);
-  background:var(--panel);color:var(--muted);font-size:12px}
+.chip{padding:6px 12px;border-radius:999px;font-size:12px;color:var(--muted);
+  background:var(--panel);background-clip:padding-box;
+  border:6px solid transparent;margin:-6px 0;               /* 32px visual, 44px hit box */
+  box-shadow:inset 0 0 0 1px var(--line)}                    /* the visible 1px ring */
 .chip:hover{color:var(--text)}
-.chip.on{background:var(--accent-dim);border-color:var(--accent-dim);color:var(--on-accent-dim)}
+.chip:focus-visible{outline-offset:-4px}                     /* ring hugs the visual pill */
+.chip.on{background:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent-dim);color:var(--on-accent-dim)}
 
 /* ---- rooms ---- */
 .rooms{display:grid;gap:16px;padding:16px 20px 40px;
