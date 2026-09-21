@@ -8,6 +8,8 @@
 
 const FARM = 'snof';
 const STALE_FACTOR = 2.5;   // heartbeats missed before we call the bridge stale
+// "Zone 2" sorts before "Zone 10"; plain localeCompare puts 10 first.
+const NATURAL = { numeric: true, sensitivity: 'base' };
 
 const el = (id) => document.getElementById(id);
 const gate = el('gate'), app = el('app');
@@ -147,12 +149,12 @@ function render() {
   const order = [...byArea.keys()].sort((a, b) => {
     if (a === 'unassigned') return 1;
     if (b === 'unassigned') return -1;
-    return areaName(a).localeCompare(areaName(b));
+    return areaName(a).localeCompare(areaName(b), undefined, NATURAL);
   });
 
   const root = el('rooms');
   root.innerHTML = order.map((area) => {
-    const list = byArea.get(area).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const list = byArea.get(area).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, NATURAL));
     return `<section class="room">
       <div class="room-head">
         <span class="room-name">${escapeHtml(areaName(area))}</span>
