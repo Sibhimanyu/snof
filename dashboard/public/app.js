@@ -36,6 +36,11 @@ let statusTimer = null;
 let firstSnapshot = false;
 const prevStates = new Map();
 const pending = new Map();   // entity_id -> { want, timer } while a command is in flight
+/* A farm this chatty re-renders roughly once a second. Replacing the view out
+ * from under someone who is dragging a slider loses the drag, so live updates
+ * are held while a control is in use and applied the moment it is let go. */
+let interacting = false;
+let viewDirty = false;
 
 /* ================= theme ================= */
 
@@ -83,6 +88,7 @@ function leave() {
   detach();
   state = { meta: {}, areas: {}, entities: {} };
   canControl = false; currentUser = null; firstSnapshot = false;
+  interacting = false; viewDirty = false;
   prevStates.clear(); pending.clear();
   setView('gate');
   el('signin').hidden = false;
@@ -303,6 +309,31 @@ document.addEventListener('keydown', (e) => {
 
 /* ================= render ================= */
 
+/** Identify the focused control well enough to find it again after a rebuild,
+ *  so a keyboard user is not dropped back to <body> by a sensor update. */
+function focusToken() {
+  const a = document.activeElement;
+  if (!a || !el('view').contains(a)) return null;
+  if (a.dataset.domain) return { domain: a.dataset.domain };
+  const owner = a.closest('[data-key]');
+  if (owner && a.dataset.act) return { key: owner.dataset.key, act: a.dataset.act };
+  return null;
+}
+
+function restoreFocus(token) {
+  if (!token) return;
+  const sel = token.domain
+    ? `.chip[data-domain="${CSS.escape(token.domain)}"]`
+    : `[data-key="${CSS.escape(token.key)}"] [data-act="${CSS.escape(token.act)}"]`;
+  el('view').querySelector(sel)?.focus();
+}
+
+const beginInteract = () => { interacting = true; };
+const endInteract = () => {
+  interacting = false;
+  if (viewDirty) { viewDirty = false; render(); }
+};
+
 function render() {
   if (document.body.dataset.view !== 'app') return;
   const all = flatEntities();
@@ -320,15 +351,22 @@ function render() {
     n.classList.toggle('on', n.dataset.nav === (r.name === 'area' ? 'areas' : r.name)));
 
   renderBridgeStatus();
+  reconcilePending(all);
 
-  const view = el('view');
-  if (!firstSnapshot) { view.innerHTML = skeletonView(); }
-  else if (r.name === 'areas') view.innerHTML = areasView(all);
-  else if (r.name === 'area') view.innerHTML = areaView(all, r.arg);
-  else if (r.name === 'devices') view.innerHTML = devicesView(all);
-  else view.innerHTML = overviewView(all, areas);
-
-  wire(all);
+  // Chrome above stays live regardless; only the view body is held back.
+  if (interacting) {
+    viewDirty = true;
+  } else {
+    const view = el('view');
+    const token = focusToken();
+    if (!firstSnapshot) view.innerHTML = skeletonView();
+    else if (r.name === 'areas') view.innerHTML = areasView(all);
+    else if (r.name === 'area') view.innerHTML = areaView(all, r.arg);
+    else if (r.name === 'devices') view.innerHTML = devicesView(all);
+    else view.innerHTML = overviewView(all, areas);
+    wire(all);
+    restoreFocus(token);
+  }
 
   el('stats').textContent = all.length
     ? `${all.length} entities · ${areas.length} areas · updated ${new Date().toLocaleTimeString()}`
@@ -525,6 +563,8 @@ function wire(all) {
   });
 
   view.querySelectorAll('[data-act="level"]').forEach((input) => {
+    input.onpointerdown = beginInteract;
+    input.onkeydown = beginInteract;
     input.oninput = () => {
       input.style.setProperty('--fill', `${input.value}%`);
       input.parentElement.querySelector('.ctl-val').textContent = `${input.value}%`;
@@ -533,6 +573,11 @@ function wire(all) {
       const ent = index.get(input.closest('[data-key]').dataset.key);
       if (ent) onLevel(ent, Number(input.value));
     };
+    // Whichever of these ends the gesture, the held update lands right after.
+    input.onpointerup = endInteract;
+    input.onpointercancel = endInteract;
+    input.onkeyup = endInteract;
+    input.onblur = endInteract;
   });
 
   view.querySelectorAll('.chip[data-domain]').forEach((chip) => {
@@ -617,13 +662,22 @@ function renderBridgeStatus() {
   }
 }
 
+/** Settle any in-flight command the farm has now agreed with. Runs before the
+ *  view is drawn, so a confirmed control is never painted as still busy.
+ *  Checked every render rather than only on a transition: if the entity already
+ *  reports what we asked for, waiting for an edge that will never arrive would
+ *  time out and blame the farm for our own bookkeeping. */
+function reconcilePending(ents) {
+  for (const ent of ents) {
+    const want = pending.get(ent.key)?.want;
+    if (want && ((want === 'on') === isOn(ent))) clearPending(ent.key);
+  }
+}
+
 function flashChanged(ents) {
   for (const ent of ents) {
     const before = prevStates.get(ent.key);
     if (before !== undefined && before !== ent.state) {
-      // The farm confirmed it: the optimistic control was telling the truth.
-      const want = pending.get(ent.key)?.want;
-      if (want && ((want === 'on') === isOn(ent))) clearPending(ent.key);
       const node = document.querySelector(`[data-key="${CSS.escape(ent.key)}"]`);
       if (node) { node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); }
     }

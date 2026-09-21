@@ -44,6 +44,12 @@ ALLOWED_DATA = {
 
 STREAM_RETRY_SECONDS = 5.0
 
+# Ids of commands already handled, so a re-delivered snapshot cannot run one
+# twice. Bounded because this process runs for months: a command is deleted from
+# RTDB as soon as it is handled, so an id can only be re-delivered within one
+# stream's lifetime, and far fewer than this many arrive in that window.
+SEEN_LIMIT = 2048
+
 
 class CommandConsumer:
     def __init__(self, cfg, rtdb, get_ha, session: aiohttp.ClientSession) -> None:
@@ -51,7 +57,7 @@ class CommandConsumer:
         self._rtdb = rtdb
         self._get_ha = get_ha          # callable -> HAClient | None, re-read every time
         self._session = session
-        self._seen: set[str] = set()   # ids handled in this process, belt and braces
+        self._seen: list[str] = []     # handled ids, newest last; see SEEN_LIMIT
         self.executed = 0
         self.refused = 0
 
@@ -115,7 +121,9 @@ class CommandConsumer:
     async def handle(self, cmd_id: str, cmd: Any) -> None:
         if cmd is None or cmd_id in self._seen:
             return
-        self._seen.add(cmd_id)
+        self._seen.append(cmd_id)
+        if len(self._seen) > SEEN_LIMIT:
+            del self._seen[: len(self._seen) - SEEN_LIMIT]
         checked = self.validate(cmd_id, cmd)
         try:
             if checked is not None:
@@ -123,7 +131,9 @@ class CommandConsumer:
                 ha = self._get_ha()
                 if ha is None:
                     _LOGGER.warning("Dropping command %s: no Home Assistant connection", cmd_id)
-                    self._seen.discard(cmd_id)   # let it retry once we reconnect
+                    # Let it retry when the stream next redelivers the queue.
+                    if cmd_id in self._seen:
+                        self._seen.remove(cmd_id)
                     return
                 await ha.call_service(domain, service, cmd["entity_id"], data)
                 self.executed += 1
