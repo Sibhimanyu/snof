@@ -56,6 +56,12 @@ The RTDB URL is the value the add-on's `firebase_db_url` option needs.
    npm run grant -- you@example.com     # npm run list / npm run revoke
    ```
 
+## Getting into the NUC
+
+The first-time access path, every failure hit along the way, and the deploy
+procedure that is proven to work are in
+[docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md).
+
 ## Working from a second machine
 
 Everything here is in git except one file, deliberately: the Firebase service
