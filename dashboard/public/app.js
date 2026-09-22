@@ -49,7 +49,7 @@ const applyTheme = (t) => {
   else document.documentElement.removeAttribute('data-theme');
   const dark = t ? t === 'dark'
     : !window.matchMedia('(prefers-color-scheme: light)').matches;
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0a0f0d' : '#f3f6f4');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#111111' : '#f4f4f3');
 };
 applyTheme(localStorage.getItem('snof-theme'));
 
