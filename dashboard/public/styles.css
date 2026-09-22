@@ -380,6 +380,35 @@ input[type=range][disabled]{opacity:.4}
 .more-note a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .dev-grid + .more-note{margin-top:11px}
 
+/* ---------- irrigation report builder ---------- */
+.rep-builder{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px}
+.rep-field{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.rep-field select,.rep-field input[type=date]{min-height:42px;padding:0 12px;border-radius:11px;
+  border:1px solid var(--line-2);background:var(--panel);color:var(--text);
+  font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;color-scheme:dark}
+:root[data-theme="light"] .rep-field select,
+:root[data-theme="light"] .rep-field input[type=date]{color-scheme:light}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme]) .rep-field select,
+  :root:not([data-theme]) .rep-field input[type=date]{color-scheme:light}
+}
+.rep-field select:hover,.rep-field input[type=date]:hover{border-color:var(--muted)}
+.rep-field select:focus,.rep-field input[type=date]:focus{border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft);outline:none}
+.btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:var(--shadow)}
+.btn-primary:hover{filter:brightness(1.07)}
+.btn-primary[disabled]{opacity:.55;cursor:progress}
+.rep-card{padding:14px 15px;border-radius:var(--r-lg);background:var(--panel);
+  border:1px solid var(--line);box-shadow:var(--shadow);margin-bottom:12px}
+.rep-card:last-child{margin-bottom:0}
+.rep-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.rep-title{font-size:14px;font-weight:700;letter-spacing:-.01em}
+.rep-when{margin-left:auto;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.rep-summary{margin-top:6px;font-size:13px;color:var(--muted)}
+.rep-summary.rep-err{color:var(--bad)}
+.rep-card .list{margin-top:10px}
+
 /* ---------- skeleton / empty ---------- */
 .sk-grid{display:grid;gap:13px;grid-template-columns:repeat(auto-fill,minmax(258px,1fr))}
 .sk-card{height:104px;border-radius:var(--r-lg);border:1px solid var(--line);
