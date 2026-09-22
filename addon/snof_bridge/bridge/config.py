@@ -42,6 +42,25 @@ class Config:
     control_domains: frozenset[str] = frozenset({"switch", "light", "fan", "input_boolean"})
     control_max_age_seconds: float = 120.0
     log_level: int = logging.INFO
+    # Irrigation reports. Off unless the add-on options turn it on. All vendor
+    # credentials stay on the NUC; the bridge executes one vendor call per
+    # report request from the dashboard queue and mirrors the sanitized result.
+    # Nothing is polled and nothing here can operate a pump: the vendor command
+    # endpoints are never called.
+    irrigation_enabled: bool = False
+    livesky_base: str = "https://gsm.liveskytech.com:3001"
+    livesky_bearer: str = ""
+    livesky_imei: str = ""
+    niagara_base: str = ""
+    niagara_user: str = ""
+    niagara_clusters: tuple = ()
+    dcon_base: str = "https://dcon.mobitechwireless.com"
+    dcon_serial: str = ""
+    dcon_device_id: str = ""
+    dcon_token_id: str = ""
+    dcon_product: str = "DCON"
+    owm_appid: str = ""
+    owm_place: str = ""
 
     # Resolved at construction, not user-facing.
     ha_ws_url: str = field(default="", repr=False)
@@ -115,4 +134,18 @@ def load() -> Config:
         log_level=_LOG_LEVELS.get(str(opts.get("log_level", "info")).lower(), logging.INFO),
         ha_ws_url=ws_url,
         ha_token=token,
+        irrigation_enabled=bool(opts.get("irrigation_enabled", False)),
+        livesky_base=(opts.get("livesky_base") or "https://gsm.liveskytech.com:3001").strip().rstrip("/"),
+        livesky_bearer=(opts.get("livesky_bearer") or "").strip(),
+        livesky_imei=(opts.get("livesky_imei") or "").strip(),
+        niagara_base=(opts.get("niagara_base") or "").strip().rstrip("/"),
+        niagara_user=(opts.get("niagara_user") or "").strip(),
+        niagara_clusters=tuple(opts.get("niagara_clusters") or []),
+        dcon_base=(opts.get("dcon_base") or "https://dcon.mobitechwireless.com").strip().rstrip("/"),
+        dcon_serial=(opts.get("dcon_serial") or "").strip(),
+        dcon_device_id=(opts.get("dcon_device_id") or "").strip(),
+        dcon_token_id=(opts.get("dcon_token_id") or "").strip(),
+        dcon_product=(opts.get("dcon_product") or "DCON").strip(),
+        owm_appid=(opts.get("owm_appid") or "").strip(),
+        owm_place=(opts.get("owm_place") or "").strip(),
     )

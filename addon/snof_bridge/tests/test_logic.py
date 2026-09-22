@@ -15,6 +15,8 @@ logging.disable(logging.CRITICAL)
 from bridge.commands import CommandConsumer  # noqa: E402
 from bridge.mapper import StateMapper, filter_attributes  # noqa: E402
 from bridge.registry import Registry  # noqa: E402
+from bridge import vendors  # noqa: E402  (pure: no network, no deps)
+from bridge.irrigation import IrrigationRunner, REPORT_TYPES  # noqa: E402
 
 CFG = types.SimpleNamespace(
     exclude_entities=frozenset({"sensor.noisy"}),
@@ -206,6 +208,137 @@ def test_command_booleans_are_not_numbers():
     """bool is a subclass of int in Python; True must not pass as a brightness."""
     assert consumer().validate("x", cmd(entity_id="light.a", domain="light",
                                         service="turn_on", data={"brightness": True})) is None
+
+
+# ------------------------------------------------------- irrigation vendors
+
+def test_vendor_status_spellings():
+    assert vendors.status_of("ON") == "on"
+    assert vendors.status_of("running") == "on"
+    assert vendors.status_of(True) == "on" and vendors.status_of(1) == "on"
+    assert vendors.status_of("off") == "off"
+    assert vendors.status_of("Stopped") == "off"
+    assert vendors.status_of(False) == "off" and vendors.status_of(0) == "off"
+    assert vendors.status_of("") == "unknown"
+    assert vendors.status_of(None) == "unknown"
+    assert vendors.status_of("weird") == "unknown"
+    assert vendors.status_of(7) == "unknown"
+
+
+def test_vendor_scrub_never_leaks_credentials():
+    dirty = {"token_id": "FCM...", "Authorization": "x:y@ios",
+             "appid": "abc", "imei": "123", "url": "https://x",
+             "name": "ok", "nested": {"password": "p", "keep": 1},
+             "big": "x" * 9000, "many": list(range(99))}
+    out = vendors.scrub(dirty)
+    for banned in ("token_id", "Authorization", "appid", "imei", "url"):
+        assert banned not in out, f"leaked {banned}"
+    assert out["name"] == "ok" and out["nested"] == {"keep": 1}
+    assert len(out["big"]) == 255 and len(out["many"]) == 16
+    # Garbage in, no exception out.
+    assert vendors.scrub(None) is None
+    assert vendors.scrub(object()) != ""
+
+
+def test_livesky_shapes():
+    assert vendors.normalize_livesky(None) == []
+    one = vendors.normalize_livesky(
+        {"motors": [{"imei": "86", "motor_status": "ON"}]})
+    assert one == [{"id": "86", "name": "River Motor", "status": "on",
+                    "source": "livesky", "detail": ""}], one
+    # A bare dict is one motor; unknown state degrades, not explodes.
+    bare = vendors.normalize_livesky({"motor_status": "bogus"})
+    assert bare[0]["status"] == "unknown" and bare[0]["id"] == "river"
+
+
+def test_niagara_labelled_per_cluster():
+    out = vendors.normalize_niagara({"status": "off"}, "Well Motor 7.5HP")
+    assert out[0]["name"] == "Well Motor 7.5HP"
+    assert out[0]["status"] == "off" and out[0]["source"] == "niagara"
+
+
+def test_dcon_dashboard_keeps_presentation_only():
+    out = vendors.normalize_dcon_dashboard({
+        "device_name": "DCON", "serial_no": "MCON1", "token_id": "SECRET",
+        "timers": {"last": "T12 done", "running": "", "next": "T13 06:00"}})
+    assert out["device"] == "DCON" and out["last"] == "T12 done"
+    assert out["next"] == "T13 06:00" and "token_id" not in out["extra"]
+
+
+def test_dcon_valves_capped():
+    out = vendors.normalize_dcon_valves(
+        [{"valve_no": f"V{i:03d}", "status": "on"} for i in range(40)])
+    assert len(out) == 16 and out[0]["id"] == "V000"
+
+
+def test_weather_and_snapshot_defaults():
+    w = vendors.normalize_weather({"main": {"temp": 31.4, "humidity": 58},
+                                    "weather": [{"description": "haze"}],
+                                    "wind": {"speed": 3.1}})
+    assert (w["temp"], w["humidity"], w["desc"], w["wind"]) == (31.4, 58, "haze", 3.1)
+    snap = vendors.build_snapshot({})
+    assert snap["motors"] == [] and snap["weather"] == {}
+    assert snap["meta"] == {"sources": {}, "error": ""}
+
+
+# --------------------------------------------- irrigation report requests
+
+IRR_CFG = types.SimpleNamespace(root="farms/snof")
+
+
+def irr_runner():
+    return IrrigationRunner(IRR_CFG, None, None)
+
+
+def irr_req(**over):
+    base = {"type": "valves", "from": "2026-02-20", "to": "2026-02-22",
+            "uid": "u1", "at": time.time() * 1000}
+    base.update(over)
+    return base
+
+
+def test_report_every_known_type_validates():
+    """All ten collection endpoints are reachable through the queue."""
+    live = {t: {"type": t, "uid": "u1", "at": time.time() * 1000}
+            for t in REPORT_TYPES if REPORT_TYPES[t] == "live"}
+    assert len(live) == 6, REPORT_TYPES  # river/well/controller/weather/elec/pressure
+    for t, payload in live.items():
+        got = irr_runner().validate("r", payload)
+        assert got == (t, {}), (t, got)
+    got = irr_runner().validate("r", irr_req(type="timer_log"))
+    assert got == ("timer_log", {"from": "2026-02-20", "to": "2026-02-22"}), got
+
+
+def test_report_refuses_bad_shapes():
+    """The queue is a client-writable path, so the negative cases are the
+    point — same bar as the device-command validator."""
+    bad = {
+        "unknown report type": irr_req(type="valve_on"),
+        "command endpoint as a report": irr_req(type="MOFF"),
+        "not an object": "give me the valve log",
+        "missing fields": {"type": "valves"},
+        "no timestamp": irr_req(at=None),
+        "stale": irr_req(at=(time.time() - 900) * 1000),
+        "postdated far into the future": irr_req(at=(time.time() + 3600) * 1000),
+        "range without dates": {"type": "motor_log", "uid": "u1",
+                                "at": time.time() * 1000},
+        "bad date format": irr_req(**{"from": "20-02-2026"}),
+        "month 13": irr_req(**{"from": "2026-13-01"}),
+        "Feb 30": irr_req(**{"from": "2026-02-30"}),
+        "to before from": irr_req(**{"from": "2026-02-22", "to": "2026-02-20"}),
+        "decade range": irr_req(**{"from": "2020-01-01", "to": "2026-02-22"}),
+    }
+    for why, payload in bad.items():
+        assert irr_runner().validate("x", payload) is None, \
+            f"accepted a request that is {why}"
+
+
+def test_report_live_types_ignore_stray_dates():
+    """Extra date keys on a live pull must not fail it — nor be trusted."""
+    got = irr_runner().validate(
+        "r", {"type": "river_status", "uid": "u1",
+              "from": "2020-01-01", "at": time.time() * 1000})
+    assert got == ("river_status", {}), got
 
 
 if __name__ == "__main__":

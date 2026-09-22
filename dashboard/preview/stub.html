@@ -44,6 +44,18 @@
         leak:{name:'Pump house leak',entity_id:'binary_sensor.leak',state:'unavailable',area:'pump_house',attrs:{device_class:'moisture'}}
       },
       lock:{ gate_lock:{name:'Gate lock',entity_id:'lock.gate_lock',state:'locked',area:'farmhouse',attrs:{}} }
+    },
+    irrigation:{
+      motors:[{id:'860537060208758',name:'River Motor',status:'on',source:'livesky',detail:'last update 06:10'}],
+      controllers:[{id:'6039',name:'Well Motor 7.5HP',status:'off',source:'niagara',detail:'cluster 6039'},{id:'6036',name:'Well zone valves',status:'unknown',source:'niagara',detail:'cluster 6036'}],
+      dcon:{device:'DCON controller',serial:'MCON874Q000568',gprs:'connected',last:'Timer 12 · completed 08:20',running:'',next:'Timer 13 · 06:00'},
+      valves:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},{id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}],
+      timerLog:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      motorLog:[{at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped'}],
+      electricity:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}],
+      pressure:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}],
+      weather:{temp:31.4,feels:34,humidity:58,desc:'haze',wind:3.1},
+      meta:{sources:{livesky:'ok',niagara:'ok',dcon:'ok',weather:'ok'},error:''}
     }
   };
   if(params.get('real')){
@@ -52,8 +64,15 @@
     data.areas=f.areas; data.entities=f.entities;
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
-  if(params.get('big')){
-    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
+  if(params.get('noirrig')) delete data.irrigation;
+  data.irrigation_reports={
+    rep_seed1:{type:'timer_log',label:'Timer log',params:{from:'2026-02-20',to:'2026-02-22'},
+      status:'ok',summary:'1 entries · 2026-02-20 → 2026-02-22',
+      rows:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      at:now-3600000}
+  };
+  if(params.get('noirrig')) delete data.irrigation_reports;
+  if(params.get('big')){    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
     const names=['Zone valve','Soil probe','Fence energiser','Water meter','Tank float','Weather station','Frost alarm','Irrigation controller','Solar inverter','Battery bank'];
     for(let i=0;i<1350;i++){
       const d=doms[i%doms.length]; const n=names[i%names.length]+' '+(Math.floor(i/names.length)+1);
@@ -68,6 +87,48 @@
   const denied=params.get('denied');
   const controller=params.get('viewer')?false:true;
   const store={'acl/controllers/u1':controller,'.info/serverTimeOffset':0};
+  // Stand-in for the bridge: answering an irrigation_requests push with a
+  // canned report, so Generate round-trips without vendor credentials.
+  const listeners={};
+  const fire=(p,val)=>{(listeners[p]||[]).forEach(cb=>{try{cb({val:()=>val});}catch(e){}});};
+  const irrLabels={river_status:'River motor status',well_status:'Well motor status',
+    controller:'Controller dashboard',weather:'Field weather',electricity:'Electricity snapshot',
+    pressure:'Pressure snapshot',valves:'Valve runtime',timer_log:'Timer log',
+    motor_log:'Motor log',pressure_range:'Pressure range'};
+  const irrCanned=(type,from,to)=>{
+    const range=(from&&to)?` · ${from} → ${to}`:'';
+    const base={type,label:irrLabels[type]||type,params:{},status:'ok',at:Date.now()};
+    if(from&&to) base.params={from,to};
+    if(type==='valves') return {...base,summary:'2 valves · 1 open'+range,
+      rows:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},
+            {id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}]};
+    if(type==='timer_log'||type==='motor_log') return {...base,summary:'1 entries'+range,
+      rows:[{at:(to||'2026-02-22')+' 06:00',event:type==='timer_log'?'timer':'motor',
+             detail:type==='timer_log'?'Timer 12 completed':'Well motor stopped'}]};
+    if(type==='river_status') return {...base,summary:'1 running of 1 motors',
+      rows:[{id:'river',name:'River Motor',status:'on',source:'livesky'}]};
+    if(type==='well_status') return {...base,summary:'0 running of 1 controllers',
+      rows:[{id:'6039',name:'Well Motor 7.5HP',status:'off',source:'niagara'}]};
+    if(type==='electricity') return {...base,summary:'4.2 kWh',
+      rows:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}]};
+    if(type==='pressure'||type==='pressure_range') return {...base,summary:'2.1 bar'+range,
+      rows:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}]};
+    if(type==='weather') return {...base,summary:'31°C, haze',rows:[]};
+    return {...base,summary:'DCON controller',rows:[]};
+  };
+  const onImpl=(path,cb,err)=>{
+    if(path.endsWith('/entities')) window.__push=(u)=>{
+      data.entities[u.domain][u.id].state=u.state; cb({val:()=>data.entities}); };
+    if(path in store){cb({val:()=>store[path]});return cb;}
+    (listeners[path]=listeners[path]||[]).push(cb);
+    if(params.get('nodata')) return cb;             // never delivers: the loading state
+    if(denied){ err&&err({code:'PERMISSION_DENIED'}); return cb; }
+    const key=path.split('/').pop();
+    const val=path.includes('/irrigation_reports/')
+      ? (key==='irrigation_reports'?data.irrigation_reports:data.irrigation_reports?.[key])
+      : data[key];
+    cb({val:()=>val}); return cb;
+  };
   window.firebase={
     app:()=>({options:{databaseURL:'https://mock'}}),
     auth:Object.assign(()=>({
@@ -75,15 +136,18 @@
       signInWithPopup:()=>Promise.resolve(), signOut:()=>Promise.resolve()
     }),{GoogleAuthProvider:function(){this.setCustomParameters=()=>{}}}),
     database:Object.assign(()=>({ref:(path)=>({
-      push:()=>({set:(v)=>{console.log('COMMAND',JSON.stringify(v));return Promise.resolve();}}),
-      on:(ev,cb,err)=>{
-        if(path.endsWith('/entities')) window.__push=(u)=>{
-          data.entities[u.domain][u.id].state=u.state; cb({val:()=>data.entities}); };
-        if(path in store){cb({val:()=>store[path]});return cb;}
-        const key=path.split('/').pop();
-        if(params.get('nodata')) return cb;             // never delivers: the loading state
-        if(denied){ err&&err({code:'PERMISSION_DENIED'}); return cb; }
-        cb({val:()=>data[key]}); return cb; },
+      push:()=>{ const k='req_'+Math.random().toString(36).slice(2,9);
+        return {key:k, set:(v,done)=>{console.log('COMMAND',JSON.stringify(v));
+          if(path.endsWith('/irrigation_requests')&&data.irrigation_reports){
+            setTimeout(()=>{ const rep=irrCanned(v.type,v.from,v.to);
+              data.irrigation_reports[k]=rep;
+              fire('farms/snof/irrigation_reports',data.irrigation_reports);
+              fire(`farms/snof/irrigation_reports/${k}`,rep); },400);
+          }
+          if(done) setTimeout(()=>done(null),0);
+          return Promise.resolve(); }};},
+      limitToLast:()=>({on:(ev,cb,err)=>onImpl(path,cb,err),off:()=>{}}),
+      on:(ev,cb,err)=>onImpl(path,cb,err),
       off:()=>{}
     })}),{ServerValue:{TIMESTAMP:{'.sv':'timestamp'}}})
   };

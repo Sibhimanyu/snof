@@ -1,5 +1,5 @@
 name: SNOF Firebase Bridge
-version: "0.3.0"
+version: "0.5.0"
 slug: snof_bridge
 description: Mirrors Home Assistant entity states to Firebase Realtime Database, grouped by area, for the SNOF dashboard.
 url: https://github.com/sibhimanyu/snof
@@ -48,6 +48,25 @@ options:
     - input_boolean
   control_max_age_seconds: 120
   log_level: info
+  # Irrigation mirror (Mobitech DCON, Livesky, Niagara, OpenWeather). Leave
+  # false to poll nothing; turning it on mirrors a sanitized read-only
+  # snapshot to /farms/<slug>/irrigation for the dashboard. Credentials stay
+  # on the NUC and are never mirrored. Nothing here can operate a pump.
+  irrigation_enabled: false
+  irrigation_poll_seconds: 300
+  livesky_base: "https://gsm.liveskytech.com:3001"
+  livesky_bearer: ""
+  livesky_imei: ""
+  niagara_base: ""
+  niagara_user: ""
+  niagara_clusters: []
+  dcon_base: "https://dcon.mobitechwireless.com"
+  dcon_serial: ""
+  dcon_device_id: ""
+  dcon_token_id: ""
+  dcon_product: "DCON"
+  owm_appid: ""
+  owm_place: ""
 schema:
   firebase_db_url: url
   service_account_path: str
@@ -68,3 +87,19 @@ schema:
     - list(switch|light|fan|input_boolean)
   control_max_age_seconds: float(5,3600)
   log_level: list(trace|debug|info|warning|error)
+  irrigation_enabled: bool
+  livesky_base: url
+  livesky_bearer: str
+  livesky_imei: str
+  niagara_base: str
+  niagara_user: str
+  niagara_clusters:
+    - str
+  dcon_base: url
+  dcon_serial: str
+  dcon_device_id: str
+  dcon_token_id: str
+  dcon_product: str
+  dcon_log_days: int(1,30)
+  owm_appid: str
+  owm_place: str

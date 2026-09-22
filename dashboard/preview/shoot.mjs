@@ -34,6 +34,7 @@ await shot('13-mobile-overview',{vp:{width:390,height:844}});
 await shot('14-mobile-area',{url:'#/area/cold_store',vp:{width:390,height:844}});
 await shot('15-mobile-nav',{vp:{width:390,height:844},act:async p=>{await p.click('#nav-open');await p.waitForTimeout(350);}});
 await shot('16-search',{act:async p=>{await p.fill('#search','pump');await p.waitForTimeout(200);await p.click('a[href="#/areas"]');await p.waitForTimeout(200);}});
+await shot('18-irrigation',{url:'#/irrigation'});
 // Exercise a control end to end and confirm the command payload is well formed.
 {
   const ctx=await browser.newContext({viewport:{width:1440,height:940},colorScheme:'dark',deviceScaleFactor:2});

@@ -47,6 +47,7 @@ returns.
 | [docs/HANDOFF.md](docs/HANDOFF.md) | **Start here** — current state and open items |
 | [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) | SSH to the NUC; §6a deploys the add-on with no UI |
 | [docs/device-control.md](docs/device-control.md) | The command path, its three gates, arming it |
+| [docs/irrigation.md](docs/irrigation.md) | Vendor motor/valve mirror (Mobitech, Livesky, Niagara) and the Irrigation view |
 | [docs/dashboard.md](docs/dashboard.md) | Front-end architecture and design system |
 | [docs/firebase-deploy.md](docs/firebase-deploy.md) | Hosting, rules, the two-tier allowlist |
 | [docs/testing-and-preview.md](docs/testing-and-preview.md) | Every suite and the fixture that matters |
@@ -167,10 +168,13 @@ cd dashboard && firebase deploy --only hosting,database
 ```
 /farms/snof/
   meta/    name, slug, entityCount, haVersion, updatedAt
-           bridge/ { status, lastSeen, heartbeatSeconds, pending, writes }
+            bridge/ { status, lastSeen, heartbeatSeconds, pending, writes }
   areas/   <area_id>/ { name, icon, floor }
   entities/<domain>/<object_id>/
-           { entity_id, domain, name, state, area, attrs{}, lastChanged, lastUpdated }
+            { entity_id, domain, name, state, area, attrs{}, lastChanged, lastUpdated }
+  irrigation/  vendor motor/valve mirror (read-only, only when enabled):
+            { motors[], controllers[], dcon{}, valves[], timerLog[], motorLog[],
+              electricity[], pressure[], weather{}, meta{ sources{}, error } }
 ```
 
 `entity_id` is split on the dot because RTDB keys cannot contain `.`, `$`, `#`,

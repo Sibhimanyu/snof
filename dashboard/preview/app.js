@@ -25,7 +25,7 @@ const BAD_STATES = new Set(['unavailable', 'unknown']);
 const el = (id) => document.getElementById(id);
 const humanDomain = (d) => String(d).replace(/_/g, ' ');
 
-let state = { meta: {}, areas: {}, entities: {} };
+let state = { meta: {}, areas: {}, entities: {}, irrigation: {}, irrigation_reports: {} };
 let canControl = false;
 let currentUser = null;
 let search = '';
@@ -87,7 +87,9 @@ function detach() {
 
 function leave() {
   detach();
-  state = { meta: {}, areas: {}, entities: {} };
+  irrWaiters.forEach(({ ref, cb, timer }) => { clearTimeout(timer); ref.off('value', cb); });
+  irrWaiters.clear();
+  state = { meta: {}, areas: {}, entities: {}, irrigation: {} };
   canControl = false; currentUser = null; firstSnapshot = false;
   statusFilter = 'all'; domainFilter = null;
   interacting = false; viewDirty = false;
@@ -154,6 +156,16 @@ function enter(user) {
   watch('meta', 'meta');
   watch('areas', 'areas');
   watch('entities', 'entities');
+  // The irrigation cache is whatever the last report left behind; the
+  // reports list is the last 20 results, newest last from RTDB.
+  watch('irrigation', 'irrigation');
+  {
+    const repRef = db.ref(`farms/${FARM}/irrigation_reports`).limitToLast(20);
+    const repCb = repRef.on('value',
+      (snap) => { state.irrigation_reports = snap.val() || {}; render(); },
+      (err) => { if (err.code === 'PERMISSION_DENIED') denied(user); else console.error(err); });
+    refs.push({ ref: repRef, ev: 'value', cb: repCb });
+  }
 
   statusTimer = setInterval(renderBridgeStatus, 5000);
   render();
@@ -349,6 +361,7 @@ function render() {
   const areas = groupByArea(all);
   el('nav-areas-n').textContent = areas.length || '';
   el('nav-devices-n').textContent = all.length || '';
+  el('nav-irrig-n').textContent = irrigRunning() || '';
   document.querySelectorAll('.nav-item[data-nav]').forEach((n) =>
     n.classList.toggle('on', n.dataset.nav === (r.name === 'area' ? 'areas' : r.name)));
 
@@ -365,6 +378,7 @@ function render() {
     else if (r.name === 'areas') view.innerHTML = areasView(all);
     else if (r.name === 'area') view.innerHTML = areaView(all, r.arg);
     else if (r.name === 'devices') view.innerHTML = devicesView(all);
+    else if (r.name === 'irrigation') view.innerHTML = irrigationView();
     else view.innerHTML = overviewView(all, areas);
     wire(all);
     restoreFocus(token);
@@ -545,6 +559,241 @@ function devicesView(all) {
                  : noMatch());
 }
 
+/* ---- irrigation (vendor motor/valve mirror, read-only) ---- */
+
+/* ---- irrigation reports (vendor motors/valves, on demand) ---- */
+
+/* Nothing on this page is polled. Each report below answers a user pressing
+ * Generate: the dashboard appends a request to
+ * /farms/<farm>/irrigation_requests, the bridge on the NUC executes that
+ * one vendor call with its stored credentials, and writes the sanitized
+ * result to /farms/<farm>/irrigation_reports. This page renders requests
+ * and results and nothing else: it never sees a vendor credential and
+ * cannot operate a pump. Valve/pump control is deliberately not built —
+ * that is a security decision of the same order as cover/lock, not a config
+ * tweak, and would arrive through the /commands queue, never as a direct
+ * vendor call from a browser tab. */
+const IRR_TYPES = [
+  { type: 'river_status', label: 'River motor status', needs: 'live' },
+  { type: 'well_status', label: 'Well motor status', needs: 'live' },
+  { type: 'controller', label: 'Controller dashboard', needs: 'live' },
+  { type: 'weather', label: 'Field weather', needs: 'live' },
+  { type: 'electricity', label: 'Electricity snapshot', needs: 'live' },
+  { type: 'pressure', label: 'Pressure snapshot', needs: 'live' },
+  { type: 'valves', label: 'Valve runtime', needs: 'range' },
+  { type: 'timer_log', label: 'Timer log', needs: 'range' },
+  { type: 'motor_log', label: 'Motor log', needs: 'range' },
+  { type: 'pressure_range', label: 'Pressure range', needs: 'range' },
+];
+const IRR_TIMEOUT_MS = 60000;
+// Builder selections survive re-renders (a sensor update mid-form must not
+// wipe the dates), and one waiter per outstanding request resolves it.
+let irrType = 'valves', irrFrom = '', irrTo = '';
+const irrWaiters = new Map();   // reqKey -> { ref, cb, timer }
+
+const irrig = () => state.irrigation || {};
+const irrReports = () => Object.entries(state.irrigation_reports || {})
+  .filter(([, r]) => r && typeof r === 'object')
+  .sort((a, b) => (a[1].at || 0) - (b[1].at || 0));
+
+const irrNeedsRange = (t) => (IRR_TYPES.find((x) => x.type === t) || {}).needs === 'range';
+
+function irrDefaultDates() {
+  const today = new Date(), past = new Date(Date.now() - 2 * 864e5);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return { from: iso(past), to: iso(today) };
+}
+
+function sendReportRequest() {
+  if (!canControl) { toast('err', 'Your account can view, but not run reports.'); return; }
+  const range = irrNeedsRange(irrType);
+  const from = irrFrom.trim(), to = irrTo.trim();
+  if (range && (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to))) {
+    toast('err', 'Pick a from and to date for this report.');
+    return;
+  }
+  if (range && to < from) {
+    toast('err', 'The to date is before the from date.');
+    return;
+  }
+  const payload = {
+    type: irrType,
+    uid: currentUser.uid,
+    at: firebase.database.ServerValue.TIMESTAMP,
+  };
+  if (range) { payload.from = from; payload.to = to; }
+  const ref = firebase.database().ref(`farms/${FARM}/irrigation_requests`).push();
+  const key = ref.key;
+  const child = firebase.database().ref(`farms/${FARM}/irrigation_reports/${key}`);
+  const done = (ok, msg) => {
+    const w = irrWaiters.get(key);
+    if (!w) return;
+    clearTimeout(w.timer);
+    child.off('value', w.cb);
+    irrWaiters.delete(key);
+    if (!ok) toast('err', msg);
+    render();
+  };
+  const cb = (snap) => {
+    const rep = snap.val();
+    if (rep) {
+      done(true);
+      toast(rep.status === 'ok' ? 'ok' : 'err',
+        rep.status === 'ok' ? 'Report ready.' : `Report failed: ${rep.error || 'vendor error'}`);
+    }
+  };
+  const timer = setTimeout(() => done(false, 'No answer from the bridge yet — it will appear below when it lands.'), IRR_TIMEOUT_MS);
+  irrWaiters.set(key, { ref: child, cb, timer });
+  child.on('value', cb);
+  ref.set(payload, (err) => {
+    if (err) {
+      done(false, err.code === 'PERMISSION_DENIED'
+        ? 'The database refused that request.'
+        : `Could not send: ${err.message}`);
+    } else {
+      toast('ok', 'Report requested — the bridge is pulling it now.');
+      render();
+    }
+  });
+}
+
+function irrReportCard(key, rep) {
+  const label = rep.label || rep.type || 'Report';
+  const when = rep.at ? new Date(rep.at).toLocaleString() : '';
+  const params = [rep.params?.from, rep.params?.to].filter(Boolean).join(' → ');
+  const statusTag = rep.status === 'ok' ? `<span class="tag tag-on">Ready</span>`
+    : rep.status === 'error' ? `<span class="tag tag-bad">Failed</span>`
+    : `<span class="tag">Working…</span>`;
+  const rows = Array.isArray(rep.rows) ? rep.rows : [];
+  const shown = rows.slice(0, 6).map((r) => {
+    const name = r.name || r.event || r.id || label;
+    const meta = [r.status, r.detail, r.runtime,
+      [r.value, r.unit].filter(Boolean).join(' '), r.at]
+      .filter(Boolean).join(' · ');
+    return irrigRow('i-menu', name, meta || label, '');
+  }).join('');
+  const more = rows.length > 6
+    ? `<p class="more-note">${rows.length - 6} more rows in this report.</p>` : '';
+  return `<div class="rep-card" data-rep="${escapeHtml(key)}">
+    <div class="rep-head">
+      <span class="rep-title">${escapeHtml(label)}</span>${statusTag}
+      <span class="rep-when">${escapeHtml([params, when].filter(Boolean).join(' · '))}</span>
+    </div>
+    ${rep.summary ? `<p class="rep-summary">${escapeHtml(rep.summary)}</p>` : ''}
+    ${rep.status === 'error' && rep.error ? `<p class="rep-summary rep-err">${escapeHtml(rep.error)}</p>` : ''}
+    ${shown ? `<div class="list">${shown}</div>${more}` : ''}
+  </div>`;
+}
+
+function irrigRunning() {
+  const n = irrig();
+  const running = [...(n.motors || []), ...(n.controllers || [])]
+    .filter((m) => m && m.status === 'on').length;
+  return running;
+}
+
+const irrigStatusTag = (s) =>
+  s === 'on' ? `<span class="tag tag-on">Running</span>`
+  : s === 'off' ? `<span class="tag">Off</span>`
+  : `<span class="tag">Unknown</span>`;
+
+function irrigMotorCard(m) {
+  const icon = m.source === 'niagara' ? 'i-switch'
+    : m.source === 'livesky' ? 'i-water_heater' : 'i-default';
+  return `<div class="area-card">
+    <div class="area-top">
+      <span class="area-icon"><svg class="ico"><use href="#${icon}"/></svg></span>
+    </div>
+    <div>
+      <div class="area-name">${escapeHtml(m.name || 'Motor')}</div>
+      <div class="area-meta">
+        <span class="area-count">${escapeHtml(m.source === 'niagara' ? 'Well controller'
+          : m.source === 'livesky' ? 'River motor' : 'Motor')}</span>
+        ${irrigStatusTag(m.status)}
+      </div>
+      ${m.detail ? `<div class="area-count">${escapeHtml(m.detail)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+const irrigRow = (icon, name, meta, right) =>
+  `<div class="row"><span class="row-icon"><svg class="ico ico-sm"><use href="#${icon}"/></svg></span>` +
+  `<span class="row-main"><span class="row-name">${escapeHtml(name)}</span>` +
+  `<span class="row-meta">${escapeHtml(meta)}</span></span>${right}</div>`;
+
+function irrigationView() {
+  const def = irrDefaultDates();
+  if (!irrFrom) irrFrom = def.from;
+  if (!irrTo) irrTo = def.to;
+
+  const options = IRR_TYPES.map((t) =>
+    `<option value="${t.type}"${irrType === t.type ? ' selected' : ''}>${escapeHtml(t.label)}</option>`).join('');
+  const showRange = irrNeedsRange(irrType);
+  const pending = irrWaiters.size;
+  const builder = canControl
+    ? `<div class="rep-builder">
+        <label class="rep-field"><span>Report</span>
+          <select id="irr-type" data-act="irr-type">${options}</select></label>
+        <label class="rep-field"${showRange ? '' : ' hidden'}><span>From</span>
+          <input id="irr-from" type="date" value="${escapeHtml(irrFrom)}" data-act="irr-from" max="${escapeHtml(def.to)}"></label>
+        <label class="rep-field"${showRange ? '' : ' hidden'}><span>To</span>
+          <input id="irr-to" type="date" value="${escapeHtml(irrTo)}" data-act="irr-to" max="${escapeHtml(def.to)}"></label>
+        <button class="btn btn-primary" data-act="irr-gen"${pending ? ' disabled' : ''}>` +
+          `${pending ? 'Working…' : 'Generate report'}</button>
+      </div>
+      ${pending ? `<p class="more-note">Pulling from the vendor — the result lands below, usually within a minute.</p>` : ''}`
+    : `<p class="more-note">Report generation is limited to controllers — ` +
+      `your account can view results below, but not run new pulls.</p>`;
+
+  const reports = irrReports();
+  const repsSec = sectionHead('i-menu', 'Reports') +
+    (reports.length
+      ? reports.slice().reverse().map(([k, r]) => irrReportCard(k, r)).join('')
+      : emptyBlock('No reports yet',
+          canControl ? 'Build one above — pick a report and press Generate.'
+                     : 'No reports have been run yet.'));
+
+  const n = irrig();
+  const motors = [...(n.motors || []), ...(n.controllers || [])];
+  const valves = n.valves || [];
+  const dcon = n.dcon || {};
+  const weather = n.weather || {};
+  const lastNote = n.meta?.lastUpdated
+    ? `<p class="more-note">Last results from ` +
+      `${escapeHtml(n.meta.lastType || 'a report')} · ` +
+      `${escapeHtml(new Date(n.meta.lastUpdated).toLocaleString())}.` +
+      `${n.meta.lastError ? ` Last error: ${escapeHtml(n.meta.lastError)}.` : ''}</p>`
+    : '';
+
+  const running = motors.filter((m) => m.status === 'on').length;
+  const valvesOpen = valves.filter((v) => v.status === 'on').length;
+  const cacheSec = (motors.length || valves.length || dcon.device || weather.temp != null)
+    ? sectionHead('i-water_heater', 'Last results') + lastNote +
+      `<div class="stats">
+        <div class="stat stat-on"><span class="stat-label">Motors running</span>
+          <span class="stat-value">${running}</span>
+          <span class="stat-note">of ${motors.length} last seen</span></div>
+        <div class="stat"><span class="stat-label">Valves open</span>
+          <span class="stat-value">${valvesOpen}</span>
+          <span class="stat-note">of ${valves.length} last seen</span></div>
+        <div class="stat"><span class="stat-label">Field temp</span>
+          <span class="stat-value">${weather.temp != null ? `${Math.round(weather.temp)}°` : '—'}</span>
+          <span class="stat-note">${escapeHtml(weather.desc || 'no weather pull yet')}</span></div>
+      </div>` +
+      (motors.length
+        ? `<div class="grid">${motors.map(irrigMotorCard).join('')}</div>` : '') +
+      (valves.length
+        ? `<div class="list${valves.length > 8 ? ' cols' : ''}">` +
+          valves.map((v) => irrigRow('i-valve', v.name || `Valve ${v.id || ''}`,
+            [v.runtime, v.id].filter(Boolean).join(' · ') || 'valve',
+            irrigStatusTag(v.status))).join('') + `</div>` : '')
+    : '';
+
+  return head('Irrigation', 'Build a vendor report — motors, valves, weather.') +
+    sectionHead('n-irrigation', 'Generate report') + builder + repsSec + cacheSec +
+    `<p class="more-note">Read-only pulls — this page cannot operate pumps or valves.</p>`;
+}
+
 /* ---- pieces ---- */
 
 function deviceCard(ent) {
@@ -648,6 +897,22 @@ function wire(all) {
       domainFilter = domainFilter === chip.dataset.domain ? null : chip.dataset.domain;
       render();
     };
+  });
+
+  // Report builder: keep selections in module vars so a live re-render
+  // mid-form does not wipe them; only a type change re-renders (to show or
+  // hide the date fields), date edits stay put until Generate is pressed.
+  view.querySelectorAll('[data-act="irr-type"]').forEach((sel) => {
+    sel.onchange = () => { irrType = sel.value; render(); };
+  });
+  view.querySelectorAll('[data-act="irr-from"]').forEach((input) => {
+    input.onchange = () => { irrFrom = input.value; };
+  });
+  view.querySelectorAll('[data-act="irr-to"]').forEach((input) => {
+    input.onchange = () => { irrTo = input.value; };
+  });
+  view.querySelectorAll('[data-act="irr-gen"]').forEach((btn) => {
+    btn.onclick = () => { sendReportRequest(); };
   });
 }
 

@@ -16,6 +16,7 @@ shell, a hash router picks the view:
 | `#/areas` | a card per area, with active and offline counts |
 | `#/area/<id>` | one area, grouped by domain, operable domains first |
 | `#/devices` | everything, with status segment and domain chips |
+| `#/irrigation` | vendor motors, valves, timers, energy/pressure, weather — read-only mirror, see [irrigation.md](irrigation.md) |
 
 `render()` rebuilds `#view` wholesale on every RTDB delta. At ~1366 registry
 entities that costs ~80 ms and is fine; the guards below exist because "fine"

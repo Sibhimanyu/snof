@@ -8,7 +8,7 @@
         ".read": "auth != null && root.child('acl/viewers').child(auth.uid).val() === true",
         ".write": false,
 
-        // Append-only command queue: the only client-writable path in the tree.
+        // Append-only command queue: a client-writable path in the tree.
         // A controller may create a command and nothing else - no editing one,
         // no deleting one, no writing anywhere else under the farm. The bridge
         // on the NUC holds the only credential that can act on or remove one,
@@ -43,6 +43,39 @@
               "brightness": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 255" },
               "percentage": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
               "$other": { ".validate": false }
+            },
+            "$other": { ".validate": false }
+          }
+        },
+
+        // Report requests for the irrigation vendors (Mobitech, Livesky,
+        // Niagara, OpenWeather). Same shape of trust as commands: a
+        // controller may append a request and nothing else. The bridge on
+        // the NUC holds the vendor credentials, executes the one call, and
+        // writes the sanitized result to irrigation_reports — which has no
+        // client write rule, so only the service account can produce one.
+        // "type" is the report allow-list; "from"/"to" are optional
+        // YYYY-MM-DD dates, required by the bridge for range reports.
+        "irrigation_requests": {
+          "$req": {
+            ".write": "auth != null && root.child('acl/controllers').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['type','uid','at'])",
+
+            "type": {
+              ".validate": "newData.isString() && newData.val().matches(/^(river_status|well_status|controller|weather|electricity|pressure|valves|timer_log|motor_log|pressure_range)$/)"
+            },
+            "from": {
+              ".validate": "newData.isString() && newData.val().length <= 10 && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "to": {
+              ".validate": "newData.isString() && newData.val().length <= 10 && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "uid": {
+              ".validate": "newData.val() === auth.uid"
+            },
+            // Must be the server clock, so a request cannot be backdated
+            // past the bridge's staleness check or postdated to fire later.
+            "at": {
+              ".validate": "newData.val() === now"
             },
             "$other": { ".validate": false }
           }

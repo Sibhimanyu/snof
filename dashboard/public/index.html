@@ -14,46 +14,47 @@
      rendering underneath it. Display now has a single source of truth. -->
 <body data-view="boot">
 
-<!-- Icon set: one <g> per HA domain / UI affordance, drawn by <use>. -->
+<!-- Icon set: one <symbol> per HA domain / UI affordance, drawn by <use>. Symbols carry their own viewBox so the 24-grid artwork scales into the 19px .ico box instead of clipping. -->
 <svg class="sprite" aria-hidden="true" focusable="false"><defs>
-  <g id="i-sensor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></g>
-  <g id="i-binary_sensor"><path d="M4 8h10a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Z"/><circle cx="14" cy="12" r="2.2"/></g>
-  <g id="i-switch"><path d="M12 3v9"/><path d="M6.2 6.2a8 8 0 1 0 11.6 0"/></g>
-  <g id="i-light"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.5.7.5 1.1h6c0-.4.1-.8.5-1.1A6 6 0 0 0 12 3Z"/></g>
-  <g id="i-climate"><path d="M12 3v11"/><circle cx="12" cy="17" r="4"/><path d="M15 6h3M15 9.5h3"/></g>
-  <g id="i-cover"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18"/></g>
-  <g id="i-lock"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></g>
-  <g id="i-camera"><path d="M3 7h11v10H3z"/><path d="m14 11 7-4v10l-7-4"/></g>
-  <g id="i-media_player"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="m10 8.5 5 2.5-5 2.5z"/></g>
-  <g id="i-person"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></g>
-  <g id="i-device_tracker"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></g>
-  <g id="i-fan"><circle cx="12" cy="12" r="2"/><path d="M12 10V3.5M13.7 13l5.6 3.2M10.3 13l-5.6 3.2"/><path d="M12 10a4 4 0 0 1 4-4M13.7 13a4 4 0 0 1 1.5 5.5M10.3 13a4 4 0 0 0-5.5-1.5"/></g>
-  <g id="i-number"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16"/></g>
-  <g id="i-select"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 11 3 3 3-3"/></g>
-  <g id="i-button"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></g>
-  <g id="i-input_boolean"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="2.6"/></g>
-  <g id="i-update"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 18h16"/></g>
-  <g id="i-event"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></g>
-  <g id="i-automation"><path d="M4 12h4l2-5 4 10 2-5h4"/></g>
-  <g id="i-water_heater"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M6 20h12"/></g>
-  <g id="i-valve"><circle cx="12" cy="12" r="4"/><path d="M2 12h6M16 12h6M12 2v6"/></g>
-  <g id="i-scene"><path d="m12 3 2.6 5.6 6.4.8-4.7 4.3 1.2 6.3L12 17l-5.5 3 1.2-6.3L3 9.4l6.4-.8Z"/></g>
-  <g id="i-script"><path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V6"/><path d="M5 6a2 2 0 1 0-4 0v0h4M9 9h6M9 13h6"/></g>
-  <g id="i-default"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="2"/></g>
+  <symbol id="i-sensor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
+  <symbol id="i-binary_sensor" viewBox="0 0 24 24"><path d="M4 8h10a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Z"/><circle cx="14" cy="12" r="2.2"/></symbol>
+  <symbol id="i-switch" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.2 6.2a8 8 0 1 0 11.6 0"/></symbol>
+  <symbol id="i-light" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.5.7.5 1.1h6c0-.4.1-.8.5-1.1A6 6 0 0 0 12 3Z"/></symbol>
+  <symbol id="i-climate" viewBox="0 0 24 24"><path d="M12 3v11"/><circle cx="12" cy="17" r="4"/><path d="M15 6h3M15 9.5h3"/></symbol>
+  <symbol id="i-cover" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 7h11v10H3z"/><path d="m14 11 7-4v10l-7-4"/></symbol>
+  <symbol id="i-media_player" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="m10 8.5 5 2.5-5 2.5z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-device_tracker" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-fan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 10V3.5M13.7 13l5.6 3.2M10.3 13l-5.6 3.2"/><path d="M12 10a4 4 0 0 1 4-4M13.7 13a4 4 0 0 1 1.5 5.5M10.3 13a4 4 0 0 0-5.5-1.5"/></symbol>
+  <symbol id="i-number" viewBox="0 0 24 24"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 11 3 3 3-3"/></symbol>
+  <symbol id="i-button" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-input_boolean" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="2.6"/></symbol>
+  <symbol id="i-update" viewBox="0 0 24 24"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 18h16"/></symbol>
+  <symbol id="i-event" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></symbol>
+  <symbol id="i-automation" viewBox="0 0 24 24"><path d="M4 12h4l2-5 4 10 2-5h4"/></symbol>
+  <symbol id="i-water_heater" viewBox="0 0 24 24"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M6 20h12"/></symbol>
+  <symbol id="i-valve" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M2 12h6M16 12h6M12 2v6"/></symbol>
+  <symbol id="i-scene" viewBox="0 0 24 24"><path d="m12 3 2.6 5.6 6.4.8-4.7 4.3 1.2 6.3L12 17l-5.5 3 1.2-6.3L3 9.4l6.4-.8Z"/></symbol>
+  <symbol id="i-script" viewBox="0 0 24 24"><path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V6"/><path d="M5 6a2 2 0 1 0-4 0v0h4M9 9h6M9 13h6"/></symbol>
+  <symbol id="i-default" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="2"/></symbol>
 
-  <g id="n-overview"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></g>
-  <g id="n-areas"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></g>
-  <g id="n-devices"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1.5"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></g>
-  <g id="n-signout"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></g>
-  <g id="i-search"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></g>
-  <g id="i-chevron"><path d="m9 5 7 7-7 7"/></g>
-  <g id="i-back"><path d="M19 12H5M11 18l-6-6 6-6"/></g>
-  <g id="i-sun"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2M4.6 4.6 6 6M18 18l1.4 1.4M19.4 4.6 18 6M6 18l-1.4 1.4"/></g>
-  <g id="i-moon"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></g>
-  <g id="i-alert"><path d="M12 8v5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></g>
-  <g id="i-menu"><path d="M4 6h16M4 12h16M4 18h16"/></g>
-  <g id="i-check"><path d="m4 12.5 5 5L20 6.5"/></g>
-  <g id="i-close"><path d="M6 6l12 12M18 6 6 18"/></g>
+  <symbol id="n-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  <symbol id="n-areas" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
+  <symbol id="n-devices" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1.5"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></symbol>
+  <symbol id="n-irrigation" viewBox="0 0 24 24"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M4 20h16"/></symbol>
+  <symbol id="n-signout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2M4.6 4.6 6 6M18 18l1.4 1.4M19.4 4.6 18 6M6 18l-1.4 1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12.5 5 5L20 6.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
 </defs></svg>
 
 <!-- ---------- boot ---------- -->
@@ -102,6 +103,7 @@
       <a class="nav-item" href="#/" data-nav="overview"><svg class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
       <a class="nav-item" href="#/areas" data-nav="areas"><svg class="ico"><use href="#n-areas"/></svg><span>Areas</span><span class="nav-n" id="nav-areas-n"></span></a>
       <a class="nav-item" href="#/devices" data-nav="devices"><svg class="ico"><use href="#n-devices"/></svg><span>All devices</span><span class="nav-n" id="nav-devices-n"></span></a>
+      <a class="nav-item" href="#/irrigation" data-nav="irrigation"><svg class="ico"><use href="#n-irrigation"/></svg><span>Irrigation</span><span class="nav-n" id="nav-irrig-n"></span></a>
     </nav>
 
     <div class="side-foot">

@@ -139,5 +139,55 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('no overlap at narrow width either', r===0, `${r} overlaps`);
   await c.close();
 }
+// Irrigation is on demand: the builder sends a request, the bridge answers,
+// and the result lands as a report card. No timer, no vendor credentials.
+{
+  const [p,c]=await open('#/irrigation');
+  await p.waitForSelector('.rep-builder');
+  const r=await p.evaluate(()=>({
+    title:document.querySelector('.page-title')?.textContent,
+    options:document.querySelectorAll('#irr-type option').length,
+    seeded:document.querySelectorAll('.rep-card').length,
+    scripts:[...document.documentElement.innerHTML].join('').includes('token_id')}));
+  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options===10,
+    `${r.options} options`);
+  check('seeded report history renders', r.seeded>=1, `${r.seeded} cards`);
+  check('no vendor credential leaks into the page', r.scripts===false);
+  // End to end: pick a range report, press Generate, the answer arrives.
+  await p.selectOption('#irr-type','motor_log');
+  await p.waitForTimeout(150);
+  const before=await p.locator('.rep-card').count();
+  await p.click('[data-act="irr-gen"]');
+  await p.waitForFunction((n)=>document.querySelectorAll('.rep-card').length>n,{arg:before},{timeout:8000});
+  const ready=await p.evaluate(()=>[...document.querySelectorAll('.rep-card .rep-title')]
+    .some(t=>t.textContent==='Motor log'));
+  check('generated report lands as a card', ready===true);
+  const toast=await p.evaluate(()=>[...document.querySelectorAll('.toast')].map(t=>t.textContent).join('|'));
+  check('user is told the report is ready', /ready/i.test(toast), toast.slice(0,80));
+  // A to-before-from range is refused client-side, before any request.
+  await p.selectOption('#irr-type','valves');
+  await p.fill('#irr-from','2026-02-22'); await p.fill('#irr-to','2026-02-20');
+  await p.click('[data-act="irr-gen"]');
+  await p.waitForTimeout(250);
+  const refused=await p.evaluate(()=>[...document.querySelectorAll('.toast')].map(t=>t.textContent).join('|'));
+  check('reversed dates are refused before sending', /before/.test(refused), refused.slice(-80));
+  await c.close();
+}
+{
+  // Viewers see results but get no builder: reports hit billable vendor APIs.
+  const [p,c]=await open('?viewer=1#/irrigation');
+  await p.waitForSelector('.page-title');
+  const r=await p.evaluate(()=>({builder:!!document.querySelector('.rep-builder'),
+    note:document.body.textContent.includes('limited to controllers')}));
+  check('viewers get results but no builder', !r.builder&&r.note===true);
+  await c.close();
+}
+{
+  const [p,c]=await open('?noirrig=1#/irrigation');
+  await p.waitForSelector('.page-title');
+  const t=await p.evaluate(()=>document.querySelector('.empty h3')?.textContent);
+  check('empty history explains itself', t==='No reports yet', `${t}`);
+  await c.close();
+}
 await b.close();
 console.log(fail?`\n${fail} issue(s) found`:'\nno issues found');

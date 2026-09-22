@@ -14,46 +14,47 @@
      rendering underneath it. Display now has a single source of truth. -->
 <body data-view="boot">
 
-<!-- Icon set: one <g> per HA domain / UI affordance, drawn by <use>. -->
+<!-- Icon set: one <symbol> per HA domain / UI affordance, drawn by <use>. Symbols carry their own viewBox so the 24-grid artwork scales into the 19px .ico box instead of clipping. -->
 <svg class="sprite" aria-hidden="true" focusable="false"><defs>
-  <g id="i-sensor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></g>
-  <g id="i-binary_sensor"><path d="M4 8h10a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Z"/><circle cx="14" cy="12" r="2.2"/></g>
-  <g id="i-switch"><path d="M12 3v9"/><path d="M6.2 6.2a8 8 0 1 0 11.6 0"/></g>
-  <g id="i-light"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.5.7.5 1.1h6c0-.4.1-.8.5-1.1A6 6 0 0 0 12 3Z"/></g>
-  <g id="i-climate"><path d="M12 3v11"/><circle cx="12" cy="17" r="4"/><path d="M15 6h3M15 9.5h3"/></g>
-  <g id="i-cover"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18"/></g>
-  <g id="i-lock"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></g>
-  <g id="i-camera"><path d="M3 7h11v10H3z"/><path d="m14 11 7-4v10l-7-4"/></g>
-  <g id="i-media_player"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="m10 8.5 5 2.5-5 2.5z"/></g>
-  <g id="i-person"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></g>
-  <g id="i-device_tracker"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></g>
-  <g id="i-fan"><circle cx="12" cy="12" r="2"/><path d="M12 10V3.5M13.7 13l5.6 3.2M10.3 13l-5.6 3.2"/><path d="M12 10a4 4 0 0 1 4-4M13.7 13a4 4 0 0 1 1.5 5.5M10.3 13a4 4 0 0 0-5.5-1.5"/></g>
-  <g id="i-number"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16"/></g>
-  <g id="i-select"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 11 3 3 3-3"/></g>
-  <g id="i-button"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></g>
-  <g id="i-input_boolean"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="2.6"/></g>
-  <g id="i-update"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 18h16"/></g>
-  <g id="i-event"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></g>
-  <g id="i-automation"><path d="M4 12h4l2-5 4 10 2-5h4"/></g>
-  <g id="i-water_heater"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M6 20h12"/></g>
-  <g id="i-valve"><circle cx="12" cy="12" r="4"/><path d="M2 12h6M16 12h6M12 2v6"/></g>
-  <g id="i-scene"><path d="m12 3 2.6 5.6 6.4.8-4.7 4.3 1.2 6.3L12 17l-5.5 3 1.2-6.3L3 9.4l6.4-.8Z"/></g>
-  <g id="i-script"><path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V6"/><path d="M5 6a2 2 0 1 0-4 0v0h4M9 9h6M9 13h6"/></g>
-  <g id="i-default"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="2"/></g>
+  <symbol id="i-sensor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
+  <symbol id="i-binary_sensor" viewBox="0 0 24 24"><path d="M4 8h10a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Z"/><circle cx="14" cy="12" r="2.2"/></symbol>
+  <symbol id="i-switch" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.2 6.2a8 8 0 1 0 11.6 0"/></symbol>
+  <symbol id="i-light" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.5.7.5 1.1h6c0-.4.1-.8.5-1.1A6 6 0 0 0 12 3Z"/></symbol>
+  <symbol id="i-climate" viewBox="0 0 24 24"><path d="M12 3v11"/><circle cx="12" cy="17" r="4"/><path d="M15 6h3M15 9.5h3"/></symbol>
+  <symbol id="i-cover" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 7h11v10H3z"/><path d="m14 11 7-4v10l-7-4"/></symbol>
+  <symbol id="i-media_player" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="m10 8.5 5 2.5-5 2.5z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-device_tracker" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-fan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 10V3.5M13.7 13l5.6 3.2M10.3 13l-5.6 3.2"/><path d="M12 10a4 4 0 0 1 4-4M13.7 13a4 4 0 0 1 1.5 5.5M10.3 13a4 4 0 0 0-5.5-1.5"/></symbol>
+  <symbol id="i-number" viewBox="0 0 24 24"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 11 3 3 3-3"/></symbol>
+  <symbol id="i-button" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-input_boolean" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="2.6"/></symbol>
+  <symbol id="i-update" viewBox="0 0 24 24"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 18h16"/></symbol>
+  <symbol id="i-event" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></symbol>
+  <symbol id="i-automation" viewBox="0 0 24 24"><path d="M4 12h4l2-5 4 10 2-5h4"/></symbol>
+  <symbol id="i-water_heater" viewBox="0 0 24 24"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M6 20h12"/></symbol>
+  <symbol id="i-valve" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M2 12h6M16 12h6M12 2v6"/></symbol>
+  <symbol id="i-scene" viewBox="0 0 24 24"><path d="m12 3 2.6 5.6 6.4.8-4.7 4.3 1.2 6.3L12 17l-5.5 3 1.2-6.3L3 9.4l6.4-.8Z"/></symbol>
+  <symbol id="i-script" viewBox="0 0 24 24"><path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V6"/><path d="M5 6a2 2 0 1 0-4 0v0h4M9 9h6M9 13h6"/></symbol>
+  <symbol id="i-default" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="2"/></symbol>
 
-  <g id="n-overview"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></g>
-  <g id="n-areas"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></g>
-  <g id="n-devices"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1.5"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></g>
-  <g id="n-signout"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></g>
-  <g id="i-search"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></g>
-  <g id="i-chevron"><path d="m9 5 7 7-7 7"/></g>
-  <g id="i-back"><path d="M19 12H5M11 18l-6-6 6-6"/></g>
-  <g id="i-sun"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2M4.6 4.6 6 6M18 18l1.4 1.4M19.4 4.6 18 6M6 18l-1.4 1.4"/></g>
-  <g id="i-moon"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></g>
-  <g id="i-alert"><path d="M12 8v5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></g>
-  <g id="i-menu"><path d="M4 6h16M4 12h16M4 18h16"/></g>
-  <g id="i-check"><path d="m4 12.5 5 5L20 6.5"/></g>
-  <g id="i-close"><path d="M6 6l12 12M18 6 6 18"/></g>
+  <symbol id="n-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  <symbol id="n-areas" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
+  <symbol id="n-devices" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1.5"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></symbol>
+  <symbol id="n-irrigation" viewBox="0 0 24 24"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M4 20h16"/></symbol>
+  <symbol id="n-signout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2M4.6 4.6 6 6M18 18l1.4 1.4M19.4 4.6 18 6M6 18l-1.4 1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12.5 5 5L20 6.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
 </defs></svg>
 
 <!-- ---------- boot ---------- -->
@@ -102,6 +103,7 @@
       <a class="nav-item" href="#/" data-nav="overview"><svg class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
       <a class="nav-item" href="#/areas" data-nav="areas"><svg class="ico"><use href="#n-areas"/></svg><span>Areas</span><span class="nav-n" id="nav-areas-n"></span></a>
       <a class="nav-item" href="#/devices" data-nav="devices"><svg class="ico"><use href="#n-devices"/></svg><span>All devices</span><span class="nav-n" id="nav-devices-n"></span></a>
+      <a class="nav-item" href="#/irrigation" data-nav="irrigation"><svg class="ico"><use href="#n-irrigation"/></svg><span>Irrigation</span><span class="nav-n" id="nav-irrig-n"></span></a>
     </nav>
 
     <div class="side-foot">
@@ -202,6 +204,18 @@
         leak:{name:'Pump house leak',entity_id:'binary_sensor.leak',state:'unavailable',area:'pump_house',attrs:{device_class:'moisture'}}
       },
       lock:{ gate_lock:{name:'Gate lock',entity_id:'lock.gate_lock',state:'locked',area:'farmhouse',attrs:{}} }
+    },
+    irrigation:{
+      motors:[{id:'860537060208758',name:'River Motor',status:'on',source:'livesky',detail:'last update 06:10'}],
+      controllers:[{id:'6039',name:'Well Motor 7.5HP',status:'off',source:'niagara',detail:'cluster 6039'},{id:'6036',name:'Well zone valves',status:'unknown',source:'niagara',detail:'cluster 6036'}],
+      dcon:{device:'DCON controller',serial:'MCON874Q000568',gprs:'connected',last:'Timer 12 · completed 08:20',running:'',next:'Timer 13 · 06:00'},
+      valves:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},{id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}],
+      timerLog:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      motorLog:[{at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped'}],
+      electricity:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}],
+      pressure:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}],
+      weather:{temp:31.4,feels:34,humidity:58,desc:'haze',wind:3.1},
+      meta:{sources:{livesky:'ok',niagara:'ok',dcon:'ok',weather:'ok'},error:''}
     }
   };
   if(params.get('real')){
@@ -210,8 +224,15 @@
     data.areas=f.areas; data.entities=f.entities;
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
-  if(params.get('big')){
-    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
+  if(params.get('noirrig')) delete data.irrigation;
+  data.irrigation_reports={
+    rep_seed1:{type:'timer_log',label:'Timer log',params:{from:'2026-02-20',to:'2026-02-22'},
+      status:'ok',summary:'1 entries · 2026-02-20 → 2026-02-22',
+      rows:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      at:now-3600000}
+  };
+  if(params.get('noirrig')) delete data.irrigation_reports;
+  if(params.get('big')){    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
     const names=['Zone valve','Soil probe','Fence energiser','Water meter','Tank float','Weather station','Frost alarm','Irrigation controller','Solar inverter','Battery bank'];
     for(let i=0;i<1350;i++){
       const d=doms[i%doms.length]; const n=names[i%names.length]+' '+(Math.floor(i/names.length)+1);
@@ -226,6 +247,48 @@
   const denied=params.get('denied');
   const controller=params.get('viewer')?false:true;
   const store={'acl/controllers/u1':controller,'.info/serverTimeOffset':0};
+  // Stand-in for the bridge: answering an irrigation_requests push with a
+  // canned report, so Generate round-trips without vendor credentials.
+  const listeners={};
+  const fire=(p,val)=>{(listeners[p]||[]).forEach(cb=>{try{cb({val:()=>val});}catch(e){}});};
+  const irrLabels={river_status:'River motor status',well_status:'Well motor status',
+    controller:'Controller dashboard',weather:'Field weather',electricity:'Electricity snapshot',
+    pressure:'Pressure snapshot',valves:'Valve runtime',timer_log:'Timer log',
+    motor_log:'Motor log',pressure_range:'Pressure range'};
+  const irrCanned=(type,from,to)=>{
+    const range=(from&&to)?` · ${from} → ${to}`:'';
+    const base={type,label:irrLabels[type]||type,params:{},status:'ok',at:Date.now()};
+    if(from&&to) base.params={from,to};
+    if(type==='valves') return {...base,summary:'2 valves · 1 open'+range,
+      rows:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},
+            {id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}]};
+    if(type==='timer_log'||type==='motor_log') return {...base,summary:'1 entries'+range,
+      rows:[{at:(to||'2026-02-22')+' 06:00',event:type==='timer_log'?'timer':'motor',
+             detail:type==='timer_log'?'Timer 12 completed':'Well motor stopped'}]};
+    if(type==='river_status') return {...base,summary:'1 running of 1 motors',
+      rows:[{id:'river',name:'River Motor',status:'on',source:'livesky'}]};
+    if(type==='well_status') return {...base,summary:'0 running of 1 controllers',
+      rows:[{id:'6039',name:'Well Motor 7.5HP',status:'off',source:'niagara'}]};
+    if(type==='electricity') return {...base,summary:'4.2 kWh',
+      rows:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}]};
+    if(type==='pressure'||type==='pressure_range') return {...base,summary:'2.1 bar'+range,
+      rows:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}]};
+    if(type==='weather') return {...base,summary:'31°C, haze',rows:[]};
+    return {...base,summary:'DCON controller',rows:[]};
+  };
+  const onImpl=(path,cb,err)=>{
+    if(path.endsWith('/entities')) window.__push=(u)=>{
+      data.entities[u.domain][u.id].state=u.state; cb({val:()=>data.entities}); };
+    if(path in store){cb({val:()=>store[path]});return cb;}
+    (listeners[path]=listeners[path]||[]).push(cb);
+    if(params.get('nodata')) return cb;             // never delivers: the loading state
+    if(denied){ err&&err({code:'PERMISSION_DENIED'}); return cb; }
+    const key=path.split('/').pop();
+    const val=path.includes('/irrigation_reports/')
+      ? (key==='irrigation_reports'?data.irrigation_reports:data.irrigation_reports?.[key])
+      : data[key];
+    cb({val:()=>val}); return cb;
+  };
   window.firebase={
     app:()=>({options:{databaseURL:'https://mock'}}),
     auth:Object.assign(()=>({
@@ -233,15 +296,18 @@
       signInWithPopup:()=>Promise.resolve(), signOut:()=>Promise.resolve()
     }),{GoogleAuthProvider:function(){this.setCustomParameters=()=>{}}}),
     database:Object.assign(()=>({ref:(path)=>({
-      push:()=>({set:(v)=>{console.log('COMMAND',JSON.stringify(v));return Promise.resolve();}}),
-      on:(ev,cb,err)=>{
-        if(path.endsWith('/entities')) window.__push=(u)=>{
-          data.entities[u.domain][u.id].state=u.state; cb({val:()=>data.entities}); };
-        if(path in store){cb({val:()=>store[path]});return cb;}
-        const key=path.split('/').pop();
-        if(params.get('nodata')) return cb;             // never delivers: the loading state
-        if(denied){ err&&err({code:'PERMISSION_DENIED'}); return cb; }
-        cb({val:()=>data[key]}); return cb; },
+      push:()=>{ const k='req_'+Math.random().toString(36).slice(2,9);
+        return {key:k, set:(v,done)=>{console.log('COMMAND',JSON.stringify(v));
+          if(path.endsWith('/irrigation_requests')&&data.irrigation_reports){
+            setTimeout(()=>{ const rep=irrCanned(v.type,v.from,v.to);
+              data.irrigation_reports[k]=rep;
+              fire('farms/snof/irrigation_reports',data.irrigation_reports);
+              fire(`farms/snof/irrigation_reports/${k}`,rep); },400);
+          }
+          if(done) setTimeout(()=>done(null),0);
+          return Promise.resolve(); }};},
+      limitToLast:()=>({on:(ev,cb,err)=>onImpl(path,cb,err),off:()=>{}}),
+      on:(ev,cb,err)=>onImpl(path,cb,err),
       off:()=>{}
     })}),{ServerValue:{TIMESTAMP:{'.sv':'timestamp'}}})
   };

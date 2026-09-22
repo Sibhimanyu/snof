@@ -12,6 +12,7 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | The NUC or the add-on | [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) |
 | Anything that can operate hardware | [docs/device-control.md](docs/device-control.md) |
 | `dashboard/public/` | [docs/dashboard.md](docs/dashboard.md) |
+| Vendor motors/valves (Livesky, Niagara, Mobitech) | [docs/irrigation.md](docs/irrigation.md) |
 | Hosting, rules, the allowlist | [docs/firebase-deploy.md](docs/firebase-deploy.md) |
 | Tests or the preview harness | [docs/testing-and-preview.md](docs/testing-and-preview.md) |
 
