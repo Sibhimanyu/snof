@@ -30,6 +30,7 @@ let canControl = false;
 let currentUser = null;
 let search = '';
 let domainFilter = null;
+let statusFilter = 'all';   // all | active | offline
 let refs = [];
 let clockSkewMs = 0;
 let statusTimer = null;
@@ -88,6 +89,7 @@ function leave() {
   detach();
   state = { meta: {}, areas: {}, entities: {} };
   canControl = false; currentUser = null; firstSnapshot = false;
+  statusFilter = 'all'; domainFilter = null;
   interacting = false; viewDirty = false;
   prevStates.clear(); pending.clear();
   setView('gate');
@@ -394,9 +396,12 @@ function statTiles(ents) {
   const on = ents.filter(isOn).length;
   const bad = ents.filter(isBad).length;
   const areas = new Set(ents.map((e) => e.area)).size;
+  // "698 live entities" is a lie when 373 of them are not reporting. Lead with
+  // how many are actually answering, and keep the total as context.
   return `<div class="stats">
-    <div class="stat stat-accent"><span class="stat-label">Live entities</span>
-      <span class="stat-value">${ents.length}</span><span class="stat-note">mirrored from Home Assistant</span></div>
+    <div class="stat"><span class="stat-label">Reporting</span>
+      <span class="stat-value">${ents.length - bad}</span>
+      <span class="stat-note">of ${ents.length} mirrored entities</span></div>
     <div class="stat"><span class="stat-label">Areas</span>
       <span class="stat-value">${areas}</span><span class="stat-note">rooms and zones</span></div>
     <div class="stat stat-on"><span class="stat-label">Active now</span>
@@ -407,20 +412,51 @@ function statTiles(ents) {
 }
 
 function overviewView(all, areas) {
-  const controllable = all.filter((e) => CONTROLLABLE.has(e.domain)).sort(byName);
-  const quick = controllable.filter(isOn).concat(controllable.filter((e) => !isOn(e))).slice(0, 8);
-  const attention = all.filter(isBad).sort(byName).slice(0, 8);
+  // An unavailable device in a *control* panel is a dead switch. They belong in
+  // the breakdown below, never here.
+  const operable = all.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
+  const quick = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 8);
+  const offline = all.filter(isBad);
+  const controllableTotal = all.filter((e) => CONTROLLABLE.has(e.domain)).length;
 
   const areaCards = areas.slice(0, 8).map(([id, list]) => areaCard(id, list)).join('');
+  const more = operable.length - quick.length;
 
   return head(state.meta?.name || 'SNOF', 'Everything the farm is doing, right now.') +
     statTiles(all) +
-    (quick.length ? sectionHead('i-switch', canControl ? 'Quick controls' : 'Controllable devices') +
-      `<div class="dev-grid">${quick.map(deviceCard).join('')}</div>` : '') +
-    (attention.length ? sectionHead('i-alert', 'Needs a look') +
-      `<div class="list">${attention.map(row).join('')}</div>` : '') +
+    sectionHead('i-switch', canControl ? 'Quick controls' : 'Controllable devices') +
+    (quick.length
+      ? `<div class="dev-grid">${quick.map(deviceCard).join('')}</div>` +
+        (more > 0 ? `<p class="more-note">${more} more operable ${more === 1 ? 'device' : 'devices'} — ` +
+          `<a href="#/devices" data-act="filter" data-status="active">see all</a></p>` : '')
+      : emptyBlock('Nothing to operate right now',
+          controllableTotal
+            ? `All ${controllableTotal} switches, lights and fans are currently unavailable.`
+            : 'No switches, lights or fans are exposed by Home Assistant yet.')) +
+    (offline.length ? sectionHead('i-alert', 'Not reporting') + offlineBreakdown(offline) : '') +
     sectionHead('n-areas', 'Areas') +
-    (areaCards ? `<div class="grid">${areaCards}</div>` : emptyBlock('No areas yet', 'Assign entities to an area in Home Assistant and they will group themselves here.'));
+    (areaCards ? `<div class="grid">${areaCards}</div>`
+               : emptyBlock('No areas yet', 'Assign entities to an area in Home Assistant and they will group themselves here.'));
+}
+
+/** 373 unavailable entities listed alphabetically is noise. Grouped by domain it
+ *  is a to-do list: which integration died, and how much of it. */
+function offlineBreakdown(offline) {
+  const tally = new Map();
+  for (const e of offline) tally.set(e.domain, (tally.get(e.domain) || 0) + 1);
+  const rows = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const total = offline.length;
+  return `<p class="more-note">${total} ${total === 1 ? 'entity is' : 'entities are'} ` +
+    `unavailable or unknown. Most likely a handful of integrations, not ${total} separate faults.</p>` +
+    `<div class="breakdown">` + rows.map(([domain, n]) => `
+      <button class="brk" data-act="filter" data-status="offline" data-domain="${escapeHtml(domain)}">
+        <span class="brk-icon"><svg class="ico ico-sm"><use href="#i-${iconName(domain)}"/></svg></span>
+        <span class="brk-text">
+          <span class="brk-name">${escapeHtml(humanDomain(domain))}</span>
+          <span class="brk-sub">not reporting</span>
+        </span>
+        <span class="brk-n">${n}</span>
+      </button>`).join('') + `</div>`;
 }
 
 function areasView(all) {
@@ -484,15 +520,27 @@ function areaView(all, id) {
 }
 
 function devicesView(all) {
-  const domains = [...new Set(all.map((e) => e.domain))].sort();
-  const list = all.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
-  const chips = `<div class="chips">` + domains.map((d) => {
-    const n = all.filter((e) => e.domain === d).length;
+  const byStatus = (e) => statusFilter === 'all' ? true
+    : statusFilter === 'active' ? !isBad(e) : isBad(e);
+  const scoped = all.filter(byStatus);
+  const domains = [...new Set(scoped.map((e) => e.domain))].sort();
+  const list = scoped.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
+
+  const counts = { all: all.length, active: all.filter((e) => !isBad(e)).length,
+                   offline: all.filter(isBad).length };
+  const seg = `<div class="seg" role="group" aria-label="Filter by status">` +
+    [['all', 'All'], ['active', 'Reporting'], ['offline', 'Not reporting']].map(([k, label]) =>
+      `<button data-act="status" data-status="${k}" aria-pressed="${statusFilter === k}">` +
+      `${label} <span class="n">${counts[k]}</span></button>`).join('') + `</div>`;
+
+  const chips = domains.length > 1 ? `<div class="chips">` + domains.map((d) => {
+    const n = scoped.filter((e) => e.domain === d).length;
     return `<button class="chip${domainFilter === d ? ' on' : ''}" aria-pressed="${domainFilter === d}" ` +
       `data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}<span class="n">${n}</span></button>`;
-  }).join('') + `</div>`;
+  }).join('') + `</div>` : '';
 
-  return head('All devices', `${list.length} of ${all.length} entities`) + chips +
+  return head('All devices', `${list.length} shown of ${all.length} entities`) +
+    `<div class="toolbar-row">${seg}</div>` + chips +
     (list.length ? `<div class="list${list.length > 8 ? ' cols' : ''}">${list.map((e) => row(e, true)).join('')}</div>`
                  : noMatch());
 }
@@ -511,7 +559,7 @@ function deviceCard(ent) {
     <div class="dev-top">
       <span class="dev-icon"><svg class="ico"><use href="#i-${iconFor(ent)}"/></svg></span>
       <span class="dev-text">
-        <span class="dev-name">${escapeHtml(ent.name || ent.entity_id)}</span>
+        <span class="dev-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
         <span class="dev-meta">${escapeHtml(humanDomain(ent.domain))}${subtitle(ent)}</span>
       </span>
       ${canControl
@@ -536,7 +584,7 @@ function row(ent, withArea = false) {
   return `<div class="row ${isBad(ent) ? 'is-bad' : isOn(ent) ? 'is-on' : ''}" data-key="${escapeHtml(ent.key)}">
     <span class="row-icon"><svg class="ico ico-sm"><use href="#i-${iconFor(ent)}"/></svg></span>
     <span class="row-main">
-      <span class="row-name">${escapeHtml(ent.name || ent.entity_id)}</span>
+      <span class="row-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
       <span class="row-meta">${escapeHtml(withArea ? areaName(ent.area) : humanDomain(ent.domain))}${subtitle(ent)}</span>
     </span>
     <span class="dev-state ${stateClass(ent)}">${escapeHtml(formatState(ent))}</span>
@@ -578,6 +626,21 @@ function wire(all) {
     input.onpointercancel = endInteract;
     input.onkeyup = endInteract;
     input.onblur = endInteract;
+  });
+
+  view.querySelectorAll('[data-act="status"]').forEach((btn) => {
+    btn.onclick = () => { statusFilter = btn.dataset.status; domainFilter = null; render(); };
+  });
+
+  // A breakdown row is a query: show me exactly these, on the devices page.
+  view.querySelectorAll('[data-act="filter"]').forEach((node) => {
+    node.onclick = (e) => {
+      e.preventDefault();
+      statusFilter = node.dataset.status || 'all';
+      domainFilter = node.dataset.domain || null;
+      location.hash = '#/devices';
+      render();
+    };
   });
 
   view.querySelectorAll('.chip[data-domain]').forEach((chip) => {
