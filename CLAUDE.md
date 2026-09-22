@@ -30,6 +30,8 @@ Architecture, data shape and setup are in README.md — read it first.
 
 ## Deploying the add-on (easy to get silently wrong)
 
+Full runbook with every failure mode: `docs/nuc-access-and-deploy.md`. Summary:
+
 1. Bump `version:` in `addon/snof_bridge/config.yaml` — Supervisor will not offer
    an update otherwise.
 2. `./scripts/deploy-addon.sh ha-nuc /addons/snof_bridge`
