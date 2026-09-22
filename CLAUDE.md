@@ -91,7 +91,12 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   have an area in HA. Fixing that is an HA-side task; it flows through live.
 - The SSH add-on config had a plaintext `password:`; the owner was advised to
   clear it now that key auth works. Confirm before assuming it was done.
-- Device control shipped in the dashboard and add-on 0.3.0 but was **not yet
-  deployed or exercised against the live NUC** as of 2026-09-21. It stays inert
-  until `allow_control: true` is set in the add-on options AND someone is
-  granted `--control`.
+- Add-on **0.3.0 is deployed and running** on the NUC as of 2026-09-22, verified
+  by image tag and by `commands.py` existing inside the container. It starts
+  clean: 13 areas, 19 devices, 1366 entities, 698 published across 18 domains.
+- Control is **deployed but inert** — the log line to look for is
+  `Device control is disabled; not watching the command queue`. It stays that
+  way until `allow_control: true` AND someone is granted `--control`. The
+  command stream has therefore still never executed against real hardware.
+- The SSH add-on had a plaintext `password:` in its options; it was still there
+  on 2026-09-22 and should be removed and rotated now that key auth is proven.
