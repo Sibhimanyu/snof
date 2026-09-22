@@ -1,8 +1,21 @@
 # SNOF — Home Assistant → Firebase bridge
 
 Mirrors Home Assistant state from the farm's Intel NUC into Firebase Realtime
-Database and renders it, room by room, at https://snof-live.web.app.
-Architecture, data shape and setup are in README.md — read it first.
+Database and renders it at https://snof-live.web.app, where lights, switches and
+fans can also be operated.
+
+**Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — current state, what is armed
+and what is not, and open items. Then the doc for whatever you are touching:
+
+| Touching | Read |
+|---|---|
+| The NUC or the add-on | [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) |
+| Anything that can operate hardware | [docs/device-control.md](docs/device-control.md) |
+| `dashboard/public/` | [docs/dashboard.md](docs/dashboard.md) |
+| Hosting, rules, the allowlist | [docs/firebase-deploy.md](docs/firebase-deploy.md) |
+| Tests or the preview harness | [docs/testing-and-preview.md](docs/testing-and-preview.md) |
+
+Architecture and data shape are in README.md.
 
 ## Hard rules
 
@@ -74,10 +87,11 @@ validator's refusal cases). They run with no dependencies installed, so keep
 websocket/RTDB orchestration in `main.py` or the command stream, which is where
 every real bug so far has lived. Verify that path against the live NUC.
 
-Dashboard: `.context/preview/` mocks Firebase so every screen — including the
-signed-out, denied, viewer-tier and loading states — can be screenshotted
-headlessly. `./sync.sh` re-copies the working tree into it; `node shoot.mjs`
-shoots all of them and fails on any console error.
+Dashboard: `dashboard/preview/` mocks Firebase so every screen renders
+headlessly with no credentials. `cd dashboard/preview && npm run all`.
+**Review with `?real=1`** — 698 entities, 373 unavailable, real Home Assistant
+naming. Every bug found on 2026-09-22 was invisible on the clean 26-entity mock
+and obvious on the real one.
 
 When writing verification shell, remember `grep -c` exits 1 on zero matches and
 `if cmd | head` tests `head`'s status — both produced false alarms here.

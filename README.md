@@ -40,6 +40,17 @@ than `control_max_age_seconds` (default 120) are dropped rather than run, so a
 queue that builds up while the bridge is down does not fire all at once when it
 returns.
 
+## Documentation
+
+| Document | Covers |
+|---|---|
+| [docs/HANDOFF.md](docs/HANDOFF.md) | **Start here** — current state and open items |
+| [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) | SSH to the NUC; §6a deploys the add-on with no UI |
+| [docs/device-control.md](docs/device-control.md) | The command path, its three gates, arming it |
+| [docs/dashboard.md](docs/dashboard.md) | Front-end architecture and design system |
+| [docs/firebase-deploy.md](docs/firebase-deploy.md) | Hosting, rules, the two-tier allowlist |
+| [docs/testing-and-preview.md](docs/testing-and-preview.md) | Every suite and the fixture that matters |
+
 ## Layout
 
 | Path | What it is |

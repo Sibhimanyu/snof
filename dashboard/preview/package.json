@@ -1,0 +1,15 @@
+{
+  "name": "snof-dashboard-preview",
+  "private": true,
+  "type": "module",
+  "description": "Mocked Firebase harness: renders every dashboard state headlessly, with no project and no credentials.",
+  "scripts": {
+    "sync": "./sync.sh",
+    "serve": "python3 -m http.server 8765",
+    "shots": "node shoot.mjs",
+    "verify": "node verify.mjs",
+    "qa": "node qa.mjs",
+    "all": "./sync.sh && node shoot.mjs && node verify.mjs && node qa.mjs"
+  },
+  "devDependencies": { "playwright": "1.63.0" }
+}
