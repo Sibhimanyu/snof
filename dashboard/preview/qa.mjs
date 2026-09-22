@@ -158,7 +158,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await p.waitForTimeout(150);
   const before=await p.locator('.rep-card').count();
   await p.click('[data-act="irr-gen"]');
-  await p.waitForFunction((n)=>document.querySelectorAll('.rep-card').length>n,{arg:before},{timeout:8000});
+  await p.waitForFunction((n)=>document.querySelectorAll('.rep-card').length>n, before, {timeout:8000});
   const ready=await p.evaluate(()=>[...document.querySelectorAll('.rep-card .rep-title')]
     .some(t=>t.textContent==='Motor log'));
   check('generated report lands as a card', ready===true);

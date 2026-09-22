@@ -48,12 +48,12 @@ options:
     - input_boolean
   control_max_age_seconds: 120
   log_level: info
-  # Irrigation mirror (Mobitech DCON, Livesky, Niagara, OpenWeather). Leave
-  # false to poll nothing; turning it on mirrors a sanitized read-only
-  # snapshot to /farms/<slug>/irrigation for the dashboard. Credentials stay
-  # on the NUC and are never mirrored. Nothing here can operate a pump.
+  # Irrigation reports (Mobitech DCON, Livesky, Niagara, OpenWeather). Leave
+  # false to answer nothing; turning it on lets allowlisted controllers build
+  # report requests in the dashboard, which the bridge executes on demand —
+  # nothing is polled. Credentials stay on the NUC and are never mirrored.
+  # Nothing here can operate a pump.
   irrigation_enabled: false
-  irrigation_poll_seconds: 300
   livesky_base: "https://gsm.liveskytech.com:3001"
   livesky_bearer: ""
   livesky_imei: ""
@@ -100,6 +100,5 @@ schema:
   dcon_device_id: str
   dcon_token_id: str
   dcon_product: str
-  dcon_log_days: int(1,30)
   owm_appid: str
   owm_place: str
