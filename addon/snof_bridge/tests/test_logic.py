@@ -487,6 +487,79 @@ def test_reports_still_carry_rows_for_an_unreloaded_dashboard():
     assert all("status" in row for row in report["rows"])
 
 
+# Regression: ISSUE-002 — report requests piled up forever while reports were off
+# Found by /qa on 2026-09-23 (two orphans were sitting in production, one a day old)
+# Report: .gstack/qa-reports/qa-report-snof-live-web-app-2026-09-23.md
+
+class _FakeRTDB:
+    def __init__(self, node):
+        self.node = node
+        self.reads: list[str] = []
+        self.writes: list[tuple] = []
+
+    async def get(self, path, shallow=False):
+        self.reads.append(path)
+        return self.node
+
+    async def put(self, path, value):
+        self.writes.append((path, value))
+
+
+def _disabled_runner(node):
+    cfg = types.SimpleNamespace(root="farms/snof", irrigation_enabled=False)
+    rtdb = _FakeRTDB(node)
+    return IrrigationRunner(cfg, rtdb, None), rtdb
+
+
+def test_disabled_runner_drains_the_queue_nothing_will_answer():
+    """Only this runner deletes from irrigation_requests, and clients can append
+    to it. With the runner off, a request written by the dashboard used to stay
+    there forever."""
+    runner, rtdb = _disabled_runner({"-Pabc": True, "-Pdef": True})
+    asyncio.run(runner.run())
+    assert rtdb.writes == [("farms/snof/irrigation_requests", None)], rtdb.writes
+
+
+def test_disabled_runner_writes_nothing_when_the_queue_is_empty():
+    """The common case is an empty queue on every boot; it must not cost a
+    write."""
+    for empty in (None, {}):
+        runner, rtdb = _disabled_runner(empty)
+        asyncio.run(runner.run())
+        assert rtdb.writes == [], (empty, rtdb.writes)
+
+
+def test_disabled_runner_survives_a_queue_it_cannot_read():
+    """A failed purge is a log line, not a crashed task: the bridge's other
+    work does not depend on it."""
+    runner, rtdb = _disabled_runner({"-Pabc": True})
+
+    async def boom(path, shallow=False):
+        raise RuntimeError("RTDB GET -> 401")
+
+    rtdb.get = boom
+    asyncio.run(runner.run())          # must not raise
+    assert rtdb.writes == []
+
+
+# Regression: ISSUE-003 — a delete sent no body at all, so nothing was deleted
+# Found by /qa on 2026-09-23 (RTDB answered "400 No data supplied.")
+# Report: .gstack/qa-reports/qa-report-snof-live-web-app-2026-09-23.md
+
+def test_delete_encodes_a_literal_null_body():
+    """Deleting a node is a PUT of JSON null, and that is how every executed
+    command and every fulfilled report clears its queue entry. aiohttp's
+    `json=None` sends no body, which RTDB rejects — so the body is built here
+    instead, and null must survive as the four characters."""
+    from bridge.wire import encode_body
+    assert encode_body(None) == "null"
+    assert encode_body({"a": 1}) == '{"a": 1}'
+    assert encode_body([]) == "[]"
+    assert encode_body(False) == "false"
+    assert encode_body(0) == "0"
+
+
+
 def test_report_refuses_bad_shapes():
     """The queue is a client-writable path, so the negative cases are the
     point — same bar as the device-command validator."""

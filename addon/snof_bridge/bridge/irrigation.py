@@ -820,10 +820,36 @@ class IrrigationRunner:
                 "requestsRefused": self.refused, "lastOk": self.last_ok,
                 "lastError": self.last_error}
 
+    async def _purge_queue(self) -> None:
+        """Drop whatever is sitting in the queue when reports are switched off.
+
+        The queue is client-writable, and only this runner ever deletes from it.
+        With the runner off, a request written by the dashboard stayed there
+        forever — two were found in production on 2026-09-23, one of them a day
+        old. Nothing would have executed them (they are long stale by the time
+        anyone enables reports), so they were pure litter on a path clients can
+        append to. One read, one delete, at startup."""
+        path = f"{self._cfg.root}/irrigation_requests"
+        try:
+            existing = await self._rtdb.get(path, shallow=True)
+        except Exception:
+            _LOGGER.debug("Could not read the irrigation queue to purge it",
+                          exc_info=True)
+            return
+        if not existing:
+            return
+        try:
+            await self._rtdb.put(path, None)
+            _LOGGER.info("Reports are off: dropped %d queued request(s) that "
+                         "nothing would have answered", len(existing))
+        except Exception:
+            _LOGGER.warning("Could not clear the irrigation queue")
+
     async def run(self) -> None:
         if not self.enabled:
             _LOGGER.info("Irrigation reports are disabled; not watching the "
                          "request queue")
+            await self._purge_queue()
             return
         _LOGGER.info("Watching irrigation request queue")
         while True:
