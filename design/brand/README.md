@@ -8,6 +8,8 @@ From the DCON design-asset export (`dcon/export-design-assets-folder/dcon-design
 - Display-size copies are generated from the export and checked in where
   they are used: `dashboard/public/art/*.png` (96 px) and
   `ios/SNOF/Resources/Assets.xcassets/art-*` (144 px), plus the iOS app
-  icon (roundel at 86 % on white, 1024 px).
+  icon: the roundel trimmed to its circle (`sibhi-logo-circle-401.png`; the
+  export has a transparent margin and a stray speck) at 92 % of a white
+  1024 px square.
 
 A vector or larger original of the logo would give a sharper app icon.
