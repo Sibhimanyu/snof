@@ -105,3 +105,27 @@ browser. It is no longer the day-to-day path once at least one admin exists.
 `/addon_configs/local_snof_bridge/serviceAccount.json`. Generating a fresh key
 from the console does not revoke the old one, so a second machine can get its
 own copy without disturbing the running bridge.
+
+## Cache headers: why a deploy did not reach the browser
+
+Hosting matches `headers` against the **request path**, not the file the
+rewrite resolves to. The app is served at `/`, which has no extension, so a
+rule like `**/*.@(html|js|css)` never applies to it and the bare root fell back
+to the default `max-age=3600`. On 2026-09-23 that put an hour-old bundle in
+front of a fix that had already shipped: the page still offered a button the
+new code disables, and the press wrote two requests nothing would answer.
+
+There is no build step and no content hashing here, so a long max-age is wrong
+for every file the app is made of. `/`, and anything ending in `.html`, `.js`
+or `.css`, are all `no-cache` now — the browser still revalidates with an ETag
+and still gets a 304 when nothing changed, so the cost is one conditional
+request per load, not a re-download.
+
+Check it after any hosting change, because a wrong answer here is invisible
+until someone reports a fix that "did not work":
+
+```bash
+for u in / /app.js /styles.css; do
+  printf "%-12s " "$u"; curl -sI "https://snof-live.web.app$u" | grep -i "^cache-control"
+done
+```

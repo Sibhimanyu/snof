@@ -762,7 +762,7 @@ function sendReportRequest() {
         rep.status === 'ok' ? 'Report ready.' : `Report failed: ${rep.error || 'vendor error'}`);
     }
   };
-  const timer = setTimeout(() => done(false, 'No answer from the bridge yet — it will appear below when it lands.'), IRR_TIMEOUT_MS);
+  const timer = setTimeout(() => done(false, 'No answer yet — it will appear below when the vendor responds.'), IRR_TIMEOUT_MS);
   irrWaiters.set(key, { ref: child, cb, timer });
   child.on('value', cb);
   ref.set(payload, (err) => {
@@ -771,7 +771,7 @@ function sendReportRequest() {
         ? 'The database refused that request.'
         : `Could not send: ${err.message}`);
     } else {
-      toast('ok', 'Report requested — the bridge is pulling it now.');
+      toast('ok', 'Report requested — the farm controller is pulling it from the vendor now.');
       render();
     }
   });
