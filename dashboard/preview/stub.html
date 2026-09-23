@@ -55,8 +55,9 @@
             serverTime:'2026-02-22 09:04:04',timeZone:'+05:30'},
       valveNames:[{id:'4',name:'4 Veg',type:'Irrigation'},{id:'6',name:'6 Kulam',type:'Irrigation'},
                   {id:'2',name:'2 BPump',type:'Booster Pump'}],
-      valves:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},
-              {id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}],
+      valves:[{id:'4',name:'4 Veg',status:'on',runtime:'1h 20m',type:'Irrigation'},
+              {id:'2',name:'2 BPump',status:'off',runtime:'',type:'Booster Pump'},
+              {id:'10',name:'10 Spring',status:'off',runtime:'40m',type:'Irrigation'}],
       timerLog:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
       motorLog:[{at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped'}],
       electricity:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}],
@@ -76,9 +77,10 @@
   const PRESS=[{at:'2026-02-20 06:00',value:'1.8',unit:'bar'},{at:'2026-02-20 12:00',value:'2.4',unit:'bar'},
     {at:'2026-02-20 18:00',value:'2.0',unit:'bar'},{at:'2026-02-22 06:00',value:'1.6',unit:'bar'},
     {at:'2026-02-22 12:00',value:'2.6',unit:'bar'},{at:'2026-02-22 18:00',value:'2.1',unit:'bar'}];
-  const VALVE_BARS=[{name:'Packing shed valve',value:125,unit:'min',status:'off'},
-    {name:'East orchard valve',value:80,unit:'min',status:'on'},
-    {name:'Nursery valve',value:40,unit:'min',status:'off'}];
+  // The controller's own valve names, so the farm illustrations (/art) match.
+  const VALVE_BARS=[{name:'12 Coco 1',value:125,unit:'min',status:'off'},
+    {name:'4 Veg',value:80,unit:'min',status:'on'},
+    {name:'13 Gova 1',value:40,unit:'min',status:'off'}];
   data.irrigation_reports={
     // A pre-sections report, kept on purpose: the card must still render
     // history written before the section contract existed.

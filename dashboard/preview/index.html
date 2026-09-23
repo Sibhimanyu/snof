@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111111">
 <title>SNOF Live Farm State</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%2345d483'/><text x='16' y='22.5' text-anchor='middle' font-size='18' font-weight='700' font-family='system-ui,sans-serif' fill='%23071009'>S</text></svg>">
+<link rel="icon" type="image/png" href="/art/logo.png">
+<link rel="apple-touch-icon" href="/art/logo.png">
 <link rel="stylesheet" href="styles.css">
 </head>
 <!-- data-view mounts exactly one screen: boot, gate or app. The previous build
@@ -65,7 +66,7 @@
 <div id="gate" class="gate">
   <div class="gate-bg" aria-hidden="true"><i></i><i></i><i></i></div>
   <main class="gate-card">
-    <span class="logo logo-lg" aria-hidden="true">S</span>
+    <img class="logo logo-lg" src="/art/logo.png" alt="Sibhi Natural Orchards and Farms">
     <h1>Sibhi Natural Orchards<br>&amp; Farms</h1>
     <p class="gate-tag">Every sensor, pump and gate on the farm — live, and controllable from here.</p>
     <p id="gate-msg" class="gate-msg" role="status">Sign in with the Google account on the farm allowlist.</p>
@@ -89,7 +90,7 @@
 
   <aside id="sidebar" class="sidebar">
     <div class="side-brand">
-      <span class="logo" aria-hidden="true">S</span>
+      <img class="logo" src="/art/logo.png" alt="">
       <span class="side-brand-text">
         <span class="side-brand-name">SNOF</span>
         <span class="side-brand-sub">Natural Orchards</span>
@@ -228,8 +229,9 @@
             serverTime:'2026-02-22 09:04:04',timeZone:'+05:30'},
       valveNames:[{id:'4',name:'4 Veg',type:'Irrigation'},{id:'6',name:'6 Kulam',type:'Irrigation'},
                   {id:'2',name:'2 BPump',type:'Booster Pump'}],
-      valves:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},
-              {id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}],
+      valves:[{id:'4',name:'4 Veg',status:'on',runtime:'1h 20m',type:'Irrigation'},
+              {id:'2',name:'2 BPump',status:'off',runtime:'',type:'Booster Pump'},
+              {id:'10',name:'10 Spring',status:'off',runtime:'40m',type:'Irrigation'}],
       timerLog:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
       motorLog:[{at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped'}],
       electricity:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}],
@@ -249,9 +251,10 @@
   const PRESS=[{at:'2026-02-20 06:00',value:'1.8',unit:'bar'},{at:'2026-02-20 12:00',value:'2.4',unit:'bar'},
     {at:'2026-02-20 18:00',value:'2.0',unit:'bar'},{at:'2026-02-22 06:00',value:'1.6',unit:'bar'},
     {at:'2026-02-22 12:00',value:'2.6',unit:'bar'},{at:'2026-02-22 18:00',value:'2.1',unit:'bar'}];
-  const VALVE_BARS=[{name:'Packing shed valve',value:125,unit:'min',status:'off'},
-    {name:'East orchard valve',value:80,unit:'min',status:'on'},
-    {name:'Nursery valve',value:40,unit:'min',status:'off'}];
+  // The controller's own valve names, so the farm illustrations (/art) match.
+  const VALVE_BARS=[{name:'12 Coco 1',value:125,unit:'min',status:'off'},
+    {name:'4 Veg',value:80,unit:'min',status:'on'},
+    {name:'13 Gova 1',value:40,unit:'min',status:'off'}];
   data.irrigation_reports={
     // A pre-sections report, kept on purpose: the card must still render
     // history written before the section contract existed.

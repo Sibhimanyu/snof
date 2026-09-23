@@ -74,12 +74,12 @@ struct IrrigationView: View {
                 }
             } label: {
                 HStack {
-                    if waiting || sending { ProgressView().controlSize(.small).tint(Theme.bg) }
+                    if waiting || sending { ProgressView().controlSize(.small).tint(.white) }
                     Text(waiting ? "Working…" : "Generate report").font(.body.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity, minHeight: Theme.hit)
-                .foregroundStyle(Theme.bg)
-                .background(Theme.text, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                .foregroundStyle(.white)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(waiting || sending || !gate.ok)
@@ -184,13 +184,13 @@ struct ReportSectionView: View {
         case "metrics": Metrics(rows: rows)
         case "facts": Facts(rows: rows)
         case "status":
-            SimpleRows(rows: Array(rows.prefix(Self.rowCap))) { r in
+            SimpleRows(rows: Array(rows.prefix(Self.rowCap)), art: valveArt) { r in
                 (r["name"] ?? "Valve", r["meta"] ?? "", r["status"])
             }
             more(rows.count, "rows")
         case "series": Series(rows: rows, unit: section.unit)
         case "bars":
-            Bars(items: rows.map { ($0["name"] ?? "Valve", Int(Double($0["value"] ?? "") ?? 0), $0["status"] == "on") })
+            Bars(items: rows.map { ($0["name"] ?? "Valve", Int(Double($0["value"] ?? "") ?? 0), $0["status"] == "on", valveArt($0)) })
         case "timeline":
             Timeline(rows: Array(rows.prefix(Self.rowCap)))
             more(rows.count, "entries")
@@ -247,6 +247,7 @@ private struct Facts: View {
 
 private struct SimpleRows: View {
     let rows: [ReportRow]
+    var art: (ReportRow) -> String? = { _ in nil }
     let map: (ReportRow) -> (String, String, String?)
     var body: some View {
         VStack(spacing: 0) {
@@ -254,7 +255,7 @@ private struct SimpleRows: View {
                 let (name, meta, status) = map(r)
                 if i > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
                 HStack(spacing: 10) {
-                    Image(systemName: "spigot").foregroundStyle(Theme.muted).frame(width: 20)
+                    ValveGlyph(art: art(r))
                     VStack(alignment: .leading, spacing: 1) {
                         Text(name).font(.subheadline).foregroundStyle(Theme.text)
                         if !meta.isEmpty { Text(meta).font(.caption).foregroundStyle(Theme.muted) }
@@ -267,6 +268,24 @@ private struct SimpleRows: View {
         }
     }
 }
+
+/// The farm's own picture for what a valve waters (DCON design assets), or
+/// the plain tap icon when the name is not one it recognises.
+struct ValveGlyph: View {
+    let art: String?
+    var size: CGFloat = 28
+    var body: some View {
+        if let art {
+            Image("art-\(art)").resizable().interpolation(.high).scaledToFit()
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: "spigot").foregroundStyle(Theme.muted).frame(width: size, height: size)
+        }
+    }
+}
+
+let valveArt: (ReportRow) -> String? = { ValveArt.key(name: $0["name"], type: $0["type"] ?? $0["meta"], status: $0["status"]) }
 
 struct ValveTag: View {
     let status: String
@@ -293,11 +312,12 @@ private struct Series: View {
             VStack(alignment: .leading, spacing: 6) {
                 Chart(pts, id: \.0) { p in
                     AreaMark(x: .value("Reading", p.0), y: .value("Value", p.2))
-                        .foregroundStyle(Theme.on.opacity(0.12))
+                        .foregroundStyle(Theme.brand.opacity(0.14))
                     LineMark(x: .value("Reading", p.0), y: .value("Value", p.2))
-                        .foregroundStyle(Theme.on)
+                        .foregroundStyle(Theme.brand)
                         .interpolationMethod(.monotone)
                 }
+                .chartPlotStyle { $0.clipped() }   // the area mark's baseline is 0, far below the domain
                 .chartXAxis(.hidden)
                 .chartYScale(domain: (lo - (hi - lo) * 0.1)...(hi + (hi - lo) * 0.1 + 0.001))
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
@@ -327,19 +347,20 @@ private struct Series: View {
 }
 
 private struct Bars: View {
-    let items: [(name: String, minutes: Int, on: Bool)]
+    let items: [(name: String, minutes: Int, on: Bool, art: String?)]
     var body: some View {
         let rows = items.filter { $0.minutes > 0 }
         let top = max(rows.map(\.minutes).max() ?? 1, 1)
         VStack(spacing: 8) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    ValveGlyph(art: r.art, size: 22)
                     Text(r.name).font(.caption).foregroundStyle(Theme.text).lineLimit(1)
-                        .frame(width: 96, alignment: .leading)
+                        .frame(width: 84, alignment: .leading)
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Theme.track)
-                            Capsule().fill(r.on ? Theme.on : Theme.muted)
+                            Capsule().fill(r.on ? Theme.brand : Theme.muted)
                                 .frame(width: max(6, g.size.width * CGFloat(r.minutes) / CGFloat(top)))
                         }
                     }
@@ -373,6 +394,9 @@ private struct Timeline: View {
                         }
                     }
                     Spacer()
+                    if let art = ValveArt.key(timelineSource: r["source"]) {
+                        ValveGlyph(art: art, size: 22)
+                    }
                     if let s = r["source"], !s.isEmpty { Tag(text: s) }
                 }
                 .padding(.vertical, 5)
@@ -393,7 +417,7 @@ private struct LegacyBody: View {
     var body: some View {
         let rows = report.legacyRows
         if report.status == "ok", report.type == "valves" {
-            Bars(items: rows.map { ($0["name"] ?? "Valve", Format.runtimeMinutes($0["runtime"]), $0["status"] == "on") })
+            Bars(items: rows.map { ($0["name"] ?? "Valve", Format.runtimeMinutes($0["runtime"]), $0["status"] == "on", valveArt($0)) })
         }
         SimpleRows(rows: Array(rows.prefix(6))) { r in
             let name = r["name"] ?? r["event"] ?? r["id"] ?? report.label
@@ -430,12 +454,12 @@ private struct LastResults: View {
             .compactMap { k, v in v.map { ["label": k, "value": $0] } }
         if !facts.isEmpty { Facts(rows: facts).panel(padding: 12) }
         if !cache.valves.isEmpty {
-            SimpleRows(rows: cache.valves) { v in
+            SimpleRows(rows: cache.valves, art: valveArt) { v in
                 (v["name"] ?? "Valve \(v["id"] ?? "")", [v["runtime"], v["id"]].compactMap { $0 }.joined(separator: " · "), v["status"] ?? "unknown")
             }
             .panel(padding: 12)
         } else if !cache.valveNames.isEmpty {
-            SimpleRows(rows: cache.valveNames) { v in (v["name"] ?? "Valve", v["type"] ?? "valve \(v["id"] ?? "")", nil) }
+            SimpleRows(rows: cache.valveNames, art: valveArt) { v in (v["name"] ?? "Valve", v["type"] ?? "valve \(v["id"] ?? "")", nil) }
                 .panel(padding: 12)
         }
     }

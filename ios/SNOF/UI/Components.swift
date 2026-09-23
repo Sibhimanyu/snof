@@ -101,7 +101,7 @@ struct BridgePill: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 7, height: 7)
+            Circle().fill(status == .live ? Theme.brand : color).frame(width: 7, height: 7)
                 // Liveness, not decoration: the one animation that stays
                 // unless the user asked for less motion.
                 .opacity(status == .live && pulse ? 0.35 : 1)
@@ -241,7 +241,7 @@ struct DeviceCard: View {
                         if busy { ProgressView().controlSize(.small).accessibilityLabel("Waiting for the farm") }
                         Toggle(entity.name, isOn: Binding(get: { on }, set: { _ in store.toggle(entity) }))
                             .labelsHidden()
-                            .tint(Theme.on)
+                            .tint(Theme.brand)
                             .disabled(!operable)
                             .sensoryFeedback(.selection, trigger: on)
                     }
@@ -260,7 +260,7 @@ struct DeviceCard: View {
                         if !editing, let d = draft { commit(Int(d)) }
                         if editing { draftExpiry?.cancel() }
                     }
-                    .tint(Theme.on)
+                    .tint(Theme.brand)
                     .disabled(!operable)
                     .accessibilityLabel("\(entity.name) \(entity.domain == "fan" ? "speed" : "brightness")")
                     Text("\(Int(draft ?? Double(level)))%")
@@ -315,7 +315,7 @@ struct DeviceRow: View {
             if store.canControl && entity.isControllable && !entity.isBad {
                 if store.pending[entity.key] != nil { ProgressView().controlSize(.small) }
                 Toggle(entity.name, isOn: Binding(get: { store.displayOn(entity) }, set: { _ in store.toggle(entity) }))
-                    .labelsHidden().tint(Theme.on)
+                    .labelsHidden().tint(Theme.brand)
                     .disabled(!store.canOperate(entity))
             } else {
                 StatePill(text: entity.formattedState, tone: entity.tone)

@@ -176,3 +176,42 @@ final class LogicTests: XCTestCase {
         XCTAssertNil(Invites.key(for: ""))
     }
 }
+
+final class ValveArtTests: XCTestCase {
+    /// The farm's real valve names and types, from /farms/snof/irrigation on 2026-09-23.
+    func testRealValveNames() {
+        let cases: [(String, String, String?, String?)] = [
+            ("1 Tank", "Fertilizer", "off", nil),
+            ("2 BPump", "Booster Pump", "off", "motor-off"),
+            ("2 BPump", "Booster Pump", "on", "motor-on"),
+            ("3 Backwash", "Backwash", "on", "backwash"),
+            ("4 Veg", "Irrigation", "on", "veg"),
+            ("5 Onion", "Irrigation", "off", "onion"),
+            ("6 Kulam", "Irrigation", "on", "kulam"),
+            ("7 Grass", "Irrigation", "on", "grass"),
+            ("8 House", "Irrigation", "on", "house"),
+            ("9 Mulberry", "Irrigation", "on", "mulberry"),
+            ("10 Spring", "Irrigation", "off", nil),
+            ("11 Main", "Master1", "off", nil),
+            ("12 Coco 1", "Irrigation", "on", "coconut"),
+            ("13 Gova 1", "Irrigation", "on", "guava"),
+            ("16 Mango 1", "Irrigation", "on", "mango"),
+        ]
+        for (name, type, status, want) in cases {
+            XCTAssertEqual(ValveArt.key(name: name, type: type, status: status), want, name)
+        }
+    }
+
+    func testUnknownGetsNothing() {
+        XCTAssertNil(ValveArt.key(name: nil))
+        XCTAssertNil(ValveArt.key(name: "Valve 7"))
+        XCTAssertNil(ValveArt.key(name: "Mangrove"), "whole words only")
+        XCTAssertEqual(ValveArt.key(name: "VEG-EAST"), "veg")
+    }
+
+    func testTimeline() {
+        XCTAssertEqual(ValveArt.key(timelineSource: "motor"), "motor-on")
+        XCTAssertEqual(ValveArt.key(timelineSource: "timer"), "timer")
+        XCTAssertNil(ValveArt.key(timelineSource: "dcon"))
+    }
+}

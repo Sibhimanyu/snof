@@ -18,7 +18,10 @@ enum Snapshot {
         return args[i + 1]
     }
 
+    private static var store: FarmStore?
+
     static func prepare(_ store: FarmStore) {
+        Self.store = store
         switch value("-tab") {
         case "areas": store.selectedTab = .areas
         case "devices": store.selectedTab = .devices
@@ -34,6 +37,17 @@ enum Snapshot {
         let delay = Double(value("-snapshot-delay") ?? "") ?? 3
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(delay))
+            // -reports renders every report card at full length, which a
+            // window-sized capture cannot show.
+            if args.contains("-reports"), let store {
+                let content = VStack(spacing: 10) { ForEach(store.reports) { ReportCard(report: $0) } }
+                    .padding(16).frame(width: 402).background(Theme.bg)
+                    .environment(\.colorScheme, .dark)
+                let r = ImageRenderer(content: content)
+                r.scale = 3
+                try? r.uiImage?.pngData()?.write(to: URL(fileURLWithPath: out))
+                exit(0)
+            }
             guard let window = UIApplication.shared.connectedScenes
                 .compactMap({ ($0 as? UIWindowScene)?.keyWindow ?? ($0 as? UIWindowScene)?.windows.first }).first
             else { exit(2) }

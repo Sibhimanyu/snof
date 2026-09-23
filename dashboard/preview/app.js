@@ -831,6 +831,7 @@ function barChart(items) {
   if (!rows.length) return '';
   const max = Math.max(...rows.map((r) => r.minutes));
   const bars = rows.map((r) => `<div class="bar-row">
+    ${r.art ? artImg(r.art, 'bar-art') : '<span class="bar-art"></span>'}
     <span class="bar-label">${escapeHtml(r.name)}</span>
     <span class="bar-track"><span class="bar-fill${r.status === 'on' ? ' is-on' : ''}" ` +
       `style="width:${Math.max(4, Math.round((r.minutes / max) * 100))}%"></span></span>
@@ -845,6 +846,7 @@ function valveBars(rows) {
   return barChart(rows.map((r) => ({
     name: r.name || (r.id ? `Valve ${r.id}` : 'Valve'),
     minutes: parseRuntimeMinutes(r.runtime), status: r.status,
+    art: valveArt(r.name, r.type, r.status),
   })));
 }
 
@@ -878,7 +880,8 @@ function irrMetrics(rows) {
 function irrStatusRows(rows) {
   const shown = rows.slice(0, IRR_ROW_CAP).map((r) => irrigRow(
     r.source === 'dcon' ? 'i-valve' : 'i-water_heater',
-    r.name || 'Motor', r.meta || '', irrigStatusTag(r.status))).join('');
+    r.name || 'Motor', r.meta || '', irrigStatusTag(r.status),
+    valveArt(r.name, r.type || r.meta, r.status))).join('');
   return shown ? `<div class="list">${shown}</div>` +
     moreNote(rows.length, IRR_ROW_CAP, 'rows') : '';
 }
@@ -900,6 +903,7 @@ function irrBars(rows) {
     name: r.name || 'Valve',
     minutes: Number(r.value) || 0,
     status: r.status,
+    art: valveArt(r.name, r.type, r.status),
   })));
 }
 
@@ -920,8 +924,9 @@ function irrTimeline(rows) {
     const head = stamp.day && stamp.day !== day
       ? `<div class="tl-day">${escapeHtml(stamp.day)}</div>` : '';
     if (stamp.day) day = stamp.day;
-    const source = r.source
-      ? `<span class="tl-chip">${escapeHtml(r.source)}</span>` : '';
+    const art = timelineArt(r.source);
+    const source = (art ? artImg(art, 'tl-art') : '') + (r.source
+      ? `<span class="tl-chip">${escapeHtml(r.source)}</span>` : '');
     return head + `<div class="tl-row">
       <span class="tl-at">${escapeHtml(stamp.time || '—')}</span>
       <span class="tl-main"><span class="row-name">${escapeHtml(r.detail || r.event || 'entry')}</span>
@@ -1015,8 +1020,35 @@ const irrigStatusTag = (s) =>
   : s === 'off' ? `<span class="tag">Off</span>`
   : `<span class="tag">Unknown</span>`;
 
-const irrigRow = (icon, name, meta, right) =>
-  `<div class="row"><span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#${icon}"/></svg></span>` +
+/* Which farm illustration (the DCON design assets, /art/<key>.png) goes with
+ * a valve. The controller names valves "<number> <word>" — "4 Veg",
+ * "6 Kulam", "13 Gova 1" — and the word is what the valve waters. Anything
+ * unrecognised gets null and keeps the plain icon: a wrong crop on a valve is
+ * worse than none. Mirrors ValveArt.swift in ios/SNOFCore; keep the tables in
+ * step. */
+const VALVE_ART_WORDS = {
+  veg: 'veg', vegetable: 'veg', vegetables: 'veg', onion: 'onion', kulam: 'kulam',
+  grass: 'grass', house: 'house', mulberry: 'mulberry', coco: 'coconut', coconut: 'coconut',
+  gova: 'guava', guava: 'guava', mango: 'mango', amla: 'amla', jamun: 'jamun',
+  pomegranate: 'pomegranate', backwash: 'backwash',
+};
+function valveArt(name, type, status) {
+  const t = String(type || '').toLowerCase();
+  const tokens = String(name || '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  // A pump is a motor whatever it is called; its picture shows on/off.
+  if (t.includes('pump') || tokens.some((w) => w === 'bpump' || w === 'pump' || w === 'motor')) {
+    return status === 'on' ? 'motor-on' : 'motor-off';
+  }
+  if (t.includes('backwash')) return 'backwash';
+  for (const w of tokens) if (VALVE_ART_WORDS[w]) return VALVE_ART_WORDS[w];
+  return null;
+}
+const timelineArt = (source) => ({ motor: 'motor-on', timer: 'timer' })[String(source || '').toLowerCase()] || null;
+const artImg = (key, cls = 'row-art') => `<img class="${cls}" src="/art/${key}.png" alt="" width="28" height="28" loading="lazy">`;
+
+const irrigRow = (icon, name, meta, right, art = null) =>
+  `<div class="row">${art ? `<span class="row-icon row-icon-art">${artImg(art)}</span>`
+    : `<span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#${icon}"/></svg></span>`}` +
   `<span class="row-main"><span class="row-name">${escapeHtml(name)}</span>` +
   `<span class="row-meta">${escapeHtml(meta)}</span></span>${right}</div>`;
 
@@ -1099,12 +1131,12 @@ function irrigationView() {
       (names.length
         ? `<div class="list${names.length > 8 ? ' cols' : ''}">` +
           names.map((v) => irrigRow('i-valve', v.name,
-            v.type || `valve ${v.id}`, '')).join('') + `</div>` : '') +
+            v.type || `valve ${v.id}`, '', valveArt(v.name, v.type))).join('') + `</div>` : '') +
       (valves.length
         ? `<div class="list${valves.length > 8 ? ' cols' : ''}">` +
           valves.map((v) => irrigRow('i-valve', v.name || `Valve ${v.id || ''}`,
             [v.runtime, v.id].filter(Boolean).join(' · ') || 'valve',
-            irrigStatusTag(v.status))).join('') + `</div>` : '')
+            irrigStatusTag(v.status), valveArt(v.name, v.type, v.status))).join('') + `</div>` : '')
     : '';
 
   return head('Irrigation', 'Build a report from the irrigation controller.') +

@@ -72,7 +72,7 @@
     "state": "31.4",
     "area": "farmhouse",
     "attrs": {
-     "unit_of_measurement": "°C",
+     "unit_of_measurement": "\u00b0C",
      "device_class": "temperature"
     }
    },
@@ -101,7 +101,7 @@
     "state": "3.8",
     "area": "cold_store",
     "attrs": {
-     "unit_of_measurement": "°C",
+     "unit_of_measurement": "\u00b0C",
      "device_class": "temperature"
     }
    },
@@ -302,16 +302,39 @@
   ],
   "valves": [
    {
-    "id": "V012",
-    "name": "East orchard valve",
-    "status": "on",
-    "runtime": "1h 20m"
+    "id": "2",
+    "name": "2 BPump",
+    "status": "off",
+    "runtime": "",
+    "type": "Booster Pump"
    },
    {
-    "id": "V015",
-    "name": "Nursery valve",
+    "id": "4",
+    "name": "4 Veg",
+    "status": "on",
+    "runtime": "1h 11m",
+    "type": "Irrigation"
+   },
+   {
+    "id": "6",
+    "name": "6 Kulam",
+    "status": "on",
+    "runtime": "1h 11m",
+    "type": "Irrigation"
+   },
+   {
+    "id": "7",
+    "name": "7 Grass",
     "status": "off",
-    "runtime": "40m"
+    "runtime": "54m",
+    "type": "Irrigation"
+   },
+   {
+    "id": "10",
+    "name": "10 Spring",
+    "status": "off",
+    "runtime": "",
+    "type": "Irrigation"
    }
   ],
   "timerLog": [
@@ -358,7 +381,7 @@
     "to": "2026-02-22"
    },
    "status": "ok",
-   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "summary": "1 entries \u00b7 2026-02-20 \u2192 2026-02-22",
    "rows": [
     {
      "at": "2026-02-22 06:00",
@@ -376,7 +399,7 @@
     "to": "2026-02-22"
    },
    "status": "ok",
-   "summary": "4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22",
+   "summary": "4h 5m of valve runtime \u00b7 pressure 1.6\u20132.6 bar \u00b7 2026-02-20 \u2192 2026-02-22",
    "sections": [
     {
      "kind": "metrics",
@@ -390,7 +413,7 @@
        "label": "Valves run",
        "value": 3,
        "unit": "",
-       "note": "of 3 in 2026-02-20 → 2026-02-22"
+       "note": "of 3 in 2026-02-20 \u2192 2026-02-22"
       },
       {
        "label": "Total runtime",
@@ -415,22 +438,40 @@
      "error": "",
      "rows": [
       {
-       "name": "Packing shed valve",
-       "value": 125,
-       "unit": "min",
-       "status": "off"
-      },
-      {
-       "name": "East orchard valve",
-       "value": 80,
+       "name": "12 Coco 1",
+       "value": 333,
        "unit": "min",
        "status": "on"
       },
       {
-       "name": "Nursery valve",
-       "value": 40,
+       "name": "4 Veg",
+       "value": 71,
        "unit": "min",
-       "status": "off"
+       "status": "on"
+      },
+      {
+       "name": "9 Mulberry",
+       "value": 73,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "13 Gova 1",
+       "value": 64,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "16 Mango 1",
+       "value": 64,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "3 Backwash",
+       "value": 159,
+       "unit": "min",
+       "status": "on"
       }
      ]
     },
@@ -452,13 +493,13 @@
        "label": "Low",
        "value": 1.6,
        "unit": "bar",
-       "note": "2026-02-20 → 2026-02-22"
+       "note": "2026-02-20 \u2192 2026-02-22"
       },
       {
        "label": "High",
        "value": 2.6,
        "unit": "bar",
-       "note": "2026-02-20 → 2026-02-22"
+       "note": "2026-02-20 \u2192 2026-02-22"
       }
      ]
     },
@@ -514,7 +555,7 @@
     "to": "2026-02-22"
    },
    "status": "partial",
-   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "summary": "1 entries \u00b7 2026-02-20 \u2192 2026-02-22",
    "error": "DCON logs: POST -> 500",
    "sections": [
     {
@@ -529,7 +570,7 @@
        "label": "Timer entries",
        "value": 1,
        "unit": "",
-       "note": "2026-02-20 → 2026-02-22"
+       "note": "2026-02-20 \u2192 2026-02-22"
       },
       {
        "label": "Motor entries",

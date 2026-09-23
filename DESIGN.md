@@ -61,7 +61,12 @@ communicate state, not decoration.
 - Neutral graphite/charcoal surfaces and warm gray text create the default dark
   theme. Light theme uses a warm off-white canvas, pale gray surfaces, and
   charcoal text.
-- Green means live or on only.
+- Green means live or on only. It is the **brand green** from the Sibhi
+  Natural Orchards logo, `#018843`, used exactly for fills (toggles, sliders,
+  bars, chart lines, the live dot, primary buttons). Green *text* uses the
+  same hue shaded per theme to clear 4.5:1 on every surface, the tinted pill
+  behind it included: `#017a3c` light, `#01ae56` dark. Tokens: `--brand` /
+  `--accent` on the web, `Theme.brand` / `Theme.on` on iOS.
 - Amber means stale only.
 - Muted red means unavailable or error only.
 - Do not use gradients, glow, glassmorphism, neon, or an accent colour without
@@ -110,6 +115,16 @@ useful filtered destination only if that interaction exists.
   after timeout, return the control to truth and explain the failure concisely.
 - Disabled, unavailable, and non-controller states must be obvious and must not
   imitate a usable control.
+
+### Brand artwork
+
+The logo roundel and the farm illustrations come from the DCON design assets
+(`design/brand/`, and `dashboard/public/art/` / the iOS asset catalog at
+display sizes). The roundel's centre is transparent, so it always sits on a
+white disc. Crop and motor illustrations appear only beside irrigation valves
+and log rows, where they say what a valve waters. They are content, never a
+state signal; the tag beside them carries state. The DCON app's own tokens
+(glass, glow, gradients, Outfit/Inter) are deliberately **not** adopted.
 
 ### Areas and unavailable state
 

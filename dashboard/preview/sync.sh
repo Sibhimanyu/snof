@@ -6,6 +6,7 @@ PV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$PV/../public"
 
 cp "$SRC/styles.css" "$SRC/app.js" "$PV/"
+rm -rf "$PV/art" && cp -R "$SRC/art" "$PV/art"
 python3 - "$SRC/index.html" "$PV/index.html" "$PV/stub.html" <<'EOF'
 import re, sys
 src = open(sys.argv[1]).read()

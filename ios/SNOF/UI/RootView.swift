@@ -154,12 +154,15 @@ struct GateView: View {
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
-            Image(systemName: "leaf").font(.system(size: 34, weight: .light)).foregroundStyle(Theme.on)
-                .frame(width: 72, height: 72)
-                .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+            // The roundel's centre is transparent and its lettering is the
+            // brand green, so it always sits on white, in both themes.
+            Image("brand-logo").resizable().interpolation(.high).scaledToFit()
+                .frame(width: 112, height: 112)
+                .padding(6)
+                .background(Color.white, in: Circle())
+                .accessibilityLabel("Sibhi Natural Orchards and Farms")
             VStack(spacing: 8) {
-                Text("SNOF").font(.largeTitle.weight(.semibold)).foregroundStyle(Theme.text)
+                Text("SNOF").font(.title.weight(.semibold)).foregroundStyle(Theme.text)
                 Text(message).font(.subheadline).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
             }
             .padding(.horizontal, 32)

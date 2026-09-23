@@ -1701,7 +1701,7 @@
     "entity_id": "sensor.e3",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e12": {
@@ -1710,7 +1710,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e21": {
@@ -1718,7 +1718,7 @@
     "entity_id": "sensor.e21",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e30": {
@@ -1727,7 +1727,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e39": {
@@ -1735,7 +1735,7 @@
     "entity_id": "sensor.e39",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e48": {
@@ -1744,7 +1744,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e57": {
@@ -1752,7 +1752,7 @@
     "entity_id": "sensor.e57",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e66": {
@@ -1761,7 +1761,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e75": {
@@ -1769,7 +1769,7 @@
     "entity_id": "sensor.e75",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e84": {
@@ -1778,7 +1778,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e93": {
@@ -1786,7 +1786,7 @@
     "entity_id": "sensor.e93",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e102": {
@@ -1795,7 +1795,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e111": {
@@ -1803,7 +1803,7 @@
     "entity_id": "sensor.e111",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e120": {
@@ -1812,7 +1812,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e129": {
@@ -1820,7 +1820,7 @@
     "entity_id": "sensor.e129",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e138": {
@@ -1829,7 +1829,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e147": {
@@ -1837,7 +1837,7 @@
     "entity_id": "sensor.e147",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e156": {
@@ -1846,7 +1846,7 @@
     "state": "unavailable",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e165": {
@@ -1854,7 +1854,7 @@
     "entity_id": "sensor.e165",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e174": {
@@ -1863,7 +1863,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e183": {
@@ -1871,7 +1871,7 @@
     "entity_id": "sensor.e183",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e192": {
@@ -1880,7 +1880,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e201": {
@@ -1888,7 +1888,7 @@
     "entity_id": "sensor.e201",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e210": {
@@ -1897,7 +1897,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e219": {
@@ -1905,7 +1905,7 @@
     "entity_id": "sensor.e219",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e228": {
@@ -1914,7 +1914,7 @@
     "state": "unavailable",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e237": {
@@ -1922,7 +1922,7 @@
     "entity_id": "sensor.e237",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e246": {
@@ -1931,7 +1931,7 @@
     "state": "42.0",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e255": {
@@ -1939,7 +1939,7 @@
     "entity_id": "sensor.e255",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e264": {
@@ -1948,7 +1948,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e273": {
@@ -1956,7 +1956,7 @@
     "entity_id": "sensor.e273",
     "state": "42.0",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e282": {
@@ -1965,7 +1965,7 @@
     "state": "42.0",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e291": {
@@ -1973,7 +1973,7 @@
     "entity_id": "sensor.e291",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e300": {
@@ -1982,7 +1982,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e309": {
@@ -1990,7 +1990,7 @@
     "entity_id": "sensor.e309",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e318": {
@@ -1999,7 +1999,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e327": {
@@ -2007,7 +2007,7 @@
     "entity_id": "sensor.e327",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e336": {
@@ -2016,7 +2016,7 @@
     "state": "unavailable",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e345": {
@@ -2024,7 +2024,7 @@
     "entity_id": "sensor.e345",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e354": {
@@ -2033,7 +2033,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e363": {
@@ -2041,7 +2041,7 @@
     "entity_id": "sensor.e363",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e372": {
@@ -2050,7 +2050,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e381": {
@@ -2058,7 +2058,7 @@
     "entity_id": "sensor.e381",
     "state": "9.7",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e390": {
@@ -2067,7 +2067,7 @@
     "state": "43.0",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e399": {
@@ -2075,7 +2075,7 @@
     "entity_id": "sensor.e399",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e408": {
@@ -2084,7 +2084,7 @@
     "state": "9.6",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e417": {
@@ -2092,7 +2092,7 @@
     "entity_id": "sensor.e417",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e426": {
@@ -2101,7 +2101,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e435": {
@@ -2109,7 +2109,7 @@
     "entity_id": "sensor.e435",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e444": {
@@ -2118,7 +2118,7 @@
     "state": "unavailable",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e453": {
@@ -2126,7 +2126,7 @@
     "entity_id": "sensor.e453",
     "state": "76.1",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e462": {
@@ -2135,7 +2135,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e471": {
@@ -2143,7 +2143,7 @@
     "entity_id": "sensor.e471",
     "state": "42.7",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e480": {
@@ -2152,7 +2152,7 @@
     "state": "unavailable",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e489": {
@@ -2160,7 +2160,7 @@
     "entity_id": "sensor.e489",
     "state": "9.3",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e498": {
@@ -2169,7 +2169,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e507": {
@@ -2177,7 +2177,7 @@
     "entity_id": "sensor.e507",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e516": {
@@ -2186,7 +2186,7 @@
     "state": "unavailable",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e525": {
@@ -2194,7 +2194,7 @@
     "entity_id": "sensor.e525",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e534": {
@@ -2203,7 +2203,7 @@
     "state": "75.8",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e543": {
@@ -2211,7 +2211,7 @@
     "entity_id": "sensor.e543",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e552": {
@@ -2220,7 +2220,7 @@
     "state": "42.4",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e561": {
@@ -2228,7 +2228,7 @@
     "entity_id": "sensor.e561",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e570": {
@@ -2237,7 +2237,7 @@
     "state": "9.0",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e579": {
@@ -2245,7 +2245,7 @@
     "entity_id": "sensor.e579",
     "state": "42.3",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e588": {
@@ -2254,7 +2254,7 @@
     "state": "75.6",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e597": {
@@ -2262,7 +2262,7 @@
     "entity_id": "sensor.e597",
     "state": "8.9",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e606": {
@@ -2271,7 +2271,7 @@
     "state": "42.2",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e615": {
@@ -2279,7 +2279,7 @@
     "entity_id": "sensor.e615",
     "state": "75.5",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e624": {
@@ -2288,7 +2288,7 @@
     "state": "8.8",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e633": {
@@ -2296,7 +2296,7 @@
     "entity_id": "sensor.e633",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e642": {
@@ -2305,7 +2305,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e651": {
@@ -2313,7 +2313,7 @@
     "entity_id": "sensor.e651",
     "state": "8.7",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e660": {
@@ -2322,7 +2322,7 @@
     "state": "42.0",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e669": {
@@ -2330,7 +2330,7 @@
     "entity_id": "sensor.e669",
     "state": "unavailable",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e678": {
@@ -2339,7 +2339,7 @@
     "state": "unavailable",
     "area": "pooja_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e687": {
@@ -2347,7 +2347,7 @@
     "entity_id": "sensor.e687",
     "state": "41.9",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    },
    "e696": {
@@ -2356,7 +2356,7 @@
     "state": "75.2",
     "area": "abhis_room",
     "attrs": {
-     "unit_of_measurement": "°C"
+     "unit_of_measurement": "\u00b0C"
     }
    }
   },
@@ -4753,16 +4753,39 @@
   ],
   "valves": [
    {
-    "id": "V012",
-    "name": "East orchard valve",
-    "status": "on",
-    "runtime": "1h 20m"
+    "id": "2",
+    "name": "2 BPump",
+    "status": "off",
+    "runtime": "",
+    "type": "Booster Pump"
    },
    {
-    "id": "V015",
-    "name": "Nursery valve",
+    "id": "4",
+    "name": "4 Veg",
+    "status": "on",
+    "runtime": "1h 11m",
+    "type": "Irrigation"
+   },
+   {
+    "id": "6",
+    "name": "6 Kulam",
+    "status": "on",
+    "runtime": "1h 11m",
+    "type": "Irrigation"
+   },
+   {
+    "id": "7",
+    "name": "7 Grass",
     "status": "off",
-    "runtime": "40m"
+    "runtime": "54m",
+    "type": "Irrigation"
+   },
+   {
+    "id": "10",
+    "name": "10 Spring",
+    "status": "off",
+    "runtime": "",
+    "type": "Irrigation"
    }
   ],
   "timerLog": [
@@ -4809,7 +4832,7 @@
     "to": "2026-02-22"
    },
    "status": "ok",
-   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "summary": "1 entries \u00b7 2026-02-20 \u2192 2026-02-22",
    "rows": [
     {
      "at": "2026-02-22 06:00",
@@ -4827,7 +4850,7 @@
     "to": "2026-02-22"
    },
    "status": "ok",
-   "summary": "4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22",
+   "summary": "4h 5m of valve runtime \u00b7 pressure 1.6\u20132.6 bar \u00b7 2026-02-20 \u2192 2026-02-22",
    "sections": [
     {
      "kind": "metrics",
@@ -4841,7 +4864,7 @@
        "label": "Valves run",
        "value": 3,
        "unit": "",
-       "note": "of 3 in 2026-02-20 → 2026-02-22"
+       "note": "of 3 in 2026-02-20 \u2192 2026-02-22"
       },
       {
        "label": "Total runtime",
@@ -4866,22 +4889,40 @@
      "error": "",
      "rows": [
       {
-       "name": "Packing shed valve",
-       "value": 125,
-       "unit": "min",
-       "status": "off"
-      },
-      {
-       "name": "East orchard valve",
-       "value": 80,
+       "name": "12 Coco 1",
+       "value": 333,
        "unit": "min",
        "status": "on"
       },
       {
-       "name": "Nursery valve",
-       "value": 40,
+       "name": "4 Veg",
+       "value": 71,
        "unit": "min",
-       "status": "off"
+       "status": "on"
+      },
+      {
+       "name": "9 Mulberry",
+       "value": 73,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "13 Gova 1",
+       "value": 64,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "16 Mango 1",
+       "value": 64,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "3 Backwash",
+       "value": 159,
+       "unit": "min",
+       "status": "on"
       }
      ]
     },
@@ -4903,13 +4944,13 @@
        "label": "Low",
        "value": 1.6,
        "unit": "bar",
-       "note": "2026-02-20 → 2026-02-22"
+       "note": "2026-02-20 \u2192 2026-02-22"
       },
       {
        "label": "High",
        "value": 2.6,
        "unit": "bar",
-       "note": "2026-02-20 → 2026-02-22"
+       "note": "2026-02-20 \u2192 2026-02-22"
       }
      ]
     },
@@ -4965,7 +5006,7 @@
     "to": "2026-02-22"
    },
    "status": "partial",
-   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "summary": "1 entries \u00b7 2026-02-20 \u2192 2026-02-22",
    "error": "DCON logs: POST -> 500",
    "sections": [
     {
@@ -4980,7 +5021,7 @@
        "label": "Timer entries",
        "value": 1,
        "unit": "",
-       "note": "2026-02-20 → 2026-02-22"
+       "note": "2026-02-20 \u2192 2026-02-22"
       },
       {
        "label": "Motor entries",

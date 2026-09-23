@@ -16,7 +16,12 @@ enum Theme {
     static let muted = dyn(light: 0x5b5b5b, dark: 0x9b9b9b)
     static let track = dyn(light: 0xdedede, dark: 0x2e2e2e)
 
-    static let on = dyn(light: 0x3f6b47, dark: 0x7ba37f)
+    /// The brand green, from the Sibhi Natural Orchards logo. Fills only:
+    /// toggles, sliders, bars, chart lines, the live dot, primary buttons.
+    static let brand = Color(UIColor(hex: 0x018843))
+    /// Green text: the same hue, shaded per theme to clear 4.5:1 on every
+    /// surface it sits on, the tinted pill behind it included.
+    static let on = dyn(light: 0x017a3c, dark: 0x01ae56)
     static let warn = dyn(light: 0x7a5a12, dark: 0xc9a45f)
     static let bad = dyn(light: 0xa13a3a, dark: 0xc47f7f)
 

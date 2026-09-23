@@ -92,6 +92,13 @@ Greys carry the layout; colour appears only where it means something — green f
 on, red for unavailable, amber for a stale bridge. A coloured pixel is always
 worth looking at.
 
+The green is the **brand green** (`#018843`, the logo's). `--brand` is that
+exact value for fills. `--accent` is green text, shaded per theme for contrast
+(`#01ae56` dark, `#017a3c` light). Fill with `--brand`, write with `--accent`;
+swapping them fails the 4.5:1 floor on the tinted pill backgrounds.
+Farm illustrations live in `public/art/` (96 px, ~40 KB in total) and are
+picked by `valveArt()`, which mirrors `ios/SNOFCore/.../ValveArt.swift`.
+
 Token pairs live in three blocks at the top of `styles.css`: `:root` (dark),
 the `prefers-color-scheme: light` block for "follow the OS", and
 `:root[data-theme="light"]` for an explicit choice. The light palette is
