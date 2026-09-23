@@ -27,6 +27,18 @@ BUILD="$(date -u +%Y%m%d%H%M)"
 [[ -f SNOF/Firebase/GoogleService-Info.plist ]] || {
   echo "No SNOF/Firebase/GoogleService-Info.plist — run scripts/fetch-firebase-config.sh first." >&2; exit 1; }
 
+# SideStore decides "newer" by comparing marketing versions (0.1.3 > 0.1.2),
+# not build numbers. A release with an unchanged MARKETING_VERSION deploys
+# fine and then never reaches a phone. Refuse it here instead.
+LIVE="$(curl -fsS "$SITE/source.json" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['apps'][0]['version'])" 2>/dev/null || true)"
+if [[ -n "$LIVE" && $DEPLOY == 1 ]]; then
+  python3 - "$VERSION" "$LIVE" <<'PY' || { echo "MARKETING_VERSION $VERSION is not newer than the live $LIVE — bump it in project.yml, or SideStore will never offer this build." >&2; exit 1; }
+import sys
+v = lambda s: tuple(int(x) for x in s.split("."))
+sys.exit(0 if v(sys.argv[1]) > v(sys.argv[2]) else 1)
+PY
+fi
+
 echo "==> SNOF $VERSION ($BUILD)"
 (cd SNOFCore && swift test >/dev/null 2>&1) || { echo "SNOFCore tests failed — run swift test in SNOFCore" >&2; exit 1; }
 xcodegen -q

@@ -80,11 +80,31 @@ The build number is a UTC timestamp (`YYYYMMDDHHMM`), so it always increases
 with no state to sync. The marketing version is `MARKETING_VERSION` in
 `project.yml`.
 
-**Updates.** SideStore reads `https://snof-ios.web.app/source.json`, sees a
-newer `buildVersion`, and shows **Update** under My Apps. It does not install
-it silently; someone taps Update. `UpdateCheck.swift` reads the same file on
-foreground (at most hourly) and shows a one-line banner that opens SideStore,
-so an update does not sit unnoticed.
+**Updates: what SideStore actually does** (read from its source, 2026-09-23):
+
+- It offers an update only for an app it installed **from the source**.
+  An `.ipa` imported as a file (AirDrop → My Apps → **+**) has no link to
+  the source (`InstalledApp.storeApp` is nil) and never shows Update, even
+  with the source added. The owner's first install was a file import; the
+  fix was Remove, then **Get** from the source. Always install from the
+  source.
+- It compares **marketing versions** semantically (`0.1.3 > 0.1.2`), not
+  build numbers. **Bump `MARKETING_VERSION` for every release**, or phones
+  will not see it.
+- In a background refresh it re-reads sources and posts a "New Update
+  Available" notification. That needs SideStore's Background Refresh
+  setting on and notification permission granted.
+- It **never installs an update by itself**. iOS does not allow it, and
+  installing needs LocalDevVPN up. The update is always one tap.
+- `UpdateCheck.swift` in SNOF reads the same file on foreground (at most
+  hourly) and shows a banner that opens SideStore.
+
+**Release from committed code only.** `release.sh` builds whatever is in the
+working tree. If the tree has someone else's uncommitted work, release from
+a clean worktree instead (`git worktree add --detach /tmp/snof-release HEAD`,
+then copy in `ios/SNOF/Firebase/GoogleService-Info.plist` and
+`ios/Config/Firebase.xcconfig`, which are gitignored). 0.1.3 was released
+this way.
 
 **Blaze is required for this.** Spark refuses `.ipa` uploads ("Executable
 files are forbidden on the Spark billing plan"), so `snof-live` was moved to
