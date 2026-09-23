@@ -16,7 +16,8 @@ shell, a hash router picks the view:
 | `#/areas` | a card per area, with active and offline counts |
 | `#/area/<id>` | one area, grouped by domain, operable domains first |
 | `#/devices` | everything, with status segment and domain chips |
-| `#/irrigation` | report builder + results: ten vendor reports on demand, last-results cache — see [irrigation.md](irrigation.md) |
+| `#/irrigation` | report builder + results: fifteen vendor reports on demand (five of them combining two vendor calls into one card), sectioned results, last-results cache — see [irrigation.md](irrigation.md) |
+| `#/admin` | admin-only: grant/revoke view and control for other accounts — see [firebase-deploy.md](firebase-deploy.md#the-allowlist) |
 
 `render()` rebuilds `#view` wholesale on every RTDB delta. At ~1366 registry
 entities that costs ~80 ms and is fine; the guards below exist because "fine"
@@ -67,8 +68,25 @@ active out of 698, the slots filled with alphabetically-early **unavailable**
 devices. Unavailable devices are now excluded outright, and the section shows an
 explicit empty state if nothing is operable.
 
-## Design system
+## Shell chrome
 
+- `.sidebar` is the desktop left rail; below 960px it becomes a drawer.
+- `.tabbar` is the mobile bottom navigation (Overview / Areas / Devices /
+  Irrigation / Admin), `display:none` on desktop. Both navs use `data-nav`,
+  and the active-state loop in `render()` selects `[data-nav]` — not
+  `.nav-item` — so both stay in sync. A new route must be added to both.
+- Admin is the one nav item that is not always shown: both copies carry
+  `.nav-admin` and a `hidden` attribute, and `render()` clears `hidden` only
+  once `isAdmin` resolves true. The route itself is still guarded
+  server-side by RTDB rules, so a hidden link is convenience, not the
+  security boundary.
+- The bridge pill exists twice: `#bridge-pill` (sidebar) and `#m-bridge`
+  (topbar, `only-narrow`). `renderBridgeStatus()` sets both; touching one
+  without the other leaves mobile or desktop stale.
+- Section heads take an optional `See all` link (`sectionHead(symbol, title,
+  [href])`) that drills to the full view.
+
+## Design system
 Near-monochrome, chosen deliberately after a first attempt was rejected as neon.
 Greys carry the layout; colour appears only where it means something — green for
 on, red for unavailable, amber for a stale bridge. A coloured pixel is always

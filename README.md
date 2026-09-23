@@ -177,7 +177,10 @@ cd dashboard && firebase deploy --only hosting,database
               electricity[], pressure[], weather{}, meta{ lastUpdated, lastType, lastError } }
   irrigation_requests/  controller-appended report requests (bridge consumes)
   irrigation_reports/<id>/  sanitized results, bridge-written only:
-            { type, label, params{from,to}, status, summary, rows[], at, error }
+            { type, label, params{from,to}, status: ok|partial|error, summary,
+              sections[ { kind: metrics|status|series|bars|timeline|facts,
+                          title, note, source, status, error, rows[] } ],
+              rows[], at, error }
 ```
 
 `entity_id` is split on the dot because RTDB keys cannot contain `.`, `$`, `#`,

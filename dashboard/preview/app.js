@@ -25,8 +25,10 @@ const BAD_STATES = new Set(['unavailable', 'unknown']);
 const el = (id) => document.getElementById(id);
 const humanDomain = (d) => String(d).replace(/_/g, ' ');
 
-let state = { meta: {}, areas: {}, entities: {}, irrigation: {}, irrigation_reports: {} };
+let state = { meta: {}, areas: {}, entities: {}, irrigation: {}, irrigation_reports: {}, acl: {} };
 let canControl = false;
+let isAdmin = false;
+let aclRef = null;
 let currentUser = null;
 let search = '';
 let domainFilter = null;
@@ -89,8 +91,8 @@ function leave() {
   detach();
   irrWaiters.forEach(({ ref, cb, timer }) => { clearTimeout(timer); ref.off('value', cb); });
   irrWaiters.clear();
-  state = { meta: {}, areas: {}, entities: {}, irrigation: {} };
-  canControl = false; currentUser = null; firstSnapshot = false;
+  state = { meta: {}, areas: {}, entities: {}, irrigation: {}, acl: {} };
+  canControl = false; isAdmin = false; aclRef = null; currentUser = null; firstSnapshot = false;
   statusFilter = 'all'; domainFilter = null;
   interacting = false; viewDirty = false;
   prevStates.clear(); pending.clear();
@@ -109,11 +111,19 @@ function gateWith(html) {
 }
 
 function denied(user) {
-  // Surfacing the address turns "access denied" into a one-command fix.
+  // Surfacing the address turns "access denied" into a one-step fix: an
+  // admin adds it from the dashboard's Admin page, no terminal involved.
   const who = escapeHtml(user.email || 'This account');
   gateWith(`<strong>${who}</strong> is not on the dashboard allowlist.<br><br>` +
-    `Ask the farm owner to run:<br><code>npm run grant -- ${escapeHtml(user.email || '')}</code>`);
+    `Ask a farm admin to add you from the dashboard's Admin page.`);
 }
+
+// RTDB keys cannot contain '.', so an invite is keyed by the lowercased
+// email with '.' swapped for ',' - database.rules.json does the same swap
+// (via auth.token.email) to let the invited person read and claim only
+// their own invite before they have a uid to match on.
+const emailToInviteKey = (email) => (email || '').trim().toLowerCase().replace(/\./g, ',');
+const inviteKeyToEmail = (key) => (key || '').replace(/,/g, '.');
 
 function enter(user) {
   // Hosting injects databaseURL only once an RTDB instance exists. Without this
@@ -132,6 +142,35 @@ function enter(user) {
   el('acct-email').textContent = user.email || '';
 
   const db = firebase.database();
+
+  // Self-registered so an admin can resolve this uid to an email from the
+  // dashboard, without the Admin SDK. Fire-and-forget: it costs nothing to
+  // skip on a flaky connection, and runs again next sign-in.
+  db.ref(`acl/directory/${user.uid}`).set({
+    email: user.email || '',
+    name: user.displayName || '',
+    at: firebase.database.ServerValue.TIMESTAMP,
+  }).catch(() => {});
+
+  // If an admin pre-authorized this email (acl/invites), claim it now: set
+  // view (and control, if invited for that) on this uid, then remove the
+  // invite so it cannot be claimed twice. Rules enforce the same shape from
+  // the server side; this just means a first-time sign-in does not need a
+  // reload to pick up access that was granted a moment before it.
+  const inviteKey = emailToInviteKey(user.email);
+  if (inviteKey) {
+    db.ref(`acl/invites/${inviteKey}`).get().then((snap) => {
+      const invite = snap.val();
+      if (!invite) return;
+      const viewRef = db.ref(`acl/viewers/${user.uid}`);
+      const ctlRef = db.ref(`acl/controllers/${user.uid}`);
+      const claim = invite.tier === 'control'
+        ? viewRef.set(true).then(() => ctlRef.set(true))
+        : viewRef.set(true);
+      return claim.then(() => db.ref(`acl/invites/${inviteKey}`).remove());
+    }).catch(() => {});
+  }
+
   // Server time offset lets us judge heartbeat staleness without trusting the
   // viewer's clock, which on a wall tablet is often wrong.
   const skewRef = db.ref('.info/serverTimeOffset');
@@ -145,6 +184,29 @@ function enter(user) {
     (s) => { canControl = s.val() === true; setRole(); render(); },
     () => { canControl = false; setRole(); });
   refs.push({ ref: ctlRef, ev: 'value', cb: ctlCb });
+
+  // A third tier on top of controllers: an admin may grant or revoke the
+  // other two for anyone else, from the dashboard's Admin page. Only the
+  // service account can hand this one out (tools/grant-access.js --admin).
+  // Once true, it also unlocks a read of the whole acl subtree (RTDB rules
+  // cascade that from admins == true), which the Admin page needs to list
+  // everyone in one shot rather than probing uid by uid.
+  const adminRef = db.ref(`acl/admins/${user.uid}`);
+  const adminCb = adminRef.on('value',
+    (s) => {
+      isAdmin = s.val() === true;
+      setRole();
+      if (isAdmin && !aclRef) {
+        aclRef = db.ref('acl');
+        const aclCb = aclRef.on('value',
+          (snap) => { state.acl = snap.val() || {}; render(); },
+          () => { state.acl = {}; render(); });
+        refs.push({ ref: aclRef, ev: 'value', cb: aclCb });
+      }
+      render();
+    },
+    () => { isAdmin = false; setRole(); });
+  refs.push({ ref: adminRef, ev: 'value', cb: adminCb });
 
   const watch = (path, key) => {
     const ref = db.ref(`farms/${FARM}/${path}`);
@@ -171,7 +233,9 @@ function enter(user) {
   render();
 }
 
-const setRole = () => { el('acct-role').textContent = canControl ? 'Controller' : 'Viewer'; };
+const setRole = () => {
+  el('acct-role').textContent = isAdmin ? 'Admin' : canControl ? 'Controller' : 'Viewer';
+};
 
 /* ================= data helpers ================= */
 
@@ -274,7 +338,7 @@ function onLevel(ent, pct) {
 function toast(kind, message) {
   const node = document.createElement('div');
   node.className = `toast ${kind}`;
-  node.innerHTML = `<svg class="ico"><use href="#i-${kind === 'ok' ? 'check' : 'alert'}"/></svg>` +
+  node.innerHTML = `<svg viewBox="0 0 24 24" class="ico"><use href="#i-${kind === 'ok' ? 'check' : 'alert'}"/></svg>` +
                    `<span>${escapeHtml(message)}</span>`;
   el('toasts').appendChild(node);
   setTimeout(() => {
@@ -362,7 +426,8 @@ function render() {
   el('nav-areas-n').textContent = areas.length || '';
   el('nav-devices-n').textContent = all.length || '';
   el('nav-irrig-n').textContent = irrigRunning() || '';
-  document.querySelectorAll('.nav-item[data-nav]').forEach((n) =>
+  document.querySelectorAll('.nav-admin').forEach((n) => { n.hidden = !isAdmin; });
+  document.querySelectorAll('[data-nav]').forEach((n) =>
     n.classList.toggle('on', n.dataset.nav === (r.name === 'area' ? 'areas' : r.name)));
 
   renderBridgeStatus();
@@ -379,6 +444,9 @@ function render() {
     else if (r.name === 'area') view.innerHTML = areaView(all, r.arg);
     else if (r.name === 'devices') view.innerHTML = devicesView(all);
     else if (r.name === 'irrigation') view.innerHTML = irrigationView();
+    else if (r.name === 'admin') view.innerHTML = isAdmin ? adminView()
+      : head('Admin', 'Grant or revoke dashboard access.') +
+        emptyBlock('Admins only', 'Your account does not have admin access.');
     else view.innerHTML = overviewView(all, areas);
     wire(all);
     restoreFocus(token);
@@ -397,9 +465,10 @@ const head = (title, sub, right = '') =>
   `<div class="page-head"><div><h1 class="page-title">${escapeHtml(title)}</h1>` +
   `<p class="page-sub">${escapeHtml(sub)}</p></div><div class="spacer"></div>${right}</div>`;
 
-const sectionHead = (symbol, title) =>
-  `<div class="section-head"><svg class="ico"><use href="#${symbol}"/></svg>` +
-  `<span class="section-title">${escapeHtml(title)}</span><span class="section-rule"></span></div>`;
+const sectionHead = (symbol, title, link = null) =>
+  `<div class="section-head"><svg viewBox="0 0 24 24" class="ico"><use href="#${symbol}"/></svg>` +
+  `<span class="section-title">${escapeHtml(title)}</span><span class="section-rule"></span>` +
+  (link ? `<a class="section-link" href="${link[0]}">See all <svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-chevron"/></svg></a>` : '') + `</div>`;
 
 function skeletonView() {
   return head('Overview', 'Connecting to the farm…') +
@@ -438,7 +507,7 @@ function overviewView(all, areas) {
 
   return head(state.meta?.name || 'SNOF', 'Everything the farm is doing, right now.') +
     statTiles(all) +
-    sectionHead('i-switch', canControl ? 'Quick controls' : 'Controllable devices') +
+    sectionHead('i-switch', canControl ? 'Quick controls' : 'Controllable devices', ['#/devices']) +
     (quick.length
       ? `<div class="dev-grid">${quick.map(deviceCard).join('')}</div>` +
         (more > 0 ? `<p class="more-note">${more} more operable ${more === 1 ? 'device' : 'devices'} — ` +
@@ -447,8 +516,8 @@ function overviewView(all, areas) {
           controllableTotal
             ? `All ${controllableTotal} switches, lights and fans are currently unavailable.`
             : 'No switches, lights or fans are exposed by Home Assistant yet.')) +
-    (offline.length ? sectionHead('i-alert', 'Not reporting') + offlineBreakdown(offline) : '') +
-    sectionHead('n-areas', 'Areas') +
+    (offline.length ? sectionHead('i-alert', 'Not reporting', ['#/devices']) + offlineBreakdown(offline) : '') +
+    sectionHead('n-areas', 'Areas', ['#/areas']) +
     (areaCards ? `<div class="grid">${areaCards}</div>`
                : emptyBlock('No areas yet', 'Assign entities to an area in Home Assistant and they will group themselves here.'));
 }
@@ -464,7 +533,7 @@ function offlineBreakdown(offline) {
     `unavailable or unknown. Most likely a handful of integrations, not ${total} separate faults.</p>` +
     `<div class="breakdown">` + rows.map(([domain, n]) => `
       <button class="brk" data-act="filter" data-status="offline" data-domain="${escapeHtml(domain)}">
-        <span class="brk-icon"><svg class="ico ico-sm"><use href="#i-${iconName(domain)}"/></svg></span>
+        <span class="brk-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-${iconName(domain)}"/></svg></span>
         <span class="brk-text">
           <span class="brk-name">${escapeHtml(humanDomain(domain))}</span>
           <span class="brk-sub">not reporting</span>
@@ -485,8 +554,8 @@ function areaCard(id, list) {
   const bad = list.filter(isBad).length;
   return `<a class="area-card" href="#/area/${encodeURIComponent(id)}">
     <div class="area-top">
-      <span class="area-icon"><svg class="ico"><use href="#i-${iconForArea(list)}"/></svg></span>
-      <svg class="ico ico-chevron"><use href="#i-chevron"/></svg>
+      <span class="area-icon"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconForArea(list)}"/></svg></span>
+      <svg viewBox="0 0 24 24" class="ico ico-chevron"><use href="#i-chevron"/></svg>
     </div>
     <div>
       <div class="area-name">${escapeHtml(areaName(id))}</div>
@@ -502,7 +571,7 @@ function areaCard(id, list) {
 function areaView(all, id) {
   const inArea = all.filter((e) => e.area === id);
   const list = inArea.filter(matches);
-  const back = `<a class="back" href="#/areas"><svg class="ico ico-sm"><use href="#i-back"/></svg>All areas</a>`;
+  const back = `<a class="back" href="#/areas"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-back"/></svg>All areas</a>`;
   if (!list.length) {
     // An area that is empty and an area whose contents the search hid are
     // different problems, and only one of them is the user's to fix.
@@ -574,21 +643,30 @@ function devicesView(all) {
  * tweak, and would arrive through the /commands queue, never as a direct
  * vendor call from a browser tab. */
 const IRR_TYPES = [
-  { type: 'river_status', label: 'River motor status', needs: 'live' },
-  { type: 'well_status', label: 'Well motor status', needs: 'live' },
-  { type: 'controller', label: 'Controller dashboard', needs: 'live' },
-  { type: 'weather', label: 'Field weather', needs: 'live' },
-  { type: 'electricity', label: 'Electricity snapshot', needs: 'live' },
-  { type: 'pressure', label: 'Pressure snapshot', needs: 'live' },
-  { type: 'valves', label: 'Valve runtime', needs: 'range' },
-  { type: 'timer_log', label: 'Timer log', needs: 'range' },
-  { type: 'motor_log', label: 'Motor log', needs: 'range' },
-  { type: 'pressure_range', label: 'Pressure range', needs: 'range' },
+  // Combined pulls first: they answer a question that spans two vendor calls
+  // (which motors are running, did pressure hold while the valves were open)
+  // and are what most people want. The single-source pulls below stay for
+  // asking one vendor exactly one thing — and for telling which one is down.
+  { type: 'motors', label: 'Motors — river and wells', needs: 'live', group: 'Combined' },
+  { type: 'conditions', label: 'Controller and field conditions', needs: 'live', group: 'Combined' },
+  { type: 'live_readings', label: 'Power and pressure now', needs: 'live', group: 'Combined' },
+  { type: 'session_log', label: 'Irrigation session log', needs: 'range', group: 'Combined' },
+  { type: 'performance', label: 'Valve runtime against pressure', needs: 'range', group: 'Combined' },
+  { type: 'river_status', label: 'River motor status', needs: 'live', group: 'Single source' },
+  { type: 'well_status', label: 'Well motor status', needs: 'live', group: 'Single source' },
+  { type: 'controller', label: 'Controller dashboard', needs: 'live', group: 'Single source' },
+  { type: 'weather', label: 'Field weather', needs: 'live', group: 'Single source' },
+  { type: 'electricity', label: 'Electricity snapshot', needs: 'live', group: 'Single source' },
+  { type: 'pressure', label: 'Pressure snapshot', needs: 'live', group: 'Single source' },
+  { type: 'valves', label: 'Valve runtime', needs: 'range', group: 'Single source' },
+  { type: 'timer_log', label: 'Timer log', needs: 'range', group: 'Single source' },
+  { type: 'motor_log', label: 'Motor log', needs: 'range', group: 'Single source' },
+  { type: 'pressure_range', label: 'Pressure range', needs: 'range', group: 'Single source' },
 ];
 const IRR_TIMEOUT_MS = 60000;
 // Builder selections survive re-renders (a sensor update mid-form must not
 // wipe the dates), and one waiter per outstanding request resolves it.
-let irrType = 'valves', irrFrom = '', irrTo = '';
+let irrType = 'motors', irrFrom = '', irrTo = '';
 const irrWaiters = new Map();   // reqKey -> { ref, cb, timer }
 
 const irrig = () => state.irrigation || {};
@@ -657,14 +735,199 @@ function sendReportRequest() {
   });
 }
 
-function irrReportCard(key, rep) {
-  const label = rep.label || rep.type || 'Report';
-  const when = rep.at ? new Date(rep.at).toLocaleString() : '';
-  const params = [rep.params?.from, rep.params?.to].filter(Boolean).join(' → ');
-  const statusTag = rep.status === 'ok' ? `<span class="tag tag-on">Ready</span>`
-    : rep.status === 'error' ? `<span class="tag tag-bad">Failed</span>`
-    : `<span class="tag">Working…</span>`;
+/* ---- inline report charts ----
+ * Inspired by the DCON app's power/pressure/fertigation-duration charts,
+ * redrawn in this app's own near-monochrome system: one accent hue for a
+ * magnitude series (never a new palette), the existing on/off green-vs-grey
+ * for valve status. Hand-rolled inline SVG — no chart library, matching the
+ * "no framework, no build step" constraint the rest of the dashboard keeps.
+ * Both degrade to nothing rather than guessing when the shape doesn't fit,
+ * the same way vendors.py degrades an unrecognised vendor field. */
+
+const parseReading = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+
+function sparkChart(rows, unit) {
+  const pts = rows.map((r) => ({ at: r.at, v: parseReading(r.value) })).filter((p) => p.v != null);
+  if (pts.length < 2) return '';
+  const W = 100, H = 32, PAD = 3;
+  const vals = pts.map((p) => p.v);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = max - min || 1;
+  const x = (i) => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
+  const y = (v) => H - PAD - ((v - min) / span) * (H - PAD * 2);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const area = `M${x(0).toFixed(1)},${(H - PAD).toFixed(1)} ` +
+    pts.map((p, i) => `L${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ') +
+    ` L${x(pts.length - 1).toFixed(1)},${(H - PAD).toFixed(1)} Z`;
+  const fmt = (v) => `${v}${unit ? ' ' + unit : ''}`;
+  // Native <title> tooltips: the hover layer a static SVG can offer for
+  // free, without hand-rolling a crosshair for a card-sized widget.
+  const dots = pts.map((p, i) =>
+    `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="1.6" class="spark-dot">` +
+    `<title>${escapeHtml([p.at, fmt(p.v)].filter(Boolean).join(' · '))}</title></circle>`).join('');
+  const last = pts[pts.length - 1];
+  return `<div class="spark">
+    <svg viewBox="0 0 ${W} ${H}" class="spark-svg" preserveAspectRatio="none" aria-hidden="true">
+      <path d="${area}" class="spark-area"/>
+      <path d="${line}" class="spark-line"/>
+      ${dots}
+    </svg>
+    <div class="spark-labels">
+      <span>${escapeHtml(fmt(min))} min</span>
+      <span class="spark-last">${escapeHtml(fmt(last.v))} latest</span>
+      <span>${escapeHtml(fmt(max))} max</span>
+    </div>
+  </div>`;
+}
+
+function parseRuntimeMinutes(v) {
+  const s = String(v ?? '');
+  const h = /(\d+)\s*h/i.exec(s), m = /(\d+)\s*m/i.exec(s);
+  if (h || m) return (h ? parseInt(h[1], 10) * 60 : 0) + (m ? parseInt(m[1], 10) : 0);
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+}
+const fmtMinutes = (m) => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`;
+
+function barChart(items) {
+  const rows = items.filter((r) => r.minutes > 0);
+  if (!rows.length) return '';
+  const max = Math.max(...rows.map((r) => r.minutes));
+  const bars = rows.map((r) => `<div class="bar-row">
+    <span class="bar-label">${escapeHtml(r.name)}</span>
+    <span class="bar-track"><span class="bar-fill${r.status === 'on' ? ' is-on' : ''}" ` +
+      `style="width:${Math.max(4, Math.round((r.minutes / max) * 100))}%"></span></span>
+    <span class="bar-value">${escapeHtml(fmtMinutes(r.minutes))}</span>
+  </div>`).join('');
+  return `<div class="bars">${bars}</div>`;
+}
+
+/* Pre-sections reports carry raw vendor runtime strings, so those still get
+ * parsed here; a current report arrives with the minutes already worked out. */
+function valveBars(rows) {
+  return barChart(rows.map((r) => ({
+    name: r.name || (r.id ? `Valve ${r.id}` : 'Valve'),
+    minutes: parseRuntimeMinutes(r.runtime), status: r.status,
+  })));
+}
+
+/* ---- report sections ----
+ * A report arrives as a list of sections, each declaring the *kind* of thing
+ * it is — metrics, status, series, bars, timeline, facts — and the bridge
+ * decides that, not this file. The dashboard draws by kind and never sniffs
+ * shapes: a vendor returning something unexpected loses one section rather
+ * than producing a chart of nonsense, and a kind this build does not know is
+ * skipped, so the bridge can add one without breaking an open tab.
+ * Reports written before sections existed still carry `rows`; irrLegacyBody()
+ * renders those the old way. */
+
+const IRR_ROW_CAP = 8;
+
+const moreNote = (total, shown, what) => total > shown
+  ? `<p class="rep-note">${total - shown} more ${what} in this report.</p>` : '';
+
+function irrMetrics(rows) {
+  const tiles = rows
+    .filter((r) => r && r.value !== undefined && r.value !== null && r.value !== '')
+    .map((r) => `<div class="tile">
+      <span class="tile-label">${escapeHtml(r.label || '')}</span>
+      <span class="tile-value">${escapeHtml(String(r.value))}` +
+        `${r.unit ? `<span class="tile-unit">${escapeHtml(r.unit)}</span>` : ''}</span>
+      ${r.note ? `<span class="tile-note">${escapeHtml(r.note)}</span>` : ''}
+    </div>`).join('');
+  return tiles ? `<div class="tiles">${tiles}</div>` : '';
+}
+
+function irrStatusRows(rows) {
+  const shown = rows.slice(0, IRR_ROW_CAP).map((r) => irrigRow(
+    r.source === 'dcon' ? 'i-valve' : 'i-water_heater',
+    r.name || 'Motor', r.meta || '', irrigStatusTag(r.status))).join('');
+  return shown ? `<div class="list">${shown}</div>` +
+    moreNote(rows.length, IRR_ROW_CAP, 'rows') : '';
+}
+
+function irrSeries(rows, sec) {
+  const unit = sec.unit || (rows.find((r) => r && r.unit) || {}).unit || '';
+  const chart = sparkChart(rows, unit);
+  if (chart) return chart;
+  // One reading is not a curve. Show it as a reading rather than a flat line.
+  const shown = rows.slice(0, IRR_ROW_CAP).map((r) => irrigRow('i-menu',
+    [r.value, r.unit].filter(Boolean).join(' ') || '—', r.at || '', '')).join('');
+  return shown ? `<div class="list">${shown}</div>` : '';
+}
+
+function irrBars(rows) {
+  // Runtime is already minutes here: the bridge parsed "1h 20m" once, so the
+  // browser never has to guess at a vendor's spelling.
+  return barChart(rows.map((r) => ({
+    name: r.name || 'Valve',
+    minutes: Number(r.value) || 0,
+    status: r.status,
+  })));
+}
+
+function irrFacts(rows) {
+  const items = rows.filter((r) => r && r.value !== undefined && r.value !== '')
+    .map((r) => `<div class="fact"><span class="fact-label">${escapeHtml(r.label || '')}</span>` +
+      `<span class="fact-value">${escapeHtml(String(r.value))}</span></div>`).join('');
+  return items ? `<div class="facts">${items}</div>` : '';
+}
+
+function irrTimeline(rows) {
+  const shown = rows.slice(0, IRR_ROW_CAP);
+  let day = '';
+  const items = shown.map((r) => {
+    const at = String(r.at || '');
+    const stamp = /^\d{4}-\d{2}-\d{2}/.test(at)
+      ? { day: at.slice(0, 10), time: at.slice(11, 16) } : { day: '', time: at };
+    const head = stamp.day && stamp.day !== day
+      ? `<div class="tl-day">${escapeHtml(stamp.day)}</div>` : '';
+    if (stamp.day) day = stamp.day;
+    const source = r.source
+      ? `<span class="chip">${escapeHtml(r.source)}</span>` : '';
+    return head + `<div class="tl-row">
+      <span class="tl-at">${escapeHtml(stamp.time || '—')}</span>
+      <span class="tl-main"><span class="row-name">${escapeHtml(r.detail || r.event || 'entry')}</span>
+        ${r.detail && r.event ? `<span class="row-meta">${escapeHtml(r.event)}</span>` : ''}</span>
+      ${source}
+    </div>`;
+  }).join('');
+  return items ? `<div class="tl">${items}</div>` +
+    moreNote(rows.length, IRR_ROW_CAP, 'entries') : '';
+}
+
+const IRR_SECTION_DRAW = {
+  metrics: irrMetrics, status: irrStatusRows, series: irrSeries,
+  bars: irrBars, timeline: irrTimeline, facts: irrFacts,
+};
+
+function irrSection(sec, withTitle) {
+  const draw = IRR_SECTION_DRAW[sec && sec.kind];
+  if (!draw) return '';
+  const rows = Array.isArray(sec.rows) ? sec.rows : [];
+  const head = withTitle && sec.title
+    ? `<div class="sec-title">${escapeHtml(sec.title)}` +
+      `${sec.source ? `<span class="sec-src">${escapeHtml(sec.source)}</span>` : ''}</div>`
+    : '';
+  if (sec.status === 'error') {
+    return `<div class="rep-sec">${head}<p class="rep-note rep-err">` +
+      `${escapeHtml(sec.error || 'this part of the report did not come back')}</p></div>`;
+  }
+  const body = draw(rows, sec);
+  const note = sec.note ? `<p class="rep-note">${escapeHtml(sec.note)}</p>` : '';
+  if (!body && !note) return '';
+  return `<div class="rep-sec">${head}${body}${note}</div>`;
+}
+
+/* Reports written before sections existed: the old shape-sniffing render,
+ * kept so history on the page stays readable. New reports never reach it. */
+function irrLegacyBody(rep, label) {
   const rows = Array.isArray(rep.rows) ? rep.rows : [];
+  const isReadings = rows.length >= 2 &&
+    rows.every((r) => r && typeof r === 'object' && 'value' in r);
+  const chart = rep.status !== 'ok' ? ''
+    : rep.type === 'valves' ? valveBars(rows)
+    : isReadings ? sparkChart(rows, rows[0] && rows[0].unit) : '';
   const shown = rows.slice(0, 6).map((r) => {
     const name = r.name || r.event || r.id || label;
     const meta = [r.status, r.detail, r.runtime,
@@ -672,8 +935,26 @@ function irrReportCard(key, rep) {
       .filter(Boolean).join(' · ');
     return irrigRow('i-menu', name, meta || label, '');
   }).join('');
-  const more = rows.length > 6
-    ? `<p class="more-note">${rows.length - 6} more rows in this report.</p>` : '';
+  return chart + (shown ? `<div class="list">${shown}</div>` +
+    moreNote(rows.length, 6, 'rows') : '');
+}
+
+function irrReportCard(key, rep) {
+  const label = rep.label || rep.type || 'Report';
+  const when = rep.at ? new Date(rep.at).toLocaleString() : '';
+  const params = [rep.params && rep.params.from, rep.params && rep.params.to]
+    .filter(Boolean).join(' → ');
+  // Three outcomes, three tags: a report where one vendor answered and one
+  // did not is not "Ready", and must not read as if it were.
+  const statusTag = rep.status === 'ok' ? `<span class="tag tag-on">Ready</span>`
+    : rep.status === 'partial' ? `<span class="tag tag-warn">Partly ready</span>`
+    : rep.status === 'error' ? `<span class="tag tag-bad">Failed</span>`
+    : `<span class="tag">Working…</span>`;
+  const sections = Array.isArray(rep.sections) ? rep.sections : [];
+  const withTitles = sections.filter((s) => IRR_SECTION_DRAW[s && s.kind]).length > 1;
+  const body = sections.length
+    ? sections.map((s) => irrSection(s, withTitles)).join('')
+    : irrLegacyBody(rep, label);
   return `<div class="rep-card" data-rep="${escapeHtml(key)}">
     <div class="rep-head">
       <span class="rep-title">${escapeHtml(label)}</span>${statusTag}
@@ -681,7 +962,7 @@ function irrReportCard(key, rep) {
     </div>
     ${rep.summary ? `<p class="rep-summary">${escapeHtml(rep.summary)}</p>` : ''}
     ${rep.status === 'error' && rep.error ? `<p class="rep-summary rep-err">${escapeHtml(rep.error)}</p>` : ''}
-    ${shown ? `<div class="list">${shown}</div>${more}` : ''}
+    ${body}
   </div>`;
 }
 
@@ -702,7 +983,7 @@ function irrigMotorCard(m) {
     : m.source === 'livesky' ? 'i-water_heater' : 'i-default';
   return `<div class="area-card">
     <div class="area-top">
-      <span class="area-icon"><svg class="ico"><use href="#${icon}"/></svg></span>
+      <span class="area-icon"><svg viewBox="0 0 24 24" class="ico"><use href="#${icon}"/></svg></span>
     </div>
     <div>
       <div class="area-name">${escapeHtml(m.name || 'Motor')}</div>
@@ -717,7 +998,7 @@ function irrigMotorCard(m) {
 }
 
 const irrigRow = (icon, name, meta, right) =>
-  `<div class="row"><span class="row-icon"><svg class="ico ico-sm"><use href="#${icon}"/></svg></span>` +
+  `<div class="row"><span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#${icon}"/></svg></span>` +
   `<span class="row-main"><span class="row-name">${escapeHtml(name)}</span>` +
   `<span class="row-meta">${escapeHtml(meta)}</span></span>${right}</div>`;
 
@@ -726,8 +1007,11 @@ function irrigationView() {
   if (!irrFrom) irrFrom = def.from;
   if (!irrTo) irrTo = def.to;
 
-  const options = IRR_TYPES.map((t) =>
-    `<option value="${t.type}"${irrType === t.type ? ' selected' : ''}>${escapeHtml(t.label)}</option>`).join('');
+  const groups = [...new Set(IRR_TYPES.map((t) => t.group))];
+  const options = groups.map((g) =>
+    `<optgroup label="${escapeHtml(g)}">` + IRR_TYPES.filter((t) => t.group === g).map((t) =>
+      `<option value="${t.type}"${irrType === t.type ? ' selected' : ''}>${escapeHtml(t.label)}</option>`
+    ).join('') + `</optgroup>`).join('');
   const showRange = irrNeedsRange(irrType);
   const pending = irrWaiters.size;
   const builder = canControl
@@ -794,6 +1078,183 @@ function irrigationView() {
     `<p class="more-note">Read-only pulls — this page cannot operate pumps or valves.</p>`;
 }
 
+/* ---- admin (add people, grant/revoke view + control) ---- */
+
+/* Two ways for an ordinary account to end up in acl/viewers or
+ * acl/controllers, and both start on this page:
+ *   - Add a person: writes acl/invites/<email key>. Their next sign-in
+ *     claims it automatically (see enter()) and deletes the invite.
+ *   - Grant/Revoke on an existing row: writes acl/viewers|controllers
+ *     directly, for someone who has already signed in at least once and so
+ *     self-registered acl/directory/<uid> with their email.
+ * Neither path touches the command line or the service account — that is
+ * the point: tools/grant-access.js remains only for the one tier this page
+ * cannot hand out (see below).
+ *
+ * RTDB rules cascade a read of the whole acl subtree to an admin
+ * (root.child('acl/admins').child(auth.uid)), so state.acl arrives as one
+ * snapshot: { admins, viewers, controllers, directory, invites }. Admin
+ * itself is never grantable from here — that stays a command-line,
+ * service-account action (tools/grant-access.js --admin), the same way
+ * cover/lock stay out of device control: promoting an admin is a security
+ * decision, not a click. */
+
+function aclTierOf(uid) {
+  const a = state.acl || {};
+  if (a.admins?.[uid] === true) return 'admin';
+  if (a.controllers?.[uid] === true) return 'control';
+  if (a.viewers?.[uid] === true) return 'view';
+  return 'none';
+}
+
+const aclTierTag = (t) =>
+  t === 'admin' ? `<span class="tag tag-on">Admin</span>`
+  : t === 'control' ? `<span class="tag tag-on">Controller</span>`
+  : t === 'view' ? `<span class="tag">Viewer</span>`
+  : `<span class="tag tag-bad">No access</span>`;
+
+/* One write, one path — same shape of trust as sendCommand. Removing a tier
+ * is always allowed by rules; granting view or control is validated
+ * server-side too, this just avoids a round trip to find out. */
+function aclSet(uid, tier) {
+  if (!isAdmin || !uid || uid === currentUser?.uid) return;
+  const db = firebase.database();
+  const viewRef = db.ref(`acl/viewers/${uid}`);
+  const ctlRef = db.ref(`acl/controllers/${uid}`);
+  const fail = (err) => {
+    toast('err', err?.code === 'PERMISSION_DENIED'
+      ? 'The database refused that change.' : `Could not update: ${err?.message || err}`);
+  };
+  let action;
+  if (tier === 'none') action = Promise.all([ctlRef.remove(), viewRef.remove()]);
+  else if (tier === 'view') action = ctlRef.remove().then(() => viewRef.set(true));
+  else action = viewRef.set(true).then(() => ctlRef.set(true));   // 'control'
+  action.then(() => toast('ok', 'Access updated.')).catch(fail);
+}
+
+/* Pre-authorize someone who has never signed in: write acl/invites/<key>,
+ * and their first Google sign-in claims it automatically (see enter()) —
+ * the only two ways to become a viewer or controller are an admin doing
+ * this, or claiming an invite an admin left. Neither needs a terminal. */
+function sendInvite() {
+  if (!isAdmin) return;
+  const emailInput = el('admin-add-email');
+  const email = (emailInput?.value || '').trim().toLowerCase();
+  const tier = el('admin-add-tier')?.value === 'control' ? 'control' : 'view';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    toast('err', 'Enter a valid email address.');
+    return;
+  }
+  const key = emailToInviteKey(email);
+  firebase.database().ref(`acl/invites/${key}`).set({
+    tier, at: firebase.database.ServerValue.TIMESTAMP,
+  }).then(() => {
+    toast('ok', `${email} will get ${tier === 'control' ? 'view + control' : 'view'} ` +
+      `access the moment they sign in.`);
+    if (emailInput) emailInput.value = '';
+  }).catch((err) => {
+    toast('err', err.code === 'PERMISSION_DENIED'
+      ? 'The database refused that invite.' : `Could not invite: ${err.message}`);
+  });
+}
+
+function cancelInvite(key) {
+  if (!isAdmin || !key) return;
+  firebase.database().ref(`acl/invites/${key}`).remove()
+    .then(() => toast('ok', 'Invite cancelled.'))
+    .catch(() => toast('err', 'Could not cancel that invite.'));
+}
+
+function inviteRow(key, invite) {
+  const email = inviteKeyToEmail(key);
+  const tierLabel = invite?.tier === 'control' ? 'View + control' : 'View';
+  return `<div class="row acl-row">
+    <span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-person"/></svg></span>
+    <span class="row-main">
+      <span class="row-name">${escapeHtml(email)}</span>
+      <span class="row-meta">Invited · ${escapeHtml(tierLabel)} · awaiting first sign-in</span>
+    </span>
+    <span class="tag">Pending</span>
+    <div class="acl-actions">
+      <button class="btn btn-ghost" data-act="acl-cancel-invite" data-key="${escapeHtml(key)}">Cancel invite</button>
+    </div>
+  </div>`;
+}
+
+function adminRow(uid, person) {
+  const tier = aclTierOf(uid);
+  const email = person?.email || '';
+  const name = person?.name || '';
+  const self = uid === currentUser?.uid;
+  const btn = (act, label) =>
+    `<button class="btn btn-ghost" data-act="${act}" data-uid="${escapeHtml(uid)}">${escapeHtml(label)}</button>`;
+  const actions = self ? `<span class="more-note">This is you</span>` : [
+    tier === 'none' ? btn('acl-view', 'Grant view') : '',
+    tier === 'view' ? btn('acl-control', 'Grant control') : '',
+    tier === 'control' ? btn('acl-view', 'Revoke control') : '',
+    tier === 'admin' ? `<span class="more-note">Admin — change from the command line</span>` : '',
+    tier === 'view' || tier === 'control' ? btn('acl-none', 'Revoke all') : '',
+  ].filter(Boolean).join(' ');
+  return `<div class="row acl-row" data-uid="${escapeHtml(uid)}">
+    <span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-person"/></svg></span>
+    <span class="row-main">
+      <span class="row-name">${escapeHtml(name || email || '(no directory entry)')}</span>
+      <span class="row-meta">${escapeHtml([email, name ? uid : ''].filter(Boolean).join(' · ') || uid)}</span>
+    </span>
+    ${aclTierTag(tier)}
+    <div class="acl-actions">${actions}</div>
+  </div>`;
+}
+
+function adminView() {
+  const acl = state.acl || {};
+  const directory = acl.directory || {};
+  const invites = acl.invites || {};
+  const knownEmails = new Set(Object.values(directory)
+    .map((p) => (p?.email || '').toLowerCase()).filter(Boolean));
+
+  const uids = new Set([
+    ...Object.keys(acl.admins || {}),
+    ...Object.keys(acl.viewers || {}),
+    ...Object.keys(acl.controllers || {}),
+    ...Object.keys(directory),
+  ]);
+  const rank = { admin: 0, control: 1, view: 2, none: 3 };
+  const peopleRows = [...uids]
+    .map((uid) => ({ uid, tier: aclTierOf(uid), person: directory[uid] }))
+    .sort((a, b) => rank[a.tier] - rank[b.tier] ||
+      (a.person?.email || a.uid).localeCompare(b.person?.email || b.uid, undefined, NATURAL));
+  // Once claimed, enter() deletes the invite - this filter just covers the
+  // gap between a claim landing and the invite delete confirming.
+  const inviteRows = Object.entries(invites)
+    .filter(([key]) => !knownEmails.has(inviteKeyToEmail(key).toLowerCase()))
+    .sort((a, b) => a[0].localeCompare(b[0], undefined, NATURAL));
+
+  const addForm = `<div class="rep-builder">
+    <label class="rep-field"><span>Email</span>
+      <input id="admin-add-email" type="email" placeholder="someone@example.com" autocomplete="off" spellcheck="false"></label>
+    <label class="rep-field"><span>Access</span>
+      <select id="admin-add-tier"><option value="view">View</option><option value="control">View + control</option></select></label>
+    <button class="btn btn-primary" data-act="admin-invite">Add person</button>
+  </div>
+  <p class="more-note">They get that access automatically the moment they sign in with that Google account — no command line, no service account.</p>`;
+
+  const rows = [
+    ...inviteRows.map(([key, inv]) => inviteRow(key, inv)),
+    ...peopleRows.map((r) => adminRow(r.uid, r.person)),
+  ];
+  const list = rows.length
+    ? `<div class="list">${rows.join('')}</div>`
+    : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
+
+  return head('Admin', 'Add people and grant or revoke dashboard access.') +
+    sectionHead('n-admin', 'Add a person') + addForm +
+    sectionHead('n-admin', 'People') + list +
+    `<p class="more-note">Admin status is granted from the command line ` +
+    `(<code>npm run grant -- someone@example.com --admin</code>), not from here — ` +
+    `the one tier this page cannot hand out.</p>`;
+}
+
 /* ---- pieces ---- */
 
 function deviceCard(ent) {
@@ -806,7 +1267,7 @@ function deviceCard(ent) {
 
   return `<div class="dev-card ${cls}" data-key="${escapeHtml(ent.key)}">
     <div class="dev-top">
-      <span class="dev-icon"><svg class="ico"><use href="#i-${iconFor(ent)}"/></svg></span>
+      <span class="dev-icon"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconFor(ent)}"/></svg></span>
       <span class="dev-text">
         <span class="dev-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
         <span class="dev-meta">${escapeHtml(humanDomain(ent.domain))}${subtitle(ent)}</span>
@@ -831,7 +1292,7 @@ function deviceCard(ent) {
 
 function row(ent, withArea = false) {
   return `<div class="row ${isBad(ent) ? 'is-bad' : isOn(ent) ? 'is-on' : ''}" data-key="${escapeHtml(ent.key)}">
-    <span class="row-icon"><svg class="ico ico-sm"><use href="#i-${iconFor(ent)}"/></svg></span>
+    <span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-${iconFor(ent)}"/></svg></span>
     <span class="row-main">
       <span class="row-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
       <span class="row-meta">${escapeHtml(withArea ? areaName(ent.area) : humanDomain(ent.domain))}${subtitle(ent)}</span>
@@ -841,7 +1302,7 @@ function row(ent, withArea = false) {
 }
 
 const emptyBlock = (title, body) => `<div class="empty">
-  <span class="empty-mark"><svg class="ico"><use href="#i-search"/></svg></span>
+  <span class="empty-mark"><svg viewBox="0 0 24 24" class="ico"><use href="#i-search"/></svg></span>
   <h3>${escapeHtml(title)}</h3><p>${escapeHtml(body)}</p></div>`;
 
 const noMatch = () => emptyBlock('Nothing matches', 'Try a different search term, or clear the filter.');
@@ -914,6 +1375,22 @@ function wire(all) {
   view.querySelectorAll('[data-act="irr-gen"]').forEach((btn) => {
     btn.onclick = () => { sendReportRequest(); };
   });
+
+  view.querySelectorAll('[data-act="acl-view"]').forEach((btn) => {
+    btn.onclick = () => aclSet(btn.dataset.uid, 'view');
+  });
+  view.querySelectorAll('[data-act="acl-control"]').forEach((btn) => {
+    btn.onclick = () => aclSet(btn.dataset.uid, 'control');
+  });
+  view.querySelectorAll('[data-act="acl-none"]').forEach((btn) => {
+    btn.onclick = () => aclSet(btn.dataset.uid, 'none');
+  });
+  view.querySelectorAll('[data-act="admin-invite"]').forEach((btn) => {
+    btn.onclick = () => sendInvite();
+  });
+  view.querySelectorAll('[data-act="acl-cancel-invite"]').forEach((btn) => {
+    btn.onclick = () => cancelInvite(btn.dataset.key);
+  });
 }
 
 /* ---- formatting ---- */
@@ -974,19 +1451,22 @@ function stateClass(ent) {
 
 function renderBridgeStatus() {
   const pill = el('bridge-pill'), text = el('bridge-text');
+  const mpill = el('m-bridge'), mtext = el('m-bridge-text');
   const hb = state.meta?.bridge;
-  pill.className = 'pill pill-unknown';
+  const set = (cls, msg) => {
+    pill.className = 'pill pill-unknown ' + cls;
+    mpill.className = 'pill pill-unknown only-narrow ' + cls;
+    text.textContent = msg; mtext.textContent = msg;
+  };
 
-  if (!hb || !hb.lastSeen) { text.textContent = 'no bridge data'; return; }
-  if (hb.status === 'offline') { pill.className = 'pill pill-offline'; text.textContent = 'bridge offline'; return; }
+  if (!hb || !hb.lastSeen) { set('', 'no bridge data'); return; }
+  if (hb.status === 'offline') { set('pill-offline', 'bridge offline'); return; }
 
   const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
   if (ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    pill.className = 'pill pill-stale';
-    text.textContent = `stale ${humanAge(ageSec)}`;
+    set('pill-stale', `stale ${humanAge(ageSec)}`);
   } else {
-    pill.className = 'pill pill-online';
-    text.textContent = 'live';
+    set('pill-online', 'live');
   }
 }
 

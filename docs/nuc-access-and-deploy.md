@@ -159,6 +159,21 @@ ssh $SSH_OPTS sibhiorchards@192.168.68.200 'T=$(cat /run/s6/container_environmen
 `/store/reload` is the API equivalent of **Check for updates**; without it the
 Supervisor keeps reporting the old `version_latest` and the update is a no-op.
 
+Same thing through the CLI container, if you prefer words to curl (used for the
+0.3.0 → 0.6.0 update on 2026-09-23):
+
+```bash
+ssh $SSH_OPTS sibhiorchards@192.168.68.200 '
+  sudo docker exec hassio_cli ha store reload
+  sudo docker exec hassio_cli ha apps info local_snof_bridge | grep -E "^(version|version_latest|update_available):"
+  sudo docker exec hassio_cli ha apps update local_snof_bridge'
+```
+
+It must be `docker exec hassio_cli ha` — the host's own `/usr/bin/ha` carries no
+Supervisor token and answers `unauthorized: missing or invalid API token`. And
+it is `ha apps`, not `ha addons`, on this HA version; the old spelling warns and
+still runs.
+
 Verify at the destination regardless of which route was used:
 
 ```bash

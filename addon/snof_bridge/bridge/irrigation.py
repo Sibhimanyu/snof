@@ -59,7 +59,20 @@ _DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 # Report type -> needs. "range" means from/to dates, "live" means no params:
 # point-in-time pulls (Livesky, Niagara, DCON dashboard, weather) and the
 # energy/pressure snapshots, which the bridge stamps with its own clock.
+#
+# The first five are *composites*: one press, two vendor calls, one report.
+# They exist because the farm's real questions span vendors — which motors are
+# running (Livesky *and* Niagara), did the line hold while the valves were open
+# (valve runtime *and* pressure) — and answering them from two separate cards
+# left the correlating to the reader. A composite costs two calls; the atomic
+# reports below stay for pulling exactly one vendor when that is what is
+# wanted, and for isolating which vendor is broken.
 REPORT_TYPES = {
+    "motors": "live",
+    "conditions": "live",
+    "live_readings": "live",
+    "session_log": "range",
+    "performance": "range",
     "river_status": "live",
     "well_status": "live",
     "controller": "live",
@@ -73,6 +86,11 @@ REPORT_TYPES = {
 }
 
 REPORT_LABELS = {
+    "motors": "Motors — river and wells",
+    "conditions": "Controller and field conditions",
+    "live_readings": "Power and pressure now",
+    "session_log": "Irrigation session log",
+    "performance": "Valve runtime against pressure",
     "river_status": "River motor status",
     "well_status": "Well motor status",
     "controller": "Controller dashboard",
@@ -249,111 +267,489 @@ class IrrigationRunner:
 
     # ---- one request, end to end ------------------------------------------
 
+    # ---- vendor calls, one shape per section ------------------------------
+
+    async def _dcon_controller(self) -> dict:
+        """The controller card is itself two calls: the app dashboard for the
+        timer summary, get_node for the device identity. Either alone renders;
+        together they read as one controller."""
+        cfg = self._cfg
+        dash_raw = await self._dcon_form(
+            {"action": "dashboard", "p": "app",
+             "token_id": cfg.dcon_token_id, "product": cfg.dcon_product or "DCON"})
+        node_raw = await self._dcon_form(
+            {"action": "dcon_node", "method": "get_node",
+             "serial_no": cfg.dcon_serial})
+        return vendors.normalize_dcon_dashboard(dash_raw or node_raw or {})
+
+    async def _dcon_valves(self, start: str, end: str) -> list[dict]:
+        raw = await self._dcon_form(
+            {"action": "dcon_node", "method": "get_all_valve",
+             "from": start, "to": end, "serial_no": self._cfg.dcon_serial})
+        return vendors.normalize_dcon_valves(raw)
+
+    async def _dcon_log(self, kind: str, start: str, end: str) -> list[dict]:
+        raw = await self._dcon_form(
+            {"action": "logs", "method": kind + "_log",
+             "serial_no": self._cfg.dcon_serial, "from": start, "to": end})
+        return vendors.normalize_dcon_logs(raw, kind)
+
+    async def _dcon_now(self, kind: str) -> list[dict]:
+        """electricity / pressure_cond: a point-in-time pull the vendor wants
+        stamped with a clock, so the bridge supplies its own."""
+        raw = await self._dcon_report(
+            {"action": "reports", "type": kind,
+             "serial_no": self._cfg.dcon_serial, "dt": _now_stamp(),
+             "product": self._cfg.dcon_product or "DCON"})
+        return vendors.normalize_report(raw, kind)
+
+    async def _dcon_pressure_range(self, start: str, end: str) -> list[dict]:
+        raw = await self._dcon_report(
+            {"action": "reports", "type": "pressure_timer",
+             "serial_no": self._cfg.dcon_serial,
+             "from": f"{start} 00:00:00", "to": f"{end} 23:59:59",
+             "product": self._cfg.dcon_product or "DCON"})
+        return vendors.normalize_report(raw, "pressure")
+
+    # ---- one request, end to end ------------------------------------------
+
     def _report_base(self, rtype: str, params: dict) -> dict:
         return {"type": rtype, "label": REPORT_LABELS[rtype],
                 "params": params, "at": SERVER_TIMESTAMP}
 
+    async def _leg(self, call) -> tuple[Any, str]:
+        """Run one vendor call of a composite report. A leg that fails hands
+        back its plain-word reason instead of sinking the whole report: an
+        expired Livesky token must not cost the user the well motors they
+        asked for in the same pull."""
+        try:
+            return await call(), ""
+        except Exception as err:
+            return None, str(err)[:200] or type(err).__name__
+
+    def _result(self, rtype: str, params: dict, sections: list[dict],
+                summary: str, rows: list | None = None,
+                patch: dict | None = None) -> tuple[dict, dict]:
+        """Roll sections into one report. Status is ok, partial when a leg
+        failed but something still rendered, error when nothing did — the
+        dashboard tags all three differently so a half-report never reads as
+        a whole one."""
+        drawn = [s for s in sections if s.get("rows") or s.get("note")]
+        failed = [s for s in sections if s.get("status") == "error"]
+        # Two legs of the same vendor fail for the same reason; say it once.
+        reasons = list(dict.fromkeys(s["error"] for s in failed if s["error"]))
+        if failed and not drawn:
+            status, error = "error", "; ".join(reasons)[:200]
+        elif failed:
+            status, error = "partial", "; ".join(reasons)[:200]
+        else:
+            status, error = "ok", ""
+        report = {**self._report_base(rtype, params), "status": status,
+                  "summary": summary, "sections": sections,
+                  # rows stays for the pre-sections dashboard build: a client
+                  # that has not reloaded still renders the primary rows.
+                  "rows": list(rows or [])[:vendors.MAX_LIST]}
+        if error:
+            report["error"] = error
+        return report, (patch or {})
+
+    @staticmethod
+    def _metric(label: str, value: Any, unit: str = "", note: str = "") -> dict:
+        return {"label": label, "value": value, "unit": unit, "note": note}
+
+    @staticmethod
+    def _board(rows: list) -> list[dict]:
+        """motors/controllers -> a status board the dashboard can draw without
+        knowing which vendor produced which row."""
+        kinds = {"livesky": "River motor", "niagara": "Well controller"}
+        return [{"name": r.get("name") or "Motor",
+                 "status": r.get("status") or "unknown",
+                 "meta": r.get("detail") or kinds.get(r.get("source"), "Motor"),
+                 "source": r.get("source") or ""} for r in rows]
+
+    @staticmethod
+    def _running(rows: list) -> int:
+        return sum(1 for r in rows if r.get("status") == "on")
+
+    def _motor_sections(self, river, river_err, wells, wells_err) -> list[dict]:
+        """One motor board, whichever vendors answered. The per-vendor split
+        only appears when both were asked for — on a single-vendor report it
+        would be a row reading "0 of 0"."""
+        sections = []
+        board = list(river or []) + list(wells or [])
+        both = (river is not None and wells is not None
+                and bool(river) and bool(wells))
+        if board:
+            metrics = [self._metric("Motors running", self._running(board),
+                                    note=f"of {len(board)} reporting")]
+            if both:
+                metrics += [
+                    self._metric("River", self._running(river),
+                                 note=f"of {len(river)} Livesky motors"),
+                    self._metric("Wells", self._running(wells),
+                                 note=f"of {len(wells)} Niagara controllers")]
+            sections.append(vendors.section("metrics", "Now", metrics))
+            sections.append(vendors.section("status", "Motors",
+                                            self._board(board)))
+        if river_err:
+            sections.append(vendors.section("status", "River motor",
+                                            source="livesky", error=river_err))
+        if wells_err:
+            sections.append(vendors.section("status", "Well motors",
+                                            source="niagara", error=wells_err))
+        return sections
+
+    @staticmethod
+    def _reading_sections(title: str, rows: list, err: str,
+                          source: str) -> list[dict]:
+        """One vendor reading: the latest value as a headline, and a
+        sparkline only when the vendor actually returned a curve."""
+        if err:
+            return [vendors.section("metrics", title, source=source, error=err)]
+        stats = vendors.series_stats(rows)
+        if not stats.get("count"):
+            return [vendors.section("metrics", title, source=source,
+                                    note="the vendor returned no reading")]
+        unit = stats.get("unit") or ""
+        metrics = [{"label": title, "value": stats["last"], "unit": unit,
+                    "note": (rows[-1].get("at") if isinstance(rows[-1], dict)
+                             else "") or "latest"}]
+        if stats["count"] > 1:
+            metrics.append({"label": f"{title} range", "value":
+                            f"{stats['min']} – {stats['max']}", "unit": unit,
+                            "note": f"avg {stats['avg']} over "
+                                    f"{stats['count']} readings"})
+        out = [vendors.section("metrics", title, metrics, source=source)]
+        if stats["count"] > 1:
+            out.append(vendors.section("series", f"{title} over time", rows,
+                                       source=source))
+        return out
+
     async def _run_validated(self, rtype: str, params: dict) -> tuple[dict, dict]:
         """Execute one validated request. Returns (report, cache_patch)."""
-        cfg = self._cfg
-        serial = cfg.dcon_serial
-        product = cfg.dcon_product or "DCON"
+        handler = getattr(self, f"_report_{rtype}")
+        return await handler(params)
 
-        if rtype == "river_status":
-            motors = await self._livesky()
-            running = sum(1 for m in motors if m["status"] == "on")
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": f"{running} running of {len(motors)} motors",
-                     "rows": motors}, {"motors": motors})
+    # ---- live reports ------------------------------------------------------
 
-        if rtype == "well_status":
-            controllers = await self._niagara()
-            running = sum(1 for c in controllers if c["status"] == "on")
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": f"{running} running of "
-                                f"{len(controllers)} controllers",
-                     "rows": controllers}, {"controllers": controllers})
+    async def _report_river_status(self, params: dict) -> tuple[dict, dict]:
+        motors = await self._livesky()
+        sections = self._motor_sections(motors, "", None, "")
+        return self._result(
+            "river_status", params, sections,
+            f"{self._running(motors)} running of {len(motors)} motors",
+            motors, {"motors": motors})
 
-        if rtype == "controller":
-            dash_raw = await self._dcon_form(
-                {"action": "dashboard", "p": "app",
-                 "token_id": cfg.dcon_token_id, "product": product})
-            node_raw = await self._dcon_form(
-                {"action": "dcon_node", "method": "get_node",
-                 "serial_no": serial})
-            dcon = vendors.normalize_dcon_dashboard(dash_raw or node_raw or {})
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": dcon.get("device") or "Controller",
-                     "rows": []}, {"dcon": dcon})
+    async def _report_well_status(self, params: dict) -> tuple[dict, dict]:
+        wells = await self._niagara()
+        sections = self._motor_sections(None, "", wells, "")
+        return self._result(
+            "well_status", params, sections,
+            f"{self._running(wells)} running of {len(wells)} controllers",
+            wells, {"controllers": wells})
 
-        if rtype == "weather":
-            weather = await self._weather()
-            desc = weather.get("desc") or "—"
-            temp = weather.get("temp")
-            summary = (f"{round(temp)}°C, {desc}" if temp is not None
-                       else desc)
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": summary, "rows": []}, {"weather": weather})
+    async def _report_motors(self, params: dict) -> tuple[dict, dict]:
+        """Composite: Livesky + Niagara. The farm has one question — which
+        motors are running — and it lived in two reports until now."""
+        river, river_err = await self._leg(self._livesky)
+        wells, wells_err = await self._leg(self._niagara)
+        board = list(river or []) + list(wells or [])
+        sections = self._motor_sections(river, river_err, wells, wells_err)
+        patch = {}
+        if river is not None:
+            patch["motors"] = river
+        if wells is not None:
+            patch["controllers"] = wells
+        summary = (f"{self._running(board)} running of {len(board)} motors"
+                   if board else "no motor reported")
+        return self._result("motors", params, sections, summary, board, patch)
 
-        if rtype == "electricity":
-            raw = await self._dcon_report(
-                {"action": "reports", "type": "electricity",
-                 "serial_no": serial, "dt": _now_stamp(),
-                 "product": product})
-            rows = vendors.normalize_report(raw, "electricity")
-            last = rows[-1] if rows else {}
-            summary = " ".join(str(last.get(k) or "") for k in ("value", "unit",
-                                                                "at")).strip()
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": summary or f"{len(rows)} readings",
-                     "rows": rows}, {"electricity": rows})
+    @staticmethod
+    def _controller_facts(dcon: dict) -> list[dict]:
+        pairs = (("Device", dcon.get("device")), ("Serial", dcon.get("serial")),
+                 ("Connectivity", dcon.get("gprs")),
+                 ("Running now", dcon.get("running")),
+                 ("Last completed", dcon.get("last")),
+                 ("Next scheduled", dcon.get("next")))
+        return [{"label": label, "value": value}
+                for label, value in pairs if value]
 
-        if rtype == "pressure":
-            raw = await self._dcon_report(
-                {"action": "reports", "type": "pressure_cond",
-                 "serial_no": serial, "dt": _now_stamp(),
-                 "product": product})
-            rows = vendors.normalize_report(raw, "pressure")
-            last = rows[-1] if rows else {}
-            summary = " ".join(str(last.get(k) or "") for k in ("value", "unit",
-                                                                "at")).strip()
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": summary or f"{len(rows)} readings",
-                     "rows": rows}, {"pressure": rows})
+    @staticmethod
+    def _weather_metrics(weather: dict) -> list[dict]:
+        temp, feels = weather.get("temp"), weather.get("feels")
+        rows = []
+        if temp is not None:
+            rows.append({"label": "Temperature", "value": round(temp, 1),
+                         "unit": "°C",
+                         "note": (f"feels {round(feels)}°C" if feels is not None
+                                  else weather.get("desc") or "")})
+        if weather.get("humidity") is not None:
+            rows.append({"label": "Humidity", "value": weather["humidity"],
+                         "unit": "%", "note": weather.get("desc") or ""})
+        if weather.get("wind") is not None:
+            rows.append({"label": "Wind", "value": weather["wind"],
+                         "unit": "m/s", "note": ""})
+        return rows
 
-        # Range reports: valves, timer_log, motor_log, pressure_range.
+    async def _report_controller(self, params: dict) -> tuple[dict, dict]:
+        dcon = await self._dcon_controller()
+        facts = self._controller_facts(dcon)
+        sections = [vendors.section("facts", "Controller", facts, source="dcon")] \
+            if facts else [vendors.section(
+                "facts", "Controller", source="dcon",
+                note="the controller answered with no readable fields")]
+        return self._result("controller", params, sections,
+                            dcon.get("device") or "Controller",
+                            [], {"dcon": dcon})
+
+    async def _report_weather(self, params: dict) -> tuple[dict, dict]:
+        weather = await self._weather()
+        rows = self._weather_metrics(weather)
+        sections = [vendors.section("metrics", "Field conditions", rows,
+                                    note=weather.get("desc") or "",
+                                    source="openweather")]
+        temp = weather.get("temp")
+        summary = (f"{round(temp)}°C, {weather.get('desc') or '—'}"
+                   if temp is not None else weather.get("desc") or "—")
+        return self._result("weather", params, sections, summary, [],
+                            {"weather": weather})
+
+    async def _report_conditions(self, params: dict) -> tuple[dict, dict]:
+        """Composite: the controller card next to the weather it is irrigating
+        into. "Timer 13 at 06:00" means something different at 38°C."""
+        dcon, dcon_err = await self._leg(self._dcon_controller)
+        weather, weather_err = await self._leg(self._weather)
+        sections = []
+        if weather_err:
+            sections.append(vendors.section("metrics", "Field conditions",
+                                            source="openweather",
+                                            error=weather_err))
+        else:
+            sections.append(vendors.section(
+                "metrics", "Field conditions", self._weather_metrics(weather),
+                note=(weather or {}).get("desc") or "", source="openweather"))
+        if dcon_err:
+            sections.append(vendors.section("facts", "Controller",
+                                            source="dcon", error=dcon_err))
+        else:
+            sections.append(vendors.section("facts", "Controller",
+                                            self._controller_facts(dcon or {}),
+                                            source="dcon"))
+        patch = {}
+        if dcon is not None:
+            patch["dcon"] = dcon
+        if weather is not None:
+            patch["weather"] = weather
+        temp = (weather or {}).get("temp")
+        bits = [f"{round(temp)}°C" if temp is not None else "",
+                (weather or {}).get("desc") or "",
+                (dcon or {}).get("next") or (dcon or {}).get("running") or ""]
+        summary = " · ".join(b for b in bits if b) or "no reading"
+        return self._result("conditions", params, sections, summary, [], patch)
+
+    async def _report_electricity(self, params: dict) -> tuple[dict, dict]:
+        rows = await self._dcon_now("electricity")
+        sections = self._reading_sections("Electricity", rows, "", "dcon")
+        stats = vendors.series_stats(rows)
+        summary = (f"{stats['last']} {stats.get('unit') or ''}".strip()
+                   if stats.get("count") else "no reading")
+        return self._result("electricity", params, sections, summary, rows,
+                            {"electricity": rows})
+
+    async def _report_pressure(self, params: dict) -> tuple[dict, dict]:
+        rows = await self._dcon_now("pressure_cond")
+        sections = self._reading_sections("Pressure", rows, "", "dcon")
+        stats = vendors.series_stats(rows)
+        summary = (f"{stats['last']} {stats.get('unit') or ''}".strip()
+                   if stats.get("count") else "no reading")
+        return self._result("pressure", params, sections, summary, rows,
+                            {"pressure": rows})
+
+    async def _report_live_readings(self, params: dict) -> tuple[dict, dict]:
+        """Composite: electricity and pressure, pulled together. Read apart
+        they are two numbers; read together they say whether the pump is
+        drawing power and producing head."""
+        power, power_err = await self._leg(lambda: self._dcon_now("electricity"))
+        press, press_err = await self._leg(lambda: self._dcon_now("pressure_cond"))
+        sections = (self._reading_sections("Electricity", power or [],
+                                           power_err, "dcon")
+                    + self._reading_sections("Pressure", press or [],
+                                             press_err, "dcon"))
+        patch = {}
+        if power is not None:
+            patch["electricity"] = power
+        if press is not None:
+            patch["pressure"] = press
+        bits = []
+        for label, rows in (("power", power), ("pressure", press)):
+            stats = vendors.series_stats(rows or [])
+            if stats.get("count"):
+                bits.append(f"{stats['last']} {stats.get('unit') or ''}".strip())
+        summary = " · ".join(bits) or "no reading"
+        return self._result("live_readings", params, sections, summary,
+                            list(power or []) + list(press or []), patch)
+
+    # ---- range reports -----------------------------------------------------
+
+    @staticmethod
+    def _valve_sections(rows: list, err: str, window: str) -> list[dict]:
+        if err:
+            return [vendors.section("bars", "Valve runtime", source="dcon",
+                                    error=err)]
+        bars = [{"name": v.get("name") or (f"Valve {v['id']}" if v.get("id")
+                                           else "Valve"),
+                 "value": vendors.runtime_minutes(v.get("runtime")),
+                 "unit": "min", "status": v.get("status") or "unknown"}
+                for v in rows]
+        ran = [b for b in bars if b["value"] > 0]
+        total = sum(b["value"] for b in ran)
+        metrics = [{"label": "Valves run", "value": len(ran), "unit": "",
+                    "note": f"of {len(rows)} in {window}" if window
+                            else f"of {len(rows)}"},
+                   {"label": "Total runtime", "value":
+                    vendors.fmt_minutes(total), "unit": "",
+                    "note": (f"longest {vendors.fmt_minutes(max(b['value'] for b in ran))}"
+                             if ran else "nothing ran")},
+                   {"label": "Open now", "value":
+                    sum(1 for v in rows if v.get("status") == "on"), "unit": "",
+                    "note": "at the time of the pull"}]
+        out = [vendors.section("metrics", "Valves", metrics, source="dcon")]
+        if ran:
+            out.append(vendors.section("bars", "Runtime per valve",
+                                       sorted(ran, key=lambda b: -b["value"]),
+                                       source="dcon"))
+        else:
+            out.append(vendors.section(
+                "status", "Valves",
+                [{"name": v.get("name") or "Valve",
+                  "status": v.get("status") or "unknown",
+                  "meta": v.get("runtime") or "no runtime recorded",
+                  "source": "dcon"} for v in rows], source="dcon"))
+        return out
+
+    async def _report_valves(self, params: dict) -> tuple[dict, dict]:
         start, end = params["from"], params["to"]
-        if rtype == "valves":
-            raw = await self._dcon_form(
-                {"action": "dcon_node", "method": "get_all_valve",
-                 "from": start, "to": end, "serial_no": serial})
-            rows = vendors.normalize_dcon_valves(raw)
-            opened = sum(1 for v in rows if v["status"] == "on")
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": f"{len(rows)} valves · {opened} open · "
-                                f"{start} → {end}",
-                     "rows": rows}, {"valves": rows})
+        rows = await self._dcon_valves(start, end)
+        sections = self._valve_sections(rows, "", f"{start} → {end}")
+        opened = sum(1 for v in rows if v.get("status") == "on")
+        return self._result(
+            "valves", params, sections,
+            f"{len(rows)} valves · {opened} open · {start} → {end}",
+            rows, {"valves": rows})
 
-        if rtype in ("timer_log", "motor_log"):
-            kind = "timer" if rtype == "timer_log" else "motor"
-            raw = await self._dcon_form(
-                {"action": "logs", "method": kind + "_log",
-                 "serial_no": serial, "from": start, "to": end})
-            rows = vendors.normalize_dcon_logs(raw, kind)
-            patch = {"timerLog": rows} if kind == "timer" else {"motorLog": rows}
-            return ({**self._report_base(rtype, params), "status": "ok",
-                     "summary": f"{len(rows)} entries · {start} → {end}",
-                     "rows": rows}, patch)
+    async def _report_timer_log(self, params: dict) -> tuple[dict, dict]:
+        return await self._one_log("timer_log", "timer", params)
 
-        raw = await self._dcon_report(
-            {"action": "reports", "type": "pressure_timer",
-             "serial_no": serial,
-             "from": f"{start} 00:00:00", "to": f"{end} 23:59:59",
-             "product": product})
-        rows = vendors.normalize_report(raw, "pressure")
-        return ({**self._report_base(rtype, params), "status": "ok",
-                 "summary": f"{len(rows)} readings · {start} → {end}",
-                 "rows": rows}, {"pressure": rows})
+    async def _report_motor_log(self, params: dict) -> tuple[dict, dict]:
+        return await self._one_log("motor_log", "motor", params)
+
+    async def _one_log(self, rtype: str, kind: str,
+                       params: dict) -> tuple[dict, dict]:
+        start, end = params["from"], params["to"]
+        rows = await self._dcon_log(kind, start, end)
+        sections = [vendors.section(
+            "timeline", f"{kind.capitalize()} log",
+            [{**r, "source": kind} for r in rows], source="dcon",
+            note="" if rows else f"nothing logged between {start} and {end}")]
+        patch = {"timerLog": rows} if kind == "timer" else {"motorLog": rows}
+        return self._result(rtype, params, sections,
+                            f"{len(rows)} entries · {start} → {end}",
+                            rows, patch)
+
+    async def _report_session_log(self, params: dict) -> tuple[dict, dict]:
+        """Composite: timer log and motor log woven into one chronology. Read
+        separately you cannot see that the motor stopped mid-timer; read
+        together that is the first thing you see."""
+        start, end = params["from"], params["to"]
+        timers, timer_err = await self._leg(
+            lambda: self._dcon_log("timer", start, end))
+        motors, motor_err = await self._leg(
+            lambda: self._dcon_log("motor", start, end))
+        merged = vendors.merge_timeline((timers or [], "timer"),
+                                        (motors or [], "motor"))
+        sections = [vendors.section(
+            "metrics", "Entries",
+            [{"label": "Timer entries", "value": len(timers or []), "unit": "",
+              "note": timer_err or f"{start} → {end}"},
+             {"label": "Motor entries", "value": len(motors or []), "unit": "",
+              "note": motor_err or f"{start} → {end}"}])]
+        if merged:
+            sections.append(vendors.section("timeline", "Combined log", merged,
+                                            source="dcon"))
+        if timer_err:
+            sections.append(vendors.section("timeline", "Timer log",
+                                            source="dcon", error=timer_err))
+        if motor_err:
+            sections.append(vendors.section("timeline", "Motor log",
+                                            source="dcon", error=motor_err))
+        patch = {}
+        if timers is not None:
+            patch["timerLog"] = timers
+        if motors is not None:
+            patch["motorLog"] = motors
+        return self._result(
+            "session_log", params, sections,
+            f"{len(merged)} entries · {start} → {end}", merged, patch)
+
+    async def _report_pressure_range(self, params: dict) -> tuple[dict, dict]:
+        start, end = params["from"], params["to"]
+        rows = await self._dcon_pressure_range(start, end)
+        stats = vendors.series_stats(rows)
+        sections = self._pressure_sections(rows, "", f"{start} → {end}")
+        summary = (f"{stats['min']}–{stats['max']} {stats.get('unit') or ''}"
+                   f" · {start} → {end}" if stats.get("count")
+                   else f"no readings · {start} → {end}")
+        return self._result("pressure_range", params, sections, summary, rows,
+                            {"pressure": rows})
+
+    @staticmethod
+    def _pressure_sections(rows: list, err: str, window: str) -> list[dict]:
+        if err:
+            return [vendors.section("series", "Pressure", source="dcon",
+                                    error=err)]
+        stats = vendors.series_stats(rows)
+        if not stats.get("count"):
+            return [vendors.section("series", "Pressure", source="dcon",
+                                    note=f"no readings in {window}"
+                                         if window else "no readings")]
+        unit = stats.get("unit") or ""
+        metrics = [{"label": "Average", "value": stats["avg"], "unit": unit,
+                    "note": f"{stats['count']} readings"},
+                   {"label": "Low", "value": stats["min"], "unit": unit,
+                    "note": window},
+                   {"label": "High", "value": stats["max"], "unit": unit,
+                    "note": window}]
+        return [vendors.section("metrics", "Pressure", metrics, source="dcon"),
+                vendors.section("series", "Pressure over time", rows,
+                                source="dcon")]
+
+    async def _report_performance(self, params: dict) -> tuple[dict, dict]:
+        """Composite: valve runtime against the pressure over the same window.
+        The one question a runtime bar cannot answer on its own is whether the
+        line held while the valve was open."""
+        start, end = params["from"], params["to"]
+        window = f"{start} → {end}"
+        valves, valve_err = await self._leg(
+            lambda: self._dcon_valves(start, end))
+        press, press_err = await self._leg(
+            lambda: self._dcon_pressure_range(start, end))
+        sections = (self._valve_sections(valves or [], valve_err, window)
+                    + self._pressure_sections(press or [], press_err, window))
+        patch = {}
+        if valves is not None:
+            patch["valves"] = valves
+        if press is not None:
+            patch["pressure"] = press
+        total = sum(vendors.runtime_minutes(v.get("runtime"))
+                    for v in (valves or []))
+        stats = vendors.series_stats(press or [])
+        bits = [f"{vendors.fmt_minutes(total)} of valve runtime" if total else "",
+                (f"pressure {stats['min']}–{stats['max']} "
+                 f"{stats.get('unit') or ''}".strip()
+                 if stats.get("count") else ""), window]
+        return self._result("performance", params, sections,
+                            " · ".join(b for b in bits if b),
+                            list(valves or []), patch)
 
     async def handle(self, req_id: str, req: Any) -> None:
         if req is None or req_id in self._seen:

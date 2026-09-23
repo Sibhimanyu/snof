@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { readFileSync } from 'node:fs';
 const base='http://localhost:8765/index.html';
 const b=await chromium.launch(); let fail=0;
 const check=(n,ok,x='')=>{console.log(`${ok?'  PASS':'  FAIL'}  ${n}${x?'  '+x:''}`);if(!ok)fail++;};
@@ -146,11 +147,29 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await p.waitForSelector('.rep-builder');
   const r=await p.evaluate(()=>({
     title:document.querySelector('.page-title')?.textContent,
-    options:document.querySelectorAll('#irr-type option').length,
+    options:[...document.querySelectorAll('#irr-type option')].map(o=>o.value),
+    groups:[...document.querySelectorAll('#irr-type optgroup')].map(o=>o.label),
     seeded:document.querySelectorAll('.rep-card').length,
     scripts:[...document.documentElement.innerHTML].join('').includes('token_id')}));
-  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options===10,
-    `${r.options} options`);
+  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options.length===15,
+    `${r.options.length} options`);
+  check('combined pulls are offered first and labelled as such',
+    r.groups[0]==='Combined'&&r.groups[1]==='Single source', r.groups.join('|'));
+  // Drift here is a PERMISSION_DENIED the user meets as "the database refused
+  // that request": every type the builder offers must be on the rules
+  // allow-list, and the allow-list must not carry a type nobody can pick.
+  {
+    const rules=readFileSync(new URL('../database.rules.json',import.meta.url),'utf8');
+    // The rules file holds several allow-lists; take the one under
+    // irrigation_requests, not the command domains above it.
+    const block=rules.slice(rules.indexOf('"irrigation_requests"'));
+    const allowed=(/\^\(([a-z_|]+)\)\$/.exec(block)||[,''])[1].split('|').filter(Boolean);
+    const missing=r.options.filter(t=>!allowed.includes(t));
+    const unreachable=allowed.filter(t=>!r.options.includes(t));
+    check('every offered report type is on the rules allow-list',
+      missing.length===0&&unreachable.length===0,
+      `missing:${missing.join(',')||'none'} unreachable:${unreachable.join(',')||'none'}`);
+  }
   check('seeded report history renders', r.seeded>=1, `${r.seeded} cards`);
   check('no vendor credential leaks into the page', r.scripts===false);
   // End to end: pick a range report, press Generate, the answer arrives.
@@ -164,6 +183,40 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('generated report lands as a card', ready===true);
   const toast=await p.evaluate(()=>[...document.querySelectorAll('.toast')].map(t=>t.textContent).join('|'));
   check('user is told the report is ready', /ready/i.test(toast), toast.slice(0,80));
+  // Sections, drawn by kind: a composite must produce more than a row dump.
+  await p.selectOption('#irr-type','performance');
+  await p.waitForTimeout(150);
+  await p.click('[data-act="irr-gen"]');
+  await p.waitForFunction(()=>[...document.querySelectorAll('.rep-card .rep-title')]
+    .some(t=>t.textContent.startsWith('Valve runtime against')), null, {timeout:8000});
+  const secs=await p.evaluate(()=>{
+    const card=[...document.querySelectorAll('.rep-card')]
+      .find(c=>c.querySelector('.rep-title').textContent.startsWith('Valve runtime against'));
+    return {titles:[...card.querySelectorAll('.sec-title')].map(t=>t.firstChild.textContent.trim()),
+      tiles:card.querySelectorAll('.tile').length, bars:card.querySelectorAll('.bar-row').length,
+      spark:card.querySelectorAll('.spark-svg').length};});
+  check('a composite report draws every section kind it was given',
+    secs.tiles===6&&secs.bars===3&&secs.spark===1,
+    JSON.stringify(secs));
+  check('sections are titled once a report has more than one',
+    secs.titles.length===4, secs.titles.join('|'));
+  // A half-answered composite must not read as a whole one.
+  const partial=await p.evaluate(()=>{
+    const card=[...document.querySelectorAll('.rep-card')]
+      .find(c=>c.querySelector('.rep-title').textContent.startsWith('Motors'));
+    return card&&{tag:card.querySelector('.tag').textContent,
+      err:card.querySelector('.rep-err')?.textContent||''};});
+  check('a partly-failed report says so on the card',
+    partial&&partial.tag==='Partly ready'&&/Livesky/.test(partial.err),
+    JSON.stringify(partial));
+  // History written before sections existed still renders.
+  const legacy=await p.evaluate(()=>{
+    const card=[...document.querySelectorAll('.rep-card')]
+      .find(c=>c.querySelector('.rep-title').textContent==='Timer log'
+        &&c.querySelector('.rep-when').textContent.includes('2026-02-20'));
+    return card&&card.querySelectorAll('.row').length;});
+  check('pre-sections reports still render their rows', legacy>=1, `${legacy} rows`);
+
   // A to-before-from range is refused client-side, before any request.
   await p.selectOption('#irr-type','valves');
   await p.fill('#irr-from','2026-02-22'); await p.fill('#irr-to','2026-02-20');

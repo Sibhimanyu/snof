@@ -2,6 +2,7 @@
 
 Run from the add-on directory:  python3 tests/test_logic.py
 """
+import asyncio
 import logging
 import re
 import sys
@@ -16,7 +17,8 @@ from bridge.commands import CommandConsumer  # noqa: E402
 from bridge.mapper import StateMapper, filter_attributes  # noqa: E402
 from bridge.registry import Registry  # noqa: E402
 from bridge import vendors  # noqa: E402  (pure: no network, no deps)
-from bridge.irrigation import IrrigationRunner, REPORT_TYPES  # noqa: E402
+from bridge.irrigation import (IrrigationRunner, REPORT_LABELS,  # noqa: E402
+                               REPORT_TYPES)
 
 CFG = types.SimpleNamespace(
     exclude_entities=frozenset({"sensor.noisy"}),
@@ -298,15 +300,191 @@ def irr_req(**over):
 
 
 def test_report_every_known_type_validates():
-    """All ten collection endpoints are reachable through the queue."""
+    """Every report offered in the builder is reachable through the queue."""
     live = {t: {"type": t, "uid": "u1", "at": time.time() * 1000}
             for t in REPORT_TYPES if REPORT_TYPES[t] == "live"}
-    assert len(live) == 6, REPORT_TYPES  # river/well/controller/weather/elec/pressure
+    assert len(live) == 9, REPORT_TYPES
     for t, payload in live.items():
         got = irr_runner().validate("r", payload)
         assert got == (t, {}), (t, got)
     got = irr_runner().validate("r", irr_req(type="timer_log"))
     assert got == ("timer_log", {"from": "2026-02-20", "to": "2026-02-22"}), got
+
+
+def test_every_report_type_has_a_label_and_a_builder():
+    """The three lists that must not drift: the type allow-list, the labels
+    the dashboard shows, and the method that actually pulls the data. A type
+    with no builder would validate, run, and crash with AttributeError."""
+    runner = irr_runner()
+    for rtype in REPORT_TYPES:
+        assert rtype in REPORT_LABELS, rtype
+        assert callable(getattr(runner, f"_report_{rtype}", None)), rtype
+    assert set(REPORT_LABELS) == set(REPORT_TYPES)
+
+
+# ------------------------------------------------- report sections (presentation)
+
+def test_number_of_reads_vendor_spellings():
+    assert vendors.number_of("2.1") == 2.1
+    assert vendors.number_of("2.1 bar") == 2.1
+    assert vendors.number_of(3) == 3.0
+    assert vendors.number_of("-0.5") == -0.5
+    # No number means no number: a zero here would flatten a chart.
+    assert vendors.number_of("n/a") is None
+    assert vendors.number_of(None) is None
+    assert vendors.number_of(True) is None
+
+
+def test_series_stats_ignores_unreadable_rows():
+    stats = vendors.series_stats([
+        {"at": "06:00", "value": "1.8", "unit": "bar"},
+        {"at": "12:00", "value": "2.6"},
+        {"at": "18:00", "value": "sensor fault"},
+    ])
+    assert stats == {"count": 2, "min": 1.8, "max": 2.6, "avg": 2.2,
+                     "last": 2.6, "unit": "bar"}, stats
+    assert vendors.series_stats([]) == {"count": 0, "unit": ""}
+    assert vendors.series_stats(["not a row"]) == {"count": 0, "unit": ""}
+
+
+def test_runtime_minutes_reads_the_spellings_dcon_uses():
+    assert vendors.runtime_minutes("1h 20m") == 80
+    assert vendors.runtime_minutes("40m") == 40
+    assert vendors.runtime_minutes("2:05") == 125
+    assert vendors.runtime_minutes(80) == 80
+    assert vendors.runtime_minutes("80") == 80
+    assert vendors.runtime_minutes("") == 0
+    assert vendors.runtime_minutes(None) == 0
+    assert vendors.fmt_minutes(80) == "1h 20m"
+    assert vendors.fmt_minutes(120) == "2h"
+    assert vendors.fmt_minutes(40) == "40m"
+
+
+def test_merge_timeline_interleaves_and_stamps_its_source():
+    merged = vendors.merge_timeline(
+        ([{"at": "2026-02-22 06:00", "event": "timer"},
+          {"at": "", "event": "timer"}], "timer"),
+        ([{"at": "2026-02-21 06:00", "event": "motor"}], "motor"))
+    assert [r["source"] for r in merged] == ["motor", "timer", "timer"]
+    # An entry with no stamp sorts to the end rather than being dropped.
+    assert merged[-1]["at"] == ""
+
+
+def test_section_rejects_an_unknown_kind_and_caps_rows():
+    """The kind is the contract the dashboard draws by, so an unknown one
+    degrades to a key/value block rather than reaching the browser."""
+    sec = vendors.section("wild", "T", [{"a": i} for i in range(80)])
+    assert sec["kind"] == "facts"
+    assert len(sec["rows"]) == vendors.MAX_ROWS
+    err = vendors.section("series", "Pressure", error="DCON is not configured")
+    assert err["status"] == "error" and err["rows"] == []
+    assert vendors.section("series", "P", [{"value": 1}])["status"] == "ok"
+
+
+def test_section_scrubs_vendor_rows():
+    """Sections are mirrored verbatim, so they go through the same scrub as
+    every other vendor field."""
+    sec = vendors.section("facts", "Controller",
+                          [{"label": "Serial", "value": "MCON1",
+                            "token_id": "secret"}])
+    assert "token_id" not in sec["rows"][0]
+
+
+def _stub_runner():
+    """A runner whose vendor calls are canned, so the section builders can be
+    exercised without aiohttp or a credential."""
+    runner = irr_runner()
+
+    async def livesky():
+        return [{"id": "river", "name": "River Motor", "status": "on",
+                 "source": "livesky", "detail": ""}]
+
+    async def niagara():
+        return [{"id": "6039", "name": "Well 7.5HP", "status": "off",
+                 "source": "niagara", "detail": ""}]
+
+    async def valves(start, end):
+        return [{"id": "V012", "name": "East orchard valve", "status": "on",
+                 "runtime": "1h 20m"},
+                {"id": "V015", "name": "Nursery valve", "status": "off",
+                 "runtime": "40m"}]
+
+    async def pressure(start, end):
+        return [{"at": "2026-02-20 06:00", "value": "1.8", "unit": "bar"},
+                {"at": "2026-02-22 12:00", "value": "2.6", "unit": "bar"}]
+
+    runner._livesky = livesky
+    runner._niagara = niagara
+    runner._dcon_valves = valves
+    runner._dcon_pressure_range = pressure
+    return runner
+
+
+def test_composite_report_merges_two_vendors_into_one_board():
+    runner = _stub_runner()
+    report, patch = asyncio.run(runner._run_validated("motors", {}))
+    assert report["status"] == "ok"
+    kinds = [s["kind"] for s in report["sections"]]
+    assert kinds == ["metrics", "status"], kinds
+    assert len(report["sections"][1]["rows"]) == 2
+    # Both vendors reported, so the split is worth showing.
+    assert [m["label"] for m in report["sections"][0]["rows"]] == [
+        "Motors running", "River", "Wells"]
+    assert set(patch) == {"motors", "controllers"}
+
+
+def test_composite_report_survives_one_dead_vendor():
+    """A composite is two calls; one failing must cost one section, not the
+    report. The status says so rather than passing a half-answer off as
+    whole."""
+    runner = _stub_runner()
+
+    async def dead():
+        raise RuntimeError("Livesky is not configured")
+
+    runner._livesky = dead
+    report, patch = asyncio.run(runner._run_validated("motors", {}))
+    assert report["status"] == "partial", report
+    assert report["error"] == "Livesky is not configured"
+    assert [s["status"] for s in report["sections"]] == ["ok", "ok", "error"]
+    assert set(patch) == {"controllers"}, patch   # nothing stale is cached
+
+
+def test_composite_report_with_no_vendor_left_is_an_error():
+    runner = _stub_runner()
+
+    async def dead(*args):
+        raise RuntimeError("DCON is not configured")
+
+    runner._dcon_valves = dead
+    runner._dcon_pressure_range = dead
+    report, patch = asyncio.run(runner._run_validated(
+        "performance", {"from": "2026-02-20", "to": "2026-02-22"}))
+    assert report["status"] == "error", report
+    # The same reason from both legs is said once.
+    assert report["error"] == "DCON is not configured"
+    assert patch == {}
+
+
+def test_performance_report_puts_runtime_next_to_pressure():
+    runner = _stub_runner()
+    report, _ = asyncio.run(runner._run_validated(
+        "performance", {"from": "2026-02-20", "to": "2026-02-22"}))
+    kinds = [s["kind"] for s in report["sections"]]
+    assert kinds == ["metrics", "bars", "metrics", "series"], kinds
+    bars = report["sections"][1]["rows"]
+    assert [b["value"] for b in bars] == [80, 40]    # longest first, in minutes
+    assert "2h of valve runtime" in report["summary"]
+    assert "pressure 1.8" in report["summary"]
+
+
+def test_reports_still_carry_rows_for_an_unreloaded_dashboard():
+    """sections is additive: a browser tab open since before this change
+    renders rows and ignores what it does not know."""
+    runner = _stub_runner()
+    report, _ = asyncio.run(runner._run_validated("motors", {}))
+    assert len(report["rows"]) == 2
+    assert all("status" in row for row in report["rows"])
 
 
 def test_report_refuses_bad_shapes():

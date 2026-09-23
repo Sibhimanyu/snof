@@ -23,6 +23,7 @@ Two deliberate constraints, matching the rest of the bridge:
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 #Saver: vendor payloads are capped before mirroring, the way HA attributes are.
@@ -289,3 +290,124 @@ def build_snapshot(parts: dict) -> dict:
             "error": _text(parts.get("error") or ""),
         },
     }
+
+
+# ---- report sections -------------------------------------------------------
+#
+# A report is no longer a bag of rows the dashboard has to guess at. Each
+# vendor call contributes one or more *sections*, and a section declares how it
+# wants to be drawn:
+#
+#   metrics  [{label, value, unit, note}]        headline numbers
+#   status   [{name, status, meta, source}]      on/off board (motors, valves)
+#   series   [{at, value, unit}]                 sparkline + min/avg/max
+#   bars     [{name, value, unit, status}]       magnitude per row (runtime)
+#   timeline [{at, event, detail, source}]       chronological entries
+#   facts    [{label, value}]                    key/value card (controller)
+#
+# The kind is the contract: the dashboard renders by kind and never sniffs
+# shapes, so a vendor returning something unexpected loses one section rather
+# than producing a chart of nonsense. Unknown kinds are skipped by the
+# dashboard, which is why adding one here is safe for old clients.
+
+SECTION_KINDS = ("metrics", "status", "series", "bars", "timeline", "facts")
+
+# Merged sections (a timeline of two logs) may carry more than one vendor
+# call's worth of rows, so they get their own, larger cap.
+MAX_ROWS = 32
+
+
+def section(kind: str, title: str, rows: Any = None, note: str = "",
+            source: str = "", error: str = "") -> dict:
+    """One drawable block of a report. An errored section carries a
+    plain-word reason and no rows, so a half-failed composite still renders."""
+    return {
+        "kind": kind if kind in SECTION_KINDS else "facts",
+        "title": _text(title),
+        "note": _text(note),
+        "source": _text(source),
+        "status": "error" if error else "ok",
+        "error": _text(error),
+        "rows": [scrub(row) for row in list(rows or [])[:MAX_ROWS]],
+    }
+
+
+def number_of(value: Any) -> float | None:
+    """Vendor readings arrive as "2.1", "2.1 bar" or 2.1. Pull the number out
+    or give up — never guess a zero, which would flatten a chart."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", value)
+    return float(match.group(0)) if match else None
+
+
+def series_stats(rows: Any) -> dict:
+    """min / avg / max / last over [{at, value, unit}]. Rows whose value is
+    not a number are ignored rather than counted as zero."""
+    values, unit = [], ""
+    for row in list(rows or []):
+        if not isinstance(row, dict):
+            continue
+        num = number_of(row.get("value"))
+        if num is None:
+            continue
+        values.append(num)
+        unit = unit or _text(row.get("unit"))
+    if not values:
+        return {"count": 0, "unit": unit}
+    return {
+        "count": len(values),
+        "min": round(min(values), 2),
+        "max": round(max(values), 2),
+        "avg": round(sum(values) / len(values), 2),
+        "last": round(values[-1], 2),
+        "unit": unit,
+    }
+
+
+def runtime_minutes(value: Any) -> int:
+    """"1h 20m" / "80" / 80 -> 80. DCON spells runtimes several ways and the
+    bars need one number, so the parsing happens here, once, not in the
+    browser."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    text = str(value or "")
+    hours = re.search(r"(\d+)\s*h", text, re.I)
+    mins = re.search(r"(\d+)\s*m(?!s)", text, re.I)
+    if hours or mins:
+        return (int(hours.group(1)) * 60 if hours else 0) + \
+               (int(mins.group(1)) if mins else 0)
+    colon = re.match(r"^\s*(\d+):(\d{2})", text)
+    if colon:
+        return int(colon.group(1)) * 60 + int(colon.group(2))
+    num = number_of(text)
+    return int(num) if num and num > 0 else 0
+
+
+def fmt_minutes(total: int) -> str:
+    if total >= 60:
+        hours, mins = divmod(int(total), 60)
+        return f"{hours}h {mins}m" if mins else f"{hours}h"
+    return f"{int(total)}m"
+
+
+def merge_timeline(*groups: tuple) -> list[dict]:
+    """Interleave several logs into one chronology, newest last, each row
+    stamped with where it came from. Vendor timestamps are "YYYY-MM-DD
+    HH:MM:SS"-ish, which sorts correctly as text; an entry with no stamp
+    sorts to the end rather than being dropped."""
+    merged: list[dict] = []
+    for rows, source in groups:
+        for row in list(rows or []):
+            if not isinstance(row, dict):
+                continue
+            merged.append({**row, "source": _text(source)})
+    merged.sort(key=lambda row: (not str(row.get("at") or ""),
+                                 str(row.get("at") or "")))
+    return merged[:MAX_ROWS]

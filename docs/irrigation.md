@@ -16,7 +16,7 @@ report** on `#/irrigation`. An idle farm costs zero vendor traffic:
 Dashboard report builder          Bridge (NUC)                     Vendor APIs
   pick type + dates          /farms/<slug>/                  Livesky / Niagara /
   press Generate ──append──▶ irrigation_requests              Mobitech / OWM
-                              (controller-only)  ──one call──▶   ▲
+                              (controller-only) ──1-2 calls──▶   ▲
   render card ◀──sanitized── irrigation_reports/<id> ──write──┘
                 result       (bridge-only writes)
 ```
@@ -28,8 +28,8 @@ Dashboard report builder          Bridge (NUC)                     Vendor APIs
 2. `bridge/irrigation.py` streams the queue (same pattern as
    `commands.py`), validates the request — type allow-list, strict
    `YYYY-MM-DD` dates, `to` after `from`, max 31-day range, max 5-minute
-   queue age — executes that one vendor call with the credentials from the
-   add-on options, and writes the normalized result to
+   queue age — executes that report's one or two vendor calls with the
+   credentials from the add-on options, and writes the normalized result to
    `irrigation_reports/<request-id>`. The request node is deleted either
    way, so nothing runs twice.
 3. The dashboard watches for its report id (60s deadline with a plain-word
@@ -37,16 +37,62 @@ Dashboard report builder          Bridge (NUC)                     Vendor APIs
    newest-first. Each fulfilled report also refreshes the matching section
    of the `/irrigation` last-results cache (motors, valves, weather…).
 
+## How a result is presented
+
+A report is not a bag of rows the dashboard has to guess at. Each vendor call
+contributes one or more **sections**, and the bridge declares the *kind* of
+each one; the dashboard draws by kind and never sniffs shapes.
+
+| Kind | Row shape | Drawn as |
+|---|---|---|
+| `metrics` | `{label, value, unit, note}` | tiles — the headline numbers |
+| `status` | `{name, status, meta, source}` | on/off board (motors, valves) |
+| `series` | `{at, value, unit}` | sparkline + min/latest/max |
+| `bars` | `{name, value, unit, status}` | runtime bar per row, value in minutes |
+| `timeline` | `{at, event, detail, source}` | log entries grouped by day |
+| `facts` | `{label, value}` | key/value grid (the controller card) |
+
+Three consequences worth keeping:
+
+- **The browser parses nothing.** `"1h 20m"` becomes `80` in
+  `vendors.runtime_minutes()`, on the NUC, once. A vendor spelling the
+  dashboard has never seen costs one section, not a wrong chart.
+- **An unknown kind is skipped, not guessed at.** A tab that has been open
+  since before a new kind shipped ignores it and renders the rest, which is
+  why adding one is safe.
+- **`rows` is still there.** Every report carries its primary rows alongside
+  the sections, so a dashboard build from before this change still renders
+  something. The old shape-sniffing renderer survives as `irrLegacyBody()`
+  for report history written before sections existed.
+
+The visuals are the ones the DCON app suggests — flow, power, pressure,
+duration — redrawn in this dashboard's own near-monochrome system rather than
+copied: one accent hue for magnitude, the existing on/off green-vs-grey for
+state. Hand-rolled inline SVG, no chart library, matching the no-framework
+constraint the rest of the dashboard keeps. A `series` section with a single
+reading degrades to that reading rather than drawing a flat line.
+
 The dashboard never talks to a vendor API (CORS and secrets both forbid
 it) and never sees a credential. Results carry presentation fields only —
 names, on/off/unknown, runtimes, summaries, rows — capped the way HA
 attributes are (strings 255, lists 16); `vendors.py` scrubs anything that
 looks like a token, id or URL before it can reach the mirror.
 
-## The ten reports
+## The reports
 
-| Builder label | Vendor call | Dates? |
+Five **combined** pulls and ten single-source ones. A combined report is one
+press, two vendor calls, one card — they exist because the farm's questions
+span vendors, and answering them from two cards left the correlating to the
+reader. They cost two calls; the single-source reports stay for asking one
+vendor exactly one thing, and for telling which vendor is broken.
+
+| Builder label | Vendor calls | Dates? |
 |---|---|---|
+| **Motors — river and wells** | Livesky `getMotors` + Niagara `/controller` | no |
+| **Controller and field conditions** | DCON `dashboard`+`get_node` + OpenWeather | no |
+| **Power and pressure now** | DCON `reports?type=electricity` + `pressure_cond` | no |
+| **Irrigation session log** | DCON `timer_log` + `motor_log`, woven into one chronology | from → to |
+| **Valve runtime against pressure** | DCON `get_all_valve` + `reports?type=pressure_timer` | from → to |
 | River motor status | Livesky `getMotors` | no |
 | Well motor status | Niagara `/controller` per cluster | no |
 | Controller dashboard | DCON `dashboard` + `get_node` | no |
@@ -58,12 +104,20 @@ looks like a token, id or URL before it can reach the mirror.
 | Motor log | DCON `logs?method=motor_log` | from → to |
 | Pressure range | DCON `reports?type=pressure_timer` | from → to |
 
+**A leg that fails costs a section, not the report.** Each call of a combined
+report runs in its own `_leg()`; a failed one becomes an errored section with
+a plain-word reason, and the card is tagged **Partly ready** rather than
+Ready — a half-answer must never read as a whole one. Nothing from a failed
+leg is written to the `/irrigation` last-results cache, so a dead vendor
+leaves the previous good value standing rather than blanking it. All legs
+failing is an ordinary `error` report.
+
 ## Setup
 
 Off by default. In the add-on Configuration tab:
 
-1. `irrigation_enabled: true` (shipped as add-on 0.5.0 — update it on the
-   NUC via the usual Supervisor flow).
+1. `irrigation_enabled: true` (combined reports and sections shipped in
+   add-on 0.6.0 — update it on the NUC via the usual Supervisor flow).
 2. Fill in only the vendors on the farm. Each is optional and fails
    independently — an unconfigured vendor's report errors with a
    plain-word reason on its card, and the rest still run:
@@ -85,7 +139,7 @@ so only the service account can produce a result.
 
 **Operating pumps or valves.** The collection captures command endpoints
 (DCON `/v1/command/`, valve ON/OFF) and the runner never calls them —
-`validate()` refuses anything that is not one of the ten read-only types.
+`validate()` refuses anything that is not one of the fifteen read-only types.
 Turning a pump on from a browser tab is the same class of decision as
 `cover`/`lock` — excluded at every layer until it is designed as one: it
 would arrive through the `/commands` queue with its own domain allow-list

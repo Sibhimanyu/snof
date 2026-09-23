@@ -39,8 +39,18 @@ Architecture and data shape are in README.md.
 - Attribute export and control are both **allow-lists**. Never invert either.
 - Attribute export is an **allow-list** (`mapper.py::ALLOWED_ATTRS`). Add fields
   there deliberately; never switch it to a deny-list.
-- Access has two tiers: `acl/viewers` (see) and `acl/controllers` (see + operate).
-  `cd tools && npm run grant -- someone@example.com --control` grants both.
+- Access has three tiers: `acl/viewers` (see), `acl/controllers` (see +
+  operate), `acl/admins` (all of the above + add people and grant/revoke the
+  other two tiers for anyone else, from the dashboard's `#/admin` page).
+  Each implies the ones below it. An admin adds a viewer/controller by
+  email from `#/admin` — that writes `acl/invites`, which the invited
+  person's own first sign-in claims automatically (`enter()` in `app.js`).
+  `npm run grant -- someone@example.com --control` still works and is the
+  bootstrap/fallback path, but is no longer the day-to-day one.
+- `acl/admins` is the one tier the dashboard can never hand out — RTDB rules
+  refuse a client write to it no matter who is asking. Promoting an admin is
+  always a command-line, service-account action
+  (`npm run grant -- someone@example.com --admin`), never a click.
 
 ## Deploying the add-on (easy to get silently wrong)
 
@@ -106,9 +116,28 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   have an area in HA. Fixing that is an HA-side task; it flows through live.
 - The SSH add-on config had a plaintext `password:`; the owner was advised to
   clear it now that key auth works. Confirm before assuming it was done.
-- Add-on **0.3.0 is deployed and running** on the NUC as of 2026-09-22, verified
-  by image tag and by `commands.py` existing inside the container. It starts
-  clean: 13 areas, 19 devices, 1366 entities, 698 published across 18 domains.
+- Add-on **0.6.0 is deployed and running** on the NUC as of 2026-09-23,
+  verified by image tag (`local/amd64-addon-snof_bridge:0.6.0`) and by
+  `REPORT_TYPES` reporting all fifteen types inside the container. It starts
+  clean: 16 areas, 21 devices, 1380 entities, 713 published across 18 domains.
+  0.4.x/0.5.0 were never actually updated in Supervisor — the box ran 0.3.0
+  until this jump, which is exactly the silent-stale failure the deploy
+  runbook warns about.
+- Supervisor can be driven without the UI, which avoids the two-click trap:
+  `sudo docker exec hassio_cli ha store reload` then
+  `... ha apps update local_snof_bridge`, then re-read `ha apps info`. The
+  host's own `/usr/bin/ha` has no token and answers "unauthorized"; the
+  `hassio_cli` container is the one that works. `ha addons` is deprecated in
+  favour of `ha apps`.
+- This machine has **no `ha-nuc` alias** — `ssh -G ha-nuc` falls through to the
+  managed wildcard `ProxyCommand`. Use
+  `ssh -o ProxyCommand=none -i ~/.ssh/snof_ha sibhiorchards@192.168.68.200`,
+  or the same via `SSH_OPTS` for `deploy-addon.sh`.
+- Irrigation reports are **deployed but inert** too: `irrigation_enabled` is
+  still false, so the log says `Irrigation reports are disabled; not watching
+  the request queue` and no vendor API has ever been called from the NUC. The
+  fifteen report types, the RTDB allow-list and the dashboard builder are all
+  live and waiting on that one option plus the vendor credentials.
 - Control is **deployed but inert** — the log line to look for is
   `Device control is disabled; not watching the command queue`. It stays that
   way until `allow_control: true` AND someone is granted `--control`. The
