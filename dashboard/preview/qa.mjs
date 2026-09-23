@@ -235,6 +235,34 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('viewers get results but no builder', !r.builder&&r.note===true);
   await c.close();
 }
+// Regression: control was offered while allow_control was false on the bridge.
+// Found by /investigate on 2026-09-23. The toggle flipped, wrote a command
+// nothing was watching, then snapped back 12s later blaming the farm.
+{
+  const [p,c]=await open('?controloff=1#/area/nursery');
+  await p.waitForSelector('.dev-card');
+  const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND'))writes.push(m.text());});
+  const r=await p.evaluate(()=>({
+    disabled:[...document.querySelectorAll('.toggle')].every(t=>t.disabled),
+    toggles:document.querySelectorAll('.toggle').length,
+    why:document.querySelector('.note-off')?.textContent||''}));
+  check('control switched off on the bridge disables every toggle',
+    r.toggles>0&&r.disabled===true, `${r.toggles} toggles, allDisabled=${r.disabled}`);
+  check('and the page says why', /switched off on the bridge/.test(r.why), r.why.slice(0,70));
+  // Re-enable before pressing: that is the real race the guard is for — the
+  // button was painted while control was on, and the bridge went off after.
+  // A genuinely disabled button fires no click at all, so it proves nothing.
+  await p.evaluate(()=>{const t=document.querySelector('.toggle');t.disabled=false;t.click();});
+  await p.waitForTimeout(200);
+  const after=await p.evaluate(()=>({
+    checked:document.querySelector('.toggle').getAttribute('aria-checked'),
+    busy:document.querySelector('.toggle').className.includes('busy'),
+    toast:[...document.querySelectorAll('.toast')].map(t=>t.textContent).join('|')}));
+  check('a press that beats the re-render writes nothing and never flips',
+    writes.length===0&&after.busy===false&&/switched off/.test(after.toast),
+    `writes=${writes.length} busy=${after.busy} toast=${after.toast.slice(0,50)}`);
+  await c.close();
+}
 // Regression: ISSUE-001 — Generate fired into a void when reports were off.
 // Found by /qa on 2026-09-23. The bridge publishes meta/bridge.irrigation and
 // the page ignored it, so the button spun for the full 60s deadline.

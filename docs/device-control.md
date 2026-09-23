@@ -118,3 +118,23 @@ bookkeeping. On timeout the control returns to truth and says so.
 The validator has unit tests (`tests/test_logic.py`, 11 refusal cases). The
 stream parsing, `call_service`, and the delete path have never run against real
 hardware. Treat the first live command as a test, not a routine action.
+
+## When control is switched off
+
+`allow_control` is gate 3, and the bridge publishes its state as
+`meta/bridge.control` on every heartbeat. The dashboard reads it: with control
+off — or the bridge stale or offline — toggles and sliders render disabled,
+with one line saying which it is, and `sendCommand()` refuses regardless of
+what the last render painted.
+
+That guard is new on 2026-09-23. Before it, a toggle flipped optimistically,
+wrote a command nothing was watching, and snapped back twelve seconds later
+saying the farm had not responded — a switched-off feature that read as broken
+hardware. Three unexecuted `switch.turn_on` commands were sitting in the live
+queue when it was found.
+
+The consumer now also drains `/commands` once at startup when control is off.
+Only it ever deletes from that path and clients can append to it, so with the
+consumer not running the queue grew without bound. Those commands could never
+have run in any case: they are long past `control_max_age_seconds` by the time
+anyone arms control, and would be refused as stale.

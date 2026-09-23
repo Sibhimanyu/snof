@@ -52,6 +52,7 @@ Append to `index.html`, e.g. `index.html?real=1#/areas`:
 | `?nodata=1` | snapshot never arrives — the skeleton state |
 | `?stale=1` | bridge heartbeat overdue |
 | `?reportsoff=1` | bridge is live but `irrigation_enabled` is false — the state the farm was actually in |
+| `?controloff=1` | bridge is live but `allow_control` is false — likewise |
 
 Default (no params) is a small clean farm. **Do not trust it alone.** Every bug
 in the 2026-09-22 round was invisible on the clean fixture and obvious on

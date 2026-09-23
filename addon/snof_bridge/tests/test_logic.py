@@ -560,6 +560,32 @@ def test_delete_encodes_a_literal_null_body():
 
 
 
+# Regression: control queue piled up while allow_control was false
+# Found by /investigate on 2026-09-23 (three unexecuted turn_on commands live)
+# Same shape as the irrigation queue below; /commands is the one client-writable
+# path in the tree, so litter on it matters more than litter anywhere else.
+
+def _disabled_consumer(node):
+    cfg = types.SimpleNamespace(root="farms/snof", allow_control=False,
+                                control_domains=["switch"],
+                                control_max_age_seconds=120)
+    rtdb = _FakeRTDB(node)
+    return CommandConsumer(cfg, rtdb, lambda: None, None), rtdb
+
+
+def test_disabled_consumer_drains_the_command_queue():
+    consumer, rtdb = _disabled_consumer({"-Pa": True, "-Pb": True, "-Pc": True})
+    asyncio.run(consumer.run())
+    assert rtdb.writes == [("farms/snof/commands", None)], rtdb.writes
+
+
+def test_disabled_consumer_writes_nothing_when_the_queue_is_empty():
+    for empty in (None, {}):
+        consumer, rtdb = _disabled_consumer(empty)
+        asyncio.run(consumer.run())
+        assert rtdb.writes == [], (empty, rtdb.writes)
+
+
 def test_report_refuses_bad_shapes():
     """The queue is a client-writable path, so the negative cases are the
     point — same bar as the device-command validator."""

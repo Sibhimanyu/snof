@@ -6,7 +6,7 @@
            farmhouse:'Farmhouse',cold_store:'Cold Store',nursery:'Nursery'};
   const data={
     meta:{name:'Sibhi Natural Orchards', bridge:{status:'online', lastSeen: now-(params.get('stale')?400000:5000),
-      heartbeatSeconds:30, control:true,
+      heartbeatSeconds:30, control:!params.get('controloff'),
       // What the bridge publishes about the report runner every heartbeat.
       // ?reportsoff=1 is the state the live farm was actually in: reports
       // deployed, irrigation_enabled false, so nothing answers a request.

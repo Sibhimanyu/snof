@@ -163,9 +163,36 @@ class CommandConsumer:
 
     # ---- stream -----------------------------------------------------------
 
+    async def _purge_queue(self) -> None:
+        """Drop whatever is sitting in the queue when control is switched off.
+
+        /commands is the one client-writable path in the tree and only this
+        consumer deletes from it. With control off, a toggle pressed in the
+        dashboard left its command there forever: three unexecuted turn_on
+        commands for one switch were found in production on 2026-09-23. They
+        could never have run anyway — they are long past control_max_age_seconds
+        by the time anyone arms control, and the consumer would refuse them as
+        stale. One read, one delete, at startup."""
+        path = f"{self._cfg.root}/commands"
+        try:
+            existing = await self._rtdb.get(path, shallow=True)
+        except Exception:
+            _LOGGER.debug("Could not read the command queue to purge it",
+                          exc_info=True)
+            return
+        if not existing:
+            return
+        try:
+            await self._rtdb.put(path, None)
+            _LOGGER.info("Control is off: dropped %d queued command(s) that "
+                         "nothing would have executed", len(existing))
+        except Exception:
+            _LOGGER.warning("Could not clear the command queue")
+
     async def run(self) -> None:
         if not self._cfg.allow_control:
             _LOGGER.info("Device control is disabled; not watching the command queue")
+            await self._purge_queue()
             return
         _LOGGER.info("Watching command queue for domains: %s",
                      ", ".join(sorted(self._cfg.control_domains)))

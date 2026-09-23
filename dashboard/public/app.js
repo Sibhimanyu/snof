@@ -282,6 +282,8 @@ const byName = (a, b) => (a.name || a.key).localeCompare(b.name || b.key, undefi
  * here cannot become a bug at the relay. */
 function sendCommand(ent, service, data = {}) {
   if (!canControl) { toast('err', 'Your account can view, but not control.'); return; }
+  const gate = bridgeGate('control');
+  if (!gate.ok) { clearPending(ent.key); toast('err', gate.why); render(); return; }
   const [domain] = ent.key.split('.');
   const ref = firebase.database().ref(`farms/${FARM}/commands`).push();
   return ref.set({
@@ -320,6 +322,10 @@ function clearPending(key) {
 }
 
 function onToggle(ent) {
+  const gate = bridgeGate('control');
+  // Checked before the optimistic flip, not after: a control that snaps back
+  // 12 seconds later reads as a broken farm, not a switched-off feature.
+  if (!gate.ok) { toast('err', gate.why); return; }
   const want = !isOn(ent);
   markPending(ent.key, want ? 'on' : 'off');
   render();
@@ -327,6 +333,8 @@ function onToggle(ent) {
 }
 
 function onLevel(ent, pct) {
+  const gate = bridgeGate('control');
+  if (!gate.ok) { toast('err', gate.why); render(); return; }
   const [domain] = ent.key.split('.');
   if (domain === 'fan') sendCommand(ent, 'set_percentage', { percentage: pct });
   // HA takes 0-255 for brightness; the slider speaks percent.
@@ -508,6 +516,7 @@ function overviewView(all, areas) {
   return head(state.meta?.name || 'SNOF', 'Everything the farm is doing, right now.') +
     statTiles(all) +
     sectionHead('i-switch', canControl ? 'Quick controls' : 'Controllable devices', ['#/devices']) +
+    controlNote() +
     (quick.length
       ? `<div class="dev-grid">${quick.map(deviceCard).join('')}</div>` +
         (more > 0 ? `<p class="more-note">${more} more operable ${more === 1 ? 'device' : 'devices'} — ` +
@@ -594,6 +603,7 @@ function areaView(all, id) {
   });
 
   return head(areaName(id), `${list.length} devices · ${on} active`, back) +
+    controlNote() +
     order.map((d) => {
       const items = byDomain.get(d).sort(byName);
       return sectionHead(`i-${iconName(d)}`, humanDomain(d)) + (CONTROLLABLE.has(d)
@@ -682,27 +692,31 @@ function irrDefaultDates() {
   return { from: iso(past), to: iso(today) };
 }
 
-/* Can a request actually be answered right now?
+/* Will anything on the NUC act on this?
  *
- * The bridge already publishes this on every heartbeat — meta/bridge.irrigation
- * carries { enabled, requestsRun, requestsRefused, lastOk, lastError } — and the
- * page used to ignore it. So pressing Generate with reports switched off wrote a
- * request nothing was listening for, sat in "Working…" for the full 60s
- * deadline, and then said the result would appear below when it landed. It never
- * landed, and the request node stayed in the queue forever.
+ * Two gates live on the bridge and are published on every heartbeat:
+ * meta/bridge.control (allow_control) and meta/bridge.irrigation.enabled. The
+ * page used to ignore both, so a switched-off capability looked exactly like a
+ * broken one: a light toggle flipped, wrote a command nothing was watching,
+ * then snapped back 12 seconds later saying the farm had not responded. Three
+ * turn_on commands for switch.car_shed_light_1 were found sitting unexecuted
+ * in production on 2026-09-23.
  *
- * A bridge too old to publish the field leaves `irrigation` undefined; that is
- * not the same as off, so only an explicit false blocks. */
-function irrBridgeState() {
+ * A bridge too old to publish a field leaves it undefined, which is not the
+ * same as off; only an explicit false blocks. */
+function bridgeGate(feature) {
   const hb = state.meta && state.meta.bridge;
   if (!hb || !hb.lastSeen) {
-    return { ok: false, why: 'The bridge has not reported in yet — nothing would answer a report request.' };
+    return { ok: false, why: 'The bridge has not reported in yet, so nothing would act on that.' };
   }
   const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
   if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    return { ok: false, why: 'The bridge is not reporting in, so nothing would answer a report request.' };
+    return { ok: false, why: 'The bridge is not reporting in, so nothing would act on that.' };
   }
-  if (hb.irrigation && hb.irrigation.enabled === false) {
+  if (feature === 'control' && hb.control === false) {
+    return { ok: false, why: 'Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.' };
+  }
+  if (feature === 'irrigation' && hb.irrigation && hb.irrigation.enabled === false) {
     return { ok: false, why: 'Vendor reports are switched off on the bridge. Turn on irrigation_enabled in the add-on options, and fill in the vendor credentials, before running one.' };
   }
   return { ok: true, why: '' };
@@ -710,7 +724,7 @@ function irrBridgeState() {
 
 function sendReportRequest() {
   if (!canControl) { toast('err', 'Your account can view, but not run reports.'); return; }
-  const reachable = irrBridgeState();
+  const reachable = bridgeGate('irrigation');
   if (!reachable.ok) { toast('err', reachable.why); render(); return; }
   const range = irrNeedsRange(irrType);
   const from = irrFrom.trim(), to = irrTo.trim();
@@ -1042,7 +1056,7 @@ function irrigationView() {
     ).join('') + `</optgroup>`).join('');
   const showRange = irrNeedsRange(irrType);
   const pending = irrWaiters.size;
-  const reachable = irrBridgeState();
+  const reachable = bridgeGate('irrigation');
   const blocked = !reachable.ok;
   const builder = canControl
     ? `<div class="rep-builder">
@@ -1289,13 +1303,21 @@ function adminView() {
 
 /* ---- pieces ---- */
 
+/* One line, next to the controls it explains. Without it the toggles are just
+ * greyed out with no reason given anywhere on the page. */
+function controlNote() {
+  if (!canControl) return '';
+  const gate = bridgeGate('control');
+  return gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`;
+}
+
 function deviceCard(ent) {
   const want = pending.get(ent.key)?.want;
   const on = want ? want === 'on' : isOn(ent);
   const bad = isBad(ent);
   const level = levelOf(ent);
   const cls = bad ? 'is-bad' : on ? 'is-on' : '';
-  const canOperate = canControl && !bad;
+  const canOperate = canControl && !bad && bridgeGate('control').ok;
 
   return `<div class="dev-card ${cls}" data-key="${escapeHtml(ent.key)}">
     <div class="dev-top">
