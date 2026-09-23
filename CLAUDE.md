@@ -175,8 +175,8 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   https://snof-ios.web.app (its own Hosting site, separate from the
   dashboard), installed through SideStore from `source.json`. `snof-live` is
   on **Blaze**, because Spark refuses `.ipa` files on Hosting. Release with
-  `ios/scripts/release.sh "notes"`. Not yet proven on a device: Google sign-in
-  under SideStore's renamed bundle ID (`com.sibhiorchards.snof.<TEAMID>`).
-  After the owner installed 0.1.0, **no sign-in reached Firebase Auth** (checked
-  with `firebase auth:export`; `acl/directory` had no new entry either). 0.1.1
-  keeps the full sign-in error on screen with a Copy button to diagnose it.
+  `ios/scripts/release.sh "notes"`. **Proven on the owner's iPhone** (2026-09-23): Google sign-in works
+  under SideStore's renamed bundle ID (`com.sibhiorchards.snof.<TEAMID>`),
+  confirmed in Firebase Auth and by a fresh `acl/directory` write. (An earlier
+  check found no sign-in only because none had been attempted yet.) Still
+  untried from the phone: a device toggle and an irrigation report.

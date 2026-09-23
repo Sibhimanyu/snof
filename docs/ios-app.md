@@ -103,8 +103,8 @@ free account (`FetchProvisioningProfilesOperation.swift` in SideStore). The
 iOS API key has no bundle-ID allow-list (`iosKeyRestrictions: {}`, checked
 2026-09-23), so Firebase calls still work. If anyone restricts that key
 later, add the renamed ID too, or sideloaded installs stop reading the farm.
-Google sign-in with the renamed bundle had not been tried on a device at the
-time of writing.
+Google sign-in with the renamed bundle **works**: proven on the owner's iPhone
+on 2026-09-23 with 0.1.1, and confirmed in Firebase Auth and `acl/directory`.
 
 **Free-account limits:** 3 sideloaded apps including SideStore, 10 new app
 IDs a week, and a 7-day signature that SideStore refreshes in the background.
