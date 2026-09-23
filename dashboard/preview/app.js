@@ -921,7 +921,7 @@ function irrTimeline(rows) {
       ? `<div class="tl-day">${escapeHtml(stamp.day)}</div>` : '';
     if (stamp.day) day = stamp.day;
     const source = r.source
-      ? `<span class="chip">${escapeHtml(r.source)}</span>` : '';
+      ? `<span class="tl-chip">${escapeHtml(r.source)}</span>` : '';
     return head + `<div class="tl-row">
       <span class="tl-at">${escapeHtml(stamp.time || '—')}</span>
       <span class="tl-main"><span class="row-name">${escapeHtml(r.detail || r.event || 'entry')}</span>

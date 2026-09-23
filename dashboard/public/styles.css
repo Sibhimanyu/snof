@@ -480,7 +480,9 @@ input[type=range][disabled]{opacity:.4}
 .tl-main{display:block;min-width:0;flex:1}
 .tl-main .row-name,.tl-main .row-meta{display:block;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
-.chip{flex:none;font-size:10.5px;font-weight:650;letter-spacing:.04em;padding:2px 7px;
+/* Scoped to the timeline: a bare .chip here silently restyled every filter chip
+   on All devices, which is defined further up with the same name. */
+.tl-chip{flex:none;font-size:10.5px;font-weight:650;letter-spacing:.04em;padding:2px 7px;
   border-radius:999px;color:var(--muted);background:var(--off-soft)}
 
 /* ---------- skeleton / empty ---------- */
