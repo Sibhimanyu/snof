@@ -171,7 +171,7 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   from them.
 - The SSH add-on had a plaintext `password:` in its options; it was still there
   on 2026-09-22 and should be removed and rotated now that key auth is proven.
-- **iOS app released** on 2026-09-23: `0.1.1 (202609231557)` (first: 0.1.0) at
+- **iOS app released** on 2026-09-23: `0.1.2 (202609231646)` (first: 0.1.0) at
   https://snof-ios.web.app (its own Hosting site, separate from the
   dashboard), installed through SideStore from `source.json`. `snof-live` is
   on **Blaze**, because Spark refuses `.ipa` files on Hosting. Release with
@@ -180,3 +180,8 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   confirmed in Firebase Auth and by a fresh `acl/directory` write. (An earlier
   check found no sign-in only because none had been attempted yet.) Still
   untried from the phone: a device toggle and an irrigation report.
+- **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
+  SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
+  0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with
+  `--accent`/`Theme.on` (contrast-shaded). The logo and farm illustrations come from the
+  DCON design-asset export; see DESIGN.md "Brand artwork" and `design/brand/`.
