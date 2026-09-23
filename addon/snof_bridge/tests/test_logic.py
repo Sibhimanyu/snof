@@ -3,6 +3,7 @@
 Run from the add-on directory:  python3 tests/test_logic.py
 """
 import asyncio
+import json
 import logging
 import re
 import sys
@@ -242,45 +243,139 @@ def test_vendor_scrub_never_leaks_credentials():
     assert vendors.scrub(object()) != ""
 
 
-def test_livesky_shapes():
-    assert vendors.normalize_livesky(None) == []
-    one = vendors.normalize_livesky(
-        {"motors": [{"imei": "86", "motor_status": "ON"}]})
-    assert one == [{"id": "86", "name": "River Motor", "status": "on",
-                    "source": "livesky", "detail": ""}], one
-    # A bare dict is one motor; unknown state degrades, not explodes.
-    bare = vendors.normalize_livesky({"motor_status": "bogus"})
-    assert bare[0]["status"] == "unknown" and bare[0]["id"] == "river"
-
-
-def test_niagara_labelled_per_cluster():
-    out = vendors.normalize_niagara({"status": "off"}, "Well Motor 7.5HP")
-    assert out[0]["name"] == "Well Motor 7.5HP"
-    assert out[0]["status"] == "off" and out[0]["source"] == "niagara"
-
-
 def test_dcon_dashboard_keeps_presentation_only():
+    """The real 2026-09-23 payload, redacted. An earlier version of this
+    parser mirrored a scrubbed copy of the whole node and put eleven phone
+    numbers and the modem IMEI into Firebase."""
+    live = ("##,DCON-MCON874Q000568,0-0-0!2026-09-23 09:00:43+05:30,V68,"
+            "SibhiSump,1,0--,1,TM,1-1,9,2.8")
     out = vendors.normalize_dcon_dashboard({
-        "device_name": "DCON", "serial_no": "MCON1", "token_id": "SECRET",
-        "timers": {"last": "T12 done", "running": "", "next": "T13 06:00"}})
-    assert out["device"] == "DCON" and out["last"] == "T12 done"
-    assert out["next"] == "T13 06:00" and "token_id" not in out["extra"]
+        "MCON874Q000568": {
+            "device_id": "12043", "server_time": "2026-09-23 09:04:04",
+            "time_zone": "+05:30", "sim": "vi-7639508756",
+            "packets": {"live": live, "4": "##,DCON,919566562440,916381499586"},
+            "users": {"A1": {"name": "gvkovai", "mobile": "919566562440"}},
+        }})
+    assert out == {"device": "SibhiSump", "serial": "MCON874Q000568",
+                   "lastPacket": "2026-09-23 09:00:43",
+                   "serverTime": "2026-09-23 09:04:04",
+                   "timeZone": "+05:30"}, out
+    # An allow-list, so nothing from the payload can ride along.
+    blob = json.dumps(out)
+    assert "919566562440" not in blob and "7639508756" not in blob
+    assert "packets" not in out and "users" not in out and "extra" not in out
 
 
-def test_dcon_valves_capped():
-    out = vendors.normalize_dcon_valves(
-        [{"valve_no": f"V{i:03d}", "status": "on"} for i in range(40)])
-    assert len(out) == 16 and out[0]["id"] == "V000"
+def test_dcon_dashboard_degrades_without_a_live_packet():
+    out = vendors.normalize_dcon_dashboard({})
+    assert out["device"] == "Irrigation Controller" and out["serial"] == ""
+    assert out["lastPacket"] == ""
 
 
-def test_weather_and_snapshot_defaults():
-    w = vendors.normalize_weather({"main": {"temp": 31.4, "humidity": 58},
-                                    "weather": [{"description": "haze"}],
-                                    "wind": {"speed": 3.1}})
-    assert (w["temp"], w["humidity"], w["desc"], w["wind"]) == (31.4, 58, "haze", 3.1)
+def test_dcon_nodes_are_where_valve_names_come_from():
+    out = vendors.normalize_dcon_nodes({
+        "action": "get_node",
+        "Node1": {"type": "FL-10", "valve": {
+            "2": {"valve_name": "2 BPump", "valve_type": "Booster Pump"},
+            "4": {"valve_name": "4 Veg", "valve_type": "Irrigation"}}}})
+    assert out == [{"id": "2", "name": "2 BPump", "type": "Booster Pump"},
+                   {"id": "4", "name": "4 Veg", "type": "Irrigation"}], out
+    assert vendors.normalize_dcon_nodes({"action": "get_node"}) == []
+
+
+def test_scrub_redacts_numbers_hiding_inside_packet_strings():
+    """DCON hides phone numbers and the IMEI inside comma-joined strings where
+    no key names them, so the deny-list alone cannot catch them."""
+    out = vendors.scrub({"note": "##,DCON-MCON874Q000568,861190059555299,ok"})
+    assert "861190059555299" not in out["note"]
+    assert "[redacted]" in out["note"]
+    # Short numbers are data, not identifiers, and must survive.
+    assert vendors.scrub({"v": "pressure 2.8 bar"})["v"] == "pressure 2.8 bar"
+
+
+def test_dcon_valves_sum_their_days_and_cap():
+    """The live shape is keyed by valve number with runtime bucketed per day as
+    HH:MM, so a window's runtime is the sum of its days — and "00:36" is 36
+    minutes, not 36 hours."""
+    out = vendors.normalize_dcon_valves({
+        "action": "get_all_valve",
+        "1": {"valve_name": "1 Tank", "valve_type": "Fertilizer",
+              "runtime": {"2026-09-20": "00:00", "2026-09-21": "00:00"}},
+        "3": {"valve_name": "3 Backwash", "valve_type": "Backwash",
+              "runtime": {"2026-09-20": "00:36", "2026-09-21": "00:23",
+                          "2026-09-22": "00:53"}}})
+    idle, ran = out
+    assert idle["minutes"] == 0 and idle["status"] == "off"
+    assert ran["minutes"] == 112 and ran["runtime"] == "1h 52m"
+    assert ran["name"] == "3 Backwash" and ran["status"] == "on"
+    assert [d["value"] for d in ran["days"]] == [36, 23, 53]
+    # Non-numeric keys are metadata, not valves.
+    assert all(v["id"].isdigit() for v in out)
+    big = vendors.normalize_dcon_valves(
+        {str(i): {"valve_name": f"V{i}", "runtime": {}} for i in range(1, 40)})
+    assert len(big) == 16
+
+
+def test_dcon_timer_log_reads_a_real_entry():
+    out = vendors.normalize_dcon_logs({"action": "timer_log", "log": [
+        {"dt": "2026-09-22 06:44:50", "timer_name": "Grass", "timer_no": "11",
+         "completed": "1", "on_valves": "7-0-0-0-0-0-0-0-0-0",
+         "run_time": "00:01-00:30"}]}, "timer")
+    assert out[0]["at"] == "2026-09-22 06:44:50"
+    assert out[0]["event"] == "Grass"
+    # The zero-padded valve slots are noise; only the live one is named.
+    assert "valve 7" in out[0]["detail"] and "0-0-0" not in out[0]["detail"]
+    assert "completed" in out[0]["detail"]
+
+
+def test_motor_log_joins_its_split_stamp_and_reads_the_meter():
+    """motor_log splits the stamp into dt1 + time and reports a day's running
+    total, not an event. Without joining them a motor row sorts by a bare clock
+    time and lands in the wrong day of a merged timeline."""
+    out = vendors.normalize_dcon_logs({"action": "motor_log", "log": [
+        {"device_type": "DCON", "dt1": "2026-09-23", "time": "09:09:06",
+         "ph3_runtime": "06.54-06.53", "kilowatt_start": "615.81",
+         "kilowatt_end": "649.21"}]}, "motor")
+    assert out[0]["at"] == "2026-09-23 09:09:06"
+    assert out[0]["event"] == "Motor run"
+    assert "33.4 kWh" in out[0]["detail"]
+
+
+def test_pressure_rows_chart_the_inlet_and_keep_the_rest():
+    out = vendors.normalize_report({"status": "success", "data": [
+        {"dt": "2026-09-23 09:00:08", "pressure": "2.5-1.7", "flow_rate": "0"},
+        {"dt": "2026-09-23 09:01:06", "pressure": "2.6-1.8", "flow_rate": "12"}]})
+    assert [r["value"] for r in out] == ["2.5", "2.6"]
+    assert out[0]["unit"] == "bar" and out[0]["detail"] == "outlet 1.7 bar"
+    assert "flow 12" in out[1]["detail"]
+    assert vendors.series_stats(out)["avg"] == 2.55
+
+
+def test_electricity_labels_only_what_it_can_identify():
+    """The packet is undocumented. A voltage triple and a current triple are
+    recognisable by shape and range; everything else stays unlabelled, because
+    a wrong label on an electrical reading is worse than no label."""
+    out = vendors.normalize_dcon_electricity({"status": "success", "data": [
+        {"dt": "2026-09-23 09:00:08",
+         "raw_data": "##,DCON-MCON874Q000568,6-0-0!2026-09-23 09:00:08+05:30,,"
+                     "225-219-263,384-417-422,9.7-9.5-9.6,0.35-0-1.0,53.7,20"}]})
+    assert [r["label"] for r in out] == ["Phase voltage", "Phase current"]
+    assert out[0]["value"] == "225 / 219 / 263" and out[0]["unit"] == "V"
+    assert out[1]["value"] == "9.7 / 9.5 / 9.6" and out[1]["unit"] == "A"
+    assert vendors.normalize_dcon_electricity({"data": [{"dt": "x"}]}) == []
+
+
+def test_snapshot_defaults():
+    """An empty snapshot is all the empty collections, so a dead controller
+    blanks a card rather than crashing the page."""
     snap = vendors.build_snapshot({})
-    assert snap["motors"] == [] and snap["weather"] == {}
+    assert snap["valves"] == [] and snap["dcon"] == {}
+    assert snap["electricity"] == [] and snap["pressure"] == []
+    assert snap["timerLog"] == [] and snap["motorLog"] == []
     assert snap["meta"] == {"sources": {}, "error": ""}
+    # The three removed vendors must not come back as empty keys either.
+    assert "motors" not in snap and "controllers" not in snap
+    assert "weather" not in snap
 
 
 # --------------------------------------------- irrigation report requests
@@ -303,7 +398,7 @@ def test_report_every_known_type_validates():
     """Every report offered in the builder is reachable through the queue."""
     live = {t: {"type": t, "uid": "u1", "at": time.time() * 1000}
             for t in REPORT_TYPES if REPORT_TYPES[t] == "live"}
-    assert len(live) == 9, REPORT_TYPES
+    assert len(live) == 4, REPORT_TYPES
     for t, payload in live.items():
         got = irr_runner().validate("r", payload)
         assert got == (t, {}), (t, got)
@@ -391,63 +486,62 @@ def test_section_scrubs_vendor_rows():
 
 
 def _stub_runner():
-    """A runner whose vendor calls are canned, so the section builders can be
-    exercised without aiohttp or a credential."""
+    """A runner whose controller calls are canned, so the section builders can
+    be exercised without aiohttp or a credential."""
     runner = irr_runner()
 
-    async def livesky():
-        return [{"id": "river", "name": "River Motor", "status": "on",
-                 "source": "livesky", "detail": ""}]
-
-    async def niagara():
-        return [{"id": "6039", "name": "Well 7.5HP", "status": "off",
-                 "source": "niagara", "detail": ""}]
-
     async def valves(start, end):
-        return [{"id": "V012", "name": "East orchard valve", "status": "on",
-                 "runtime": "1h 20m"},
-                {"id": "V015", "name": "Nursery valve", "status": "off",
-                 "runtime": "40m"}]
+        return vendors.normalize_dcon_valves({
+            "action": "get_all_valve",
+            "4": {"valve_name": "4 Veg", "valve_type": "Irrigation",
+                  "runtime": {"2026-02-20": "01:20"}},
+            "5": {"valve_name": "5 Onion", "valve_type": "Irrigation",
+                  "runtime": {"2026-02-21": "00:40"}}}) 
 
     async def pressure(start, end):
         return [{"at": "2026-02-20 06:00", "value": "1.8", "unit": "bar"},
                 {"at": "2026-02-22 12:00", "value": "2.6", "unit": "bar"}]
 
-    runner._livesky = livesky
-    runner._niagara = niagara
+    async def log(kind, start, end):
+        return [{"at": f"2026-02-2{1 if kind == 'timer' else 2} 06:00",
+                 "event": kind, "detail": f"{kind} entry"}]
+
     runner._dcon_valves = valves
+    runner._dcon_log = log
     runner._dcon_pressure_range = pressure
     return runner
 
 
-def test_composite_report_merges_two_vendors_into_one_board():
+def test_composite_report_weaves_two_endpoints_into_one_chronology():
     runner = _stub_runner()
-    report, patch = asyncio.run(runner._run_validated("motors", {}))
+    report, patch = asyncio.run(runner._run_validated(
+        "session_log", {"from": "2026-02-20", "to": "2026-02-22"}))
     assert report["status"] == "ok"
     kinds = [s["kind"] for s in report["sections"]]
-    assert kinds == ["metrics", "status"], kinds
-    assert len(report["sections"][1]["rows"]) == 2
-    # Both vendors reported, so the split is worth showing.
-    assert [m["label"] for m in report["sections"][0]["rows"]] == [
-        "Motors running", "River", "Wells"]
-    assert set(patch) == {"motors", "controllers"}
+    assert kinds == ["metrics", "timeline"], kinds
+    rows = report["sections"][1]["rows"]
+    assert [r["source"] for r in rows] == ["timer", "motor"]   # oldest first
+    assert set(patch) == {"timerLog", "motorLog"}
 
 
-def test_composite_report_survives_one_dead_vendor():
+def test_composite_report_survives_one_dead_endpoint():
     """A composite is two calls; one failing must cost one section, not the
     report. The status says so rather than passing a half-answer off as
     whole."""
     runner = _stub_runner()
 
-    async def dead():
-        raise RuntimeError("Livesky is not configured")
+    async def half(kind, start, end):
+        if kind == "motor":
+            raise RuntimeError("DCON logs: POST -> 500")
+        return [{"at": "2026-02-22 06:00", "event": "timer", "detail": "done"}]
 
-    runner._livesky = dead
-    report, patch = asyncio.run(runner._run_validated("motors", {}))
+    runner._dcon_log = half
+    report, patch = asyncio.run(runner._run_validated(
+        "session_log", {"from": "2026-02-20", "to": "2026-02-22"}))
     assert report["status"] == "partial", report
-    assert report["error"] == "Livesky is not configured"
+    assert report["error"] == "DCON logs: POST -> 500"
     assert [s["status"] for s in report["sections"]] == ["ok", "ok", "error"]
-    assert set(patch) == {"controllers"}, patch   # nothing stale is cached
+    assert set(patch) == {"timerLog"}, patch   # nothing stale is cached
 
 
 def test_composite_report_with_no_vendor_left_is_an_error():
@@ -474,6 +568,7 @@ def test_performance_report_puts_runtime_next_to_pressure():
     assert kinds == ["metrics", "bars", "metrics", "series"], kinds
     bars = report["sections"][1]["rows"]
     assert [b["value"] for b in bars] == [80, 40]    # longest first, in minutes
+    assert [b["name"] for b in bars] == ["4 Veg", "5 Onion"]
     assert "2h of valve runtime" in report["summary"]
     assert "pressure 1.8" in report["summary"]
 
@@ -482,7 +577,8 @@ def test_reports_still_carry_rows_for_an_unreloaded_dashboard():
     """sections is additive: a browser tab open since before this change
     renders rows and ignores what it does not know."""
     runner = _stub_runner()
-    report, _ = asyncio.run(runner._run_validated("motors", {}))
+    report, _ = asyncio.run(runner._run_validated(
+        "valves", {"from": "2026-02-20", "to": "2026-02-22"}))
     assert len(report["rows"]) == 2
     assert all("status" in row for row in report["rows"])
 
@@ -586,6 +682,45 @@ def test_disabled_consumer_writes_nothing_when_the_queue_is_empty():
         assert rtdb.writes == [], (empty, rtdb.writes)
 
 
+# Regression: every DCON POST died with "name 'aiohttp' is not defined"
+# Found by /investigate on 2026-09-23, on the first report ever run for real.
+# aiohttp is imported per call site so this suite can run with nothing
+# installed; _get_json did it, _post_form did not, and most of the DCON API is
+# POST. A static check, because the pure suite cannot make a network call.
+
+def test_every_runtime_use_of_aiohttp_has_a_local_import():
+    import ast
+    root = Path(__file__).resolve().parent.parent / "bridge"
+    offenders = []
+    for path in sorted(root.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        # Module-scope import is fine for modules the pure suite never imports;
+        # these three it does import, so they must keep aiohttp out of scope.
+        if path.name not in ("irrigation.py", "commands.py", "vendors.py"):
+            continue
+        assert not any(
+            isinstance(n, ast.Import) and any(a.name == "aiohttp" for a in n.names)
+            for n in tree.body), f"{path.name} imports aiohttp at module scope"
+        for fn in [n for n in ast.walk(tree)
+                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            # Annotations do not evaluate (`from __future__ import
+            # annotations`), so a parameter typed aiohttp.ClientSession is not
+            # a runtime use. Only the body counts.
+            body = ast.Module(body=fn.body, type_ignores=[])
+            uses = any(isinstance(n, ast.Attribute)
+                       and isinstance(n.value, ast.Name)
+                       and n.value.id == "aiohttp"
+                       for n in ast.walk(body))
+            if not uses:
+                continue
+            has_import = any(
+                isinstance(n, ast.Import) and any(a.name == "aiohttp" for a in n.names)
+                for n in ast.walk(body))
+            if not has_import:
+                offenders.append(f"{path.name}::{fn.name}")
+    assert not offenders, f"aiohttp used without a local import in: {offenders}"
+
+
 def test_report_refuses_bad_shapes():
     """The queue is a client-writable path, so the negative cases are the
     point — same bar as the device-command validator."""
@@ -613,9 +748,9 @@ def test_report_refuses_bad_shapes():
 def test_report_live_types_ignore_stray_dates():
     """Extra date keys on a live pull must not fail it — nor be trusted."""
     got = irr_runner().validate(
-        "r", {"type": "river_status", "uid": "u1",
+        "r", {"type": "controller", "uid": "u1",
               "from": "2020-01-01", "at": time.time() * 1000})
-    assert got == ("river_status", {}), got
+    assert got == ("controller", {}), got
 
 
 if __name__ == "__main__":

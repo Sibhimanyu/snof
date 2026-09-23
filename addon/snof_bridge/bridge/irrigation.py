@@ -1,9 +1,10 @@
 """Irrigation reports: vendor APIs -> normalized results, on demand.
 
-The farm's motors and valves are driven by vendor controllers (Livesky,
-Niagara, Mobitech DCON) whose APIs need bearer tokens and device ids, plus
-OpenWeather for field conditions (see the "Mobitech Hack" Postman
-collection). Those credentials live in the add-on options and never leave
+The farm's valves and timers are driven by a Mobitech DCON (MCON) controller
+whose API needs a token id and a serial (see the "Mobitech Hack" Postman
+collection). Livesky, Niagara and OpenWeather were wired here until
+2026-09-23 and were removed at the owner's request; the farm does not use
+them. Those credentials live in the add-on options and never leave
 the NUC: the dashboard appends a *report request* to
 /farms/<slug>/irrigation_requests, this runner executes that one vendor
 call server-side, normalizes with vendors.py, and writes the result to
@@ -57,26 +58,18 @@ SERVER_TIMESTAMP = {".sv": "timestamp"}
 _DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 
 # Report type -> needs. "range" means from/to dates, "live" means no params:
-# point-in-time pulls (Livesky, Niagara, DCON dashboard, weather) and the
-# energy/pressure snapshots, which the bridge stamps with its own clock.
+# point-in-time pulls, and the energy/pressure snapshots, which the bridge
+# stamps with its own clock.
 #
-# The first five are *composites*: one press, two vendor calls, one report.
-# They exist because the farm's real questions span vendors — which motors are
-# running (Livesky *and* Niagara), did the line hold while the valves were open
-# (valve runtime *and* pressure) — and answering them from two separate cards
-# left the correlating to the reader. A composite costs two calls; the atomic
-# reports below stay for pulling exactly one vendor when that is what is
-# wanted, and for isolating which vendor is broken.
+# Every one of these reads the same controller. The first three are
+# *composites*: one press, two calls, one report, because the questions the
+# farm actually asks span two endpoints — did the line hold while the valves
+# were open, did the motor stop mid-timer. The rest pull exactly one endpoint.
 REPORT_TYPES = {
-    "motors": "live",
-    "conditions": "live",
     "live_readings": "live",
     "session_log": "range",
     "performance": "range",
-    "river_status": "live",
-    "well_status": "live",
     "controller": "live",
-    "weather": "live",
     "electricity": "live",
     "pressure": "live",
     "valves": "range",
@@ -86,15 +79,10 @@ REPORT_TYPES = {
 }
 
 REPORT_LABELS = {
-    "motors": "Motors — river and wells",
-    "conditions": "Controller and field conditions",
     "live_readings": "Power and pressure now",
     "session_log": "Irrigation session log",
     "performance": "Valve runtime against pressure",
-    "river_status": "River motor status",
-    "well_status": "Well motor status",
     "controller": "Controller dashboard",
-    "weather": "Field weather",
     "electricity": "Electricity snapshot",
     "pressure": "Pressure snapshot",
     "valves": "Valve runtime",
@@ -120,6 +108,17 @@ def _parse_date(value: Any) -> _dt.date | None:
 
 def _now_stamp() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# The controller answers a snapshot query with the samples at or after `dt`,
+# and it stores one every ~11 seconds. Asking for the current second therefore
+# returns nothing at all — the first live pull came back empty for exactly this
+# reason. Ask for the last few minutes instead and take the newest row.
+SNAPSHOT_LOOKBACK = _dt.timedelta(minutes=5)
+
+
+def _snapshot_stamp() -> str:
+    return (_dt.datetime.now() - SNAPSHOT_LOOKBACK).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class IrrigationRunner:
@@ -152,6 +151,13 @@ class IrrigationRunner:
                 return await resp.text()
 
     async def _post_form(self, url: str, form: dict) -> Any:
+        # aiohttp is imported per call site, not at module scope, so
+        # tests/test_logic.py can import this module with nothing installed.
+        # _get_json did that and this did not, so every POST — which is most of
+        # the DCON API — died with "name 'aiohttp' is not defined" the first
+        # time a report ran for real.
+        import aiohttp
+
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
         async with self._session.post(url, data=form,
                                       timeout=timeout) as resp:
@@ -208,35 +214,6 @@ class IrrigationRunner:
 
     # ---- per-vendor fetches ----------------------------------------------
 
-    async def _livesky(self) -> list[dict]:
-        cfg = self._cfg
-        if not (cfg.livesky_bearer and cfg.livesky_imei):
-            raise RuntimeError("Livesky is not configured")
-        raw = await self._get_json(
-            f"{cfg.livesky_base}/getMotors",
-            headers={"Authorization": f"Bearer {cfg.livesky_bearer}",
-                     "Accept": "application/json, text/plain, */*"},
-            params={"imei": cfg.livesky_imei},
-        )
-        return vendors.normalize_livesky(raw)
-
-    async def _niagara(self) -> list[dict]:
-        cfg = self._cfg
-        if not (cfg.niagara_base and cfg.niagara_user and cfg.niagara_clusters):
-            raise RuntimeError("Niagara is not configured")
-        controllers: list[dict] = []
-        for entry in cfg.niagara_clusters:
-            cluster, _, label = str(entry).partition(":")
-            cluster = cluster.strip()
-            if not cluster:
-                continue
-            raw = await self._get_json(
-                f"{cfg.niagara_base}/api/v1/user/{cfg.niagara_user}"
-                f"/cluster/{cluster}/controller")
-            controllers.extend(
-                vendors.normalize_niagara(raw, label.strip() or cluster))
-        return controllers
-
     async def _dcon_form(self, payload: dict) -> Any:
         cfg = self._cfg
         if not (cfg.dcon_token_id and cfg.dcon_serial):
@@ -255,24 +232,13 @@ class IrrigationRunner:
         return await self._get_json(f"{cfg.dcon_base}/v1/http/",
                                     params=url_params)
 
-    async def _weather(self) -> dict:
-        cfg = self._cfg
-        if not (cfg.owm_appid and cfg.owm_place):
-            raise RuntimeError("Weather is not configured")
-        raw = await self._get_json(
-            "https://api.openweathermap.org/data/2.5/weather",
-            params={"q": cfg.owm_place, "units": "metric",
-                    "appid": cfg.owm_appid})
-        return vendors.normalize_weather(raw)
-
-    # ---- one request, end to end ------------------------------------------
-
     # ---- vendor calls, one shape per section ------------------------------
 
-    async def _dcon_controller(self) -> dict:
+    async def _dcon_controller(self) -> tuple[dict, list[dict]]:
         """The controller card is itself two calls: the app dashboard for the
-        timer summary, get_node for the device identity. Either alone renders;
-        together they read as one controller."""
+        device and its clock, get_node for the valve registry. get_node is the
+        only source of valve *names* — "4 Veg", "6 Kulam" — so a runtime report
+        without it is a list of numbers."""
         cfg = self._cfg
         dash_raw = await self._dcon_form(
             {"action": "dashboard", "p": "app",
@@ -280,7 +246,8 @@ class IrrigationRunner:
         node_raw = await self._dcon_form(
             {"action": "dcon_node", "method": "get_node",
              "serial_no": cfg.dcon_serial})
-        return vendors.normalize_dcon_dashboard(dash_raw or node_raw or {})
+        return (vendors.normalize_dcon_dashboard(dash_raw or {}),
+                vendors.normalize_dcon_nodes(node_raw or {}))
 
     async def _dcon_valves(self, start: str, end: str) -> list[dict]:
         raw = await self._dcon_form(
@@ -295,12 +262,16 @@ class IrrigationRunner:
         return vendors.normalize_dcon_logs(raw, kind)
 
     async def _dcon_now(self, kind: str) -> list[dict]:
-        """electricity / pressure_cond: a point-in-time pull the vendor wants
-        stamped with a clock, so the bridge supplies its own."""
+        """electricity / pressure_cond: a point-in-time pull the controller
+        wants stamped with a clock, so the bridge supplies its own. The two
+        answer in different shapes — pressure as readings, electricity as the
+        raw controller packet — so they parse differently."""
         raw = await self._dcon_report(
             {"action": "reports", "type": kind,
-             "serial_no": self._cfg.dcon_serial, "dt": _now_stamp(),
+             "serial_no": self._cfg.dcon_serial, "dt": _snapshot_stamp(),
              "product": self._cfg.dcon_product or "DCON"})
+        if kind == "electricity":
+            return vendors.normalize_dcon_electricity(raw)
         return vendors.normalize_report(raw, kind)
 
     async def _dcon_pressure_range(self, start: str, end: str) -> list[dict]:
@@ -318,9 +289,9 @@ class IrrigationRunner:
                 "params": params, "at": SERVER_TIMESTAMP}
 
     async def _leg(self, call) -> tuple[Any, str]:
-        """Run one vendor call of a composite report. A leg that fails hands
-        back its plain-word reason instead of sinking the whole report: an
-        expired Livesky token must not cost the user the well motors they
+        """Run one call of a composite report. A leg that fails hands back its
+        plain-word reason instead of sinking the whole report: a timer log the
+        controller will not produce must not cost the user the motor log they
         asked for in the same pull."""
         try:
             return await call(), ""
@@ -358,48 +329,6 @@ class IrrigationRunner:
         return {"label": label, "value": value, "unit": unit, "note": note}
 
     @staticmethod
-    def _board(rows: list) -> list[dict]:
-        """motors/controllers -> a status board the dashboard can draw without
-        knowing which vendor produced which row."""
-        kinds = {"livesky": "River motor", "niagara": "Well controller"}
-        return [{"name": r.get("name") or "Motor",
-                 "status": r.get("status") or "unknown",
-                 "meta": r.get("detail") or kinds.get(r.get("source"), "Motor"),
-                 "source": r.get("source") or ""} for r in rows]
-
-    @staticmethod
-    def _running(rows: list) -> int:
-        return sum(1 for r in rows if r.get("status") == "on")
-
-    def _motor_sections(self, river, river_err, wells, wells_err) -> list[dict]:
-        """One motor board, whichever vendors answered. The per-vendor split
-        only appears when both were asked for — on a single-vendor report it
-        would be a row reading "0 of 0"."""
-        sections = []
-        board = list(river or []) + list(wells or [])
-        both = (river is not None and wells is not None
-                and bool(river) and bool(wells))
-        if board:
-            metrics = [self._metric("Motors running", self._running(board),
-                                    note=f"of {len(board)} reporting")]
-            if both:
-                metrics += [
-                    self._metric("River", self._running(river),
-                                 note=f"of {len(river)} Livesky motors"),
-                    self._metric("Wells", self._running(wells),
-                                 note=f"of {len(wells)} Niagara controllers")]
-            sections.append(vendors.section("metrics", "Now", metrics))
-            sections.append(vendors.section("status", "Motors",
-                                            self._board(board)))
-        if river_err:
-            sections.append(vendors.section("status", "River motor",
-                                            source="livesky", error=river_err))
-        if wells_err:
-            sections.append(vendors.section("status", "Well motors",
-                                            source="niagara", error=wells_err))
-        return sections
-
-    @staticmethod
     def _reading_sections(title: str, rows: list, err: str,
                           source: str) -> list[dict]:
         """One vendor reading: the latest value as a headline, and a
@@ -432,127 +361,53 @@ class IrrigationRunner:
 
     # ---- live reports ------------------------------------------------------
 
-    async def _report_river_status(self, params: dict) -> tuple[dict, dict]:
-        motors = await self._livesky()
-        sections = self._motor_sections(motors, "", None, "")
-        return self._result(
-            "river_status", params, sections,
-            f"{self._running(motors)} running of {len(motors)} motors",
-            motors, {"motors": motors})
-
-    async def _report_well_status(self, params: dict) -> tuple[dict, dict]:
-        wells = await self._niagara()
-        sections = self._motor_sections(None, "", wells, "")
-        return self._result(
-            "well_status", params, sections,
-            f"{self._running(wells)} running of {len(wells)} controllers",
-            wells, {"controllers": wells})
-
-    async def _report_motors(self, params: dict) -> tuple[dict, dict]:
-        """Composite: Livesky + Niagara. The farm has one question — which
-        motors are running — and it lived in two reports until now."""
-        river, river_err = await self._leg(self._livesky)
-        wells, wells_err = await self._leg(self._niagara)
-        board = list(river or []) + list(wells or [])
-        sections = self._motor_sections(river, river_err, wells, wells_err)
-        patch = {}
-        if river is not None:
-            patch["motors"] = river
-        if wells is not None:
-            patch["controllers"] = wells
-        summary = (f"{self._running(board)} running of {len(board)} motors"
-                   if board else "no motor reported")
-        return self._result("motors", params, sections, summary, board, patch)
-
     @staticmethod
     def _controller_facts(dcon: dict) -> list[dict]:
         pairs = (("Device", dcon.get("device")), ("Serial", dcon.get("serial")),
-                 ("Connectivity", dcon.get("gprs")),
-                 ("Running now", dcon.get("running")),
-                 ("Last completed", dcon.get("last")),
-                 ("Next scheduled", dcon.get("next")))
+                 ("Last packet", dcon.get("lastPacket")),
+                 ("Controller clock", dcon.get("serverTime")),
+                 ("Time zone", dcon.get("timeZone")))
         return [{"label": label, "value": value}
                 for label, value in pairs if value]
 
-    @staticmethod
-    def _weather_metrics(weather: dict) -> list[dict]:
-        temp, feels = weather.get("temp"), weather.get("feels")
-        rows = []
-        if temp is not None:
-            rows.append({"label": "Temperature", "value": round(temp, 1),
-                         "unit": "°C",
-                         "note": (f"feels {round(feels)}°C" if feels is not None
-                                  else weather.get("desc") or "")})
-        if weather.get("humidity") is not None:
-            rows.append({"label": "Humidity", "value": weather["humidity"],
-                         "unit": "%", "note": weather.get("desc") or ""})
-        if weather.get("wind") is not None:
-            rows.append({"label": "Wind", "value": weather["wind"],
-                         "unit": "m/s", "note": ""})
-        return rows
-
     async def _report_controller(self, params: dict) -> tuple[dict, dict]:
-        dcon = await self._dcon_controller()
+        dcon, valves = await self._dcon_controller()
         facts = self._controller_facts(dcon)
         sections = [vendors.section("facts", "Controller", facts, source="dcon")] \
             if facts else [vendors.section(
                 "facts", "Controller", source="dcon",
                 note="the controller answered with no readable fields")]
-        return self._result("controller", params, sections,
-                            dcon.get("device") or "Controller",
-                            [], {"dcon": dcon})
-
-    async def _report_weather(self, params: dict) -> tuple[dict, dict]:
-        weather = await self._weather()
-        rows = self._weather_metrics(weather)
-        sections = [vendors.section("metrics", "Field conditions", rows,
-                                    note=weather.get("desc") or "",
-                                    source="openweather")]
-        temp = weather.get("temp")
-        summary = (f"{round(temp)}°C, {weather.get('desc') or '—'}"
-                   if temp is not None else weather.get("desc") or "—")
-        return self._result("weather", params, sections, summary, [],
-                            {"weather": weather})
-
-    async def _report_conditions(self, params: dict) -> tuple[dict, dict]:
-        """Composite: the controller card next to the weather it is irrigating
-        into. "Timer 13 at 06:00" means something different at 38°C."""
-        dcon, dcon_err = await self._leg(self._dcon_controller)
-        weather, weather_err = await self._leg(self._weather)
-        sections = []
-        if weather_err:
-            sections.append(vendors.section("metrics", "Field conditions",
-                                            source="openweather",
-                                            error=weather_err))
-        else:
+        if valves:
             sections.append(vendors.section(
-                "metrics", "Field conditions", self._weather_metrics(weather),
-                note=(weather or {}).get("desc") or "", source="openweather"))
-        if dcon_err:
-            sections.append(vendors.section("facts", "Controller",
-                                            source="dcon", error=dcon_err))
-        else:
-            sections.append(vendors.section("facts", "Controller",
-                                            self._controller_facts(dcon or {}),
-                                            source="dcon"))
-        patch = {}
-        if dcon is not None:
-            patch["dcon"] = dcon
-        if weather is not None:
-            patch["weather"] = weather
-        temp = (weather or {}).get("temp")
-        bits = [f"{round(temp)}°C" if temp is not None else "",
-                (weather or {}).get("desc") or "",
-                (dcon or {}).get("next") or (dcon or {}).get("running") or ""]
-        summary = " · ".join(b for b in bits if b) or "no reading"
-        return self._result("conditions", params, sections, summary, [], patch)
+                "status", "Valves on this controller",
+                [{"name": v["name"], "status": "unknown",
+                  "meta": v.get("type") or f"valve {v['id']}", "source": "dcon"}
+                 for v in valves], source="dcon",
+                note="names as programmed on the controller; runtime is a "
+                     "separate report"))
+        summary = dcon.get("device") or "Controller"
+        if valves:
+            summary += f" · {len(valves)} valves"
+        return self._result("controller", params, sections, summary,
+                            [], {"dcon": dcon, "valveNames": valves})
+
+    @staticmethod
+    def _electricity_sections(rows: list, err: str) -> list[dict]:
+        if err:
+            return [vendors.section("metrics", "Electricity", source="dcon",
+                                    error=err)]
+        if not rows:
+            return [vendors.section(
+                "metrics", "Electricity", source="dcon",
+                note="the controller's last packet carried no readable "
+                     "voltage or current")]
+        return [vendors.section("metrics", "Electricity", rows, source="dcon")]
 
     async def _report_electricity(self, params: dict) -> tuple[dict, dict]:
         rows = await self._dcon_now("electricity")
-        sections = self._reading_sections("Electricity", rows, "", "dcon")
-        stats = vendors.series_stats(rows)
-        summary = (f"{stats['last']} {stats.get('unit') or ''}".strip()
-                   if stats.get("count") else "no reading")
+        sections = self._electricity_sections(rows, "")
+        summary = " · ".join(f"{r['label']} {r['value']} {r['unit']}".strip()
+                             for r in rows) or "no reading"
         return self._result("electricity", params, sections, summary, rows,
                             {"electricity": rows})
 
@@ -571,8 +426,7 @@ class IrrigationRunner:
         drawing power and producing head."""
         power, power_err = await self._leg(lambda: self._dcon_now("electricity"))
         press, press_err = await self._leg(lambda: self._dcon_now("pressure_cond"))
-        sections = (self._reading_sections("Electricity", power or [],
-                                           power_err, "dcon")
+        sections = (self._electricity_sections(power or [], power_err)
                     + self._reading_sections("Pressure", press or [],
                                              press_err, "dcon"))
         patch = {}
@@ -580,11 +434,11 @@ class IrrigationRunner:
             patch["electricity"] = power
         if press is not None:
             patch["pressure"] = press
-        bits = []
-        for label, rows in (("power", power), ("pressure", press)):
-            stats = vendors.series_stats(rows or [])
-            if stats.get("count"):
-                bits.append(f"{stats['last']} {stats.get('unit') or ''}".strip())
+        bits = [f"{r['label']} {r['value']} {r['unit']}".strip()
+                for r in (power or [])]
+        stats = vendors.series_stats(press or [])
+        if stats.get("count"):
+            bits.append(f"pressure {stats['last']} {stats.get('unit') or ''}".strip())
         summary = " · ".join(bits) or "no reading"
         return self._result("live_readings", params, sections, summary,
                             list(power or []) + list(press or []), patch)
@@ -598,7 +452,7 @@ class IrrigationRunner:
                                     error=err)]
         bars = [{"name": v.get("name") or (f"Valve {v['id']}" if v.get("id")
                                            else "Valve"),
-                 "value": vendors.runtime_minutes(v.get("runtime")),
+                 "value": int(v.get("minutes") or 0),
                  "unit": "min", "status": v.get("status") or "unknown"}
                 for v in rows]
         ran = [b for b in bars if b["value"] > 0]
@@ -610,9 +464,10 @@ class IrrigationRunner:
                     vendors.fmt_minutes(total), "unit": "",
                     "note": (f"longest {vendors.fmt_minutes(max(b['value'] for b in ran))}"
                              if ran else "nothing ran")},
-                   {"label": "Open now", "value":
-                    sum(1 for v in rows if v.get("status") == "on"), "unit": "",
-                    "note": "at the time of the pull"}]
+                   {"label": "Busiest day", "value":
+                    (max((d["value"] for v in rows for d in (v.get("days") or [])),
+                         default=0) or 0), "unit": "min",
+                    "note": "most any one valve ran in a single day"}]
         out = [vendors.section("metrics", "Valves", metrics, source="dcon")]
         if ran:
             out.append(vendors.section("bars", "Runtime per valve",
@@ -631,11 +486,12 @@ class IrrigationRunner:
         start, end = params["from"], params["to"]
         rows = await self._dcon_valves(start, end)
         sections = self._valve_sections(rows, "", f"{start} → {end}")
-        opened = sum(1 for v in rows if v.get("status") == "on")
+        ran = sum(1 for v in rows if int(v.get("minutes") or 0) > 0)
+        total = sum(int(v.get("minutes") or 0) for v in rows)
         return self._result(
             "valves", params, sections,
-            f"{len(rows)} valves · {opened} open · {start} → {end}",
-            rows, {"valves": rows})
+            f"{ran} of {len(rows)} valves ran · {vendors.fmt_minutes(total)} "
+            f"· {start} → {end}", rows, {"valves": rows})
 
     async def _report_timer_log(self, params: dict) -> tuple[dict, dict]:
         return await self._one_log("timer_log", "timer", params)
@@ -740,8 +596,7 @@ class IrrigationRunner:
             patch["valves"] = valves
         if press is not None:
             patch["pressure"] = press
-        total = sum(vendors.runtime_minutes(v.get("runtime"))
-                    for v in (valves or []))
+        total = sum(int(v.get("minutes") or 0) for v in (valves or []))
         stats = vendors.series_stats(press or [])
         bits = [f"{vendors.fmt_minutes(total)} of valve runtime" if total else "",
                 (f"pressure {stats['min']}–{stats['max']} "

@@ -51,16 +51,17 @@
       lock:{ gate_lock:{name:'Gate lock',entity_id:'lock.gate_lock',state:'locked',area:'farmhouse',attrs:{}} }
     },
     irrigation:{
-      motors:[{id:'860537060208758',name:'River Motor',status:'on',source:'livesky',detail:'last update 06:10'}],
-      controllers:[{id:'6039',name:'Well Motor 7.5HP',status:'off',source:'niagara',detail:'cluster 6039'},{id:'6036',name:'Well zone valves',status:'unknown',source:'niagara',detail:'cluster 6036'}],
-      dcon:{device:'DCON controller',serial:'MCON874Q000568',gprs:'connected',last:'Timer 12 · completed 08:20',running:'',next:'Timer 13 · 06:00'},
-      valves:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},{id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}],
+      dcon:{device:'SibhiSump',serial:'MCON874Q000568',lastPacket:'2026-02-22 09:00:43',
+            serverTime:'2026-02-22 09:04:04',timeZone:'+05:30'},
+      valveNames:[{id:'4',name:'4 Veg',type:'Irrigation'},{id:'6',name:'6 Kulam',type:'Irrigation'},
+                  {id:'2',name:'2 BPump',type:'Booster Pump'}],
+      valves:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},
+              {id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}],
       timerLog:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
       motorLog:[{at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped'}],
       electricity:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}],
       pressure:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}],
-      weather:{temp:31.4,feels:34,humidity:58,desc:'haze',wind:3.1},
-      meta:{sources:{livesky:'ok',niagara:'ok',dcon:'ok',weather:'ok'},error:''}
+      meta:{sources:{dcon:'ok'},error:''}
     }
   };
   if(params.get('real')){
@@ -97,14 +98,15 @@
         SEC('series','Pressure over time',PRESS)],
       rows:[],at:now-7200000},
     // One leg down: the card has to say "Partly ready", not "Ready".
-    rep_seed3:{type:'motors',label:'Motors — river and wells',params:{},status:'partial',
-      summary:'0 running of 2 motors',error:'Livesky is not configured',
+    rep_seed3:{type:'session_log',label:'Irrigation session log',
+      params:{from:'2026-02-20',to:'2026-02-22'},status:'partial',
+      summary:'1 entries · 2026-02-20 → 2026-02-22',error:'DCON logs: POST -> 500',
       sections:[
-        SEC('metrics','Now',[M('Motors running',0,'','of 2 reporting')],{source:''}),
-        SEC('status','Motors',[{name:'Well Motor 7.5HP',status:'off',meta:'cluster 6039',source:'niagara'},
-          {name:'Well zone valves',status:'unknown',meta:'cluster 6036',source:'niagara'}],{source:'niagara'}),
-        {kind:'status',title:'River motor',note:'',source:'livesky',status:'error',
-         error:'Livesky is not configured',rows:[]}],
+        SEC('metrics','Entries',[M('Timer entries',1,'','2026-02-20 → 2026-02-22'),
+          M('Motor entries',0,'','DCON logs: POST -> 500')],{source:''}),
+        SEC('timeline','Combined log',[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed',source:'timer'}]),
+        {kind:'timeline',title:'Motor log',note:'',source:'dcon',status:'error',
+         error:'DCON logs: POST -> 500',rows:[]}],
       rows:[],at:now-10800000}
   };
   if(params.get('noirrig')) delete data.irrigation_reports;
@@ -142,10 +144,8 @@
   // canned report, so Generate round-trips without vendor credentials.
   const listeners={};
   const fire=(p,val)=>{(listeners[p]||[]).forEach(cb=>{try{cb({val:()=>val});}catch(e){}});};
-  const irrLabels={motors:'Motors — river and wells',conditions:'Controller and field conditions',
-    live_readings:'Power and pressure now',session_log:'Irrigation session log',
-    performance:'Valve runtime against pressure',river_status:'River motor status',
-    well_status:'Well motor status',controller:'Controller dashboard',weather:'Field weather',
+  const irrLabels={live_readings:'Power and pressure now',session_log:'Irrigation session log',
+    performance:'Valve runtime against pressure',controller:'Controller dashboard',
     electricity:'Electricity snapshot',pressure:'Pressure snapshot',valves:'Valve runtime',
     timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range'};
   // Stands in for the bridge's section builders: same kinds, same row shapes,
@@ -155,12 +155,9 @@
     const range=win?' · '+win:'';
     const base={type,label:irrLabels[type]||type,params:{},status:'ok',rows:[],at:Date.now()};
     if(from&&to) base.params={from,to};
-    const motorRows=[{name:'River Motor',status:'on',meta:'last update 06:10',source:'livesky'},
-      {name:'Well Motor 7.5HP',status:'off',meta:'cluster 6039',source:'niagara'}];
-    const facts=[{label:'Device',value:'DCON controller'},{label:'Serial',value:'MCON874Q000568'},
-      {label:'Connectivity',value:'connected'},{label:'Last completed',value:'Timer 12 · 08:20'},
-      {label:'Next scheduled',value:'Timer 13 · 06:00'}];
-    const weather=[M('Temperature',31.4,'°C','feels 34°C'),M('Humidity',58,'%','haze'),M('Wind',3.1,'m/s','')];
+    const facts=[{label:'Device',value:'SibhiSump'},{label:'Serial',value:'MCON874Q000568'},
+      {label:'Last packet',value:'2026-02-22 09:00:43'},
+      {label:'Controller clock',value:'2026-02-22 09:04:04'}];
     const logRows=[{at:'2026-02-21 06:00',event:'timer',detail:'Timer 11 completed',source:'timer'},
       {at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed',source:'timer'},
       {at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped',source:'motor'}];
@@ -170,20 +167,12 @@
     const pressSecs=[SEC('metrics','Pressure',[M('Average',2.08,'bar','6 readings'),
         M('Low',1.6,'bar',win),M('High',2.6,'bar',win)]),
       SEC('series','Pressure over time',PRESS)];
-    if(type==='motors'||type==='river_status'||type==='well_status'){
-      const rows=type==='motors'?motorRows:type==='river_status'?[motorRows[0]]:[motorRows[1]];
-      const on=rows.filter(r=>r.status==='on').length;
-      const metrics=[M('Motors running',on,'',`of ${rows.length} reporting`)];
-      if(type==='motors') metrics.push(M('River',1,'','of 1 Livesky motors'),M('Wells',0,'','of 1 Niagara controllers'));
-      return {...base,summary:`${on} running of ${rows.length} motors`,
-        sections:[SEC('metrics','Now',metrics,{source:''}),SEC('status','Motors',rows,{source:''})]};}
-    if(type==='controller') return {...base,summary:'DCON controller',
-      sections:[SEC('facts','Controller',facts)]};
-    if(type==='weather') return {...base,summary:'31°C, haze',
-      sections:[SEC('metrics','Field conditions',weather,{source:'openweather',note:'haze'})]};
-    if(type==='conditions') return {...base,summary:'31°C · haze · Timer 13 · 06:00',
-      sections:[SEC('metrics','Field conditions',weather,{source:'openweather'}),
-        SEC('facts','Controller',facts)]};
+    if(type==='controller') return {...base,summary:'SibhiSump · 3 valves',
+      sections:[SEC('facts','Controller',facts),
+        SEC('status','Valves on this controller',
+          [{name:'4 Veg',status:'unknown',meta:'Irrigation',source:'dcon'},
+           {name:'6 Kulam',status:'unknown',meta:'Irrigation',source:'dcon'},
+           {name:'2 BPump',status:'unknown',meta:'Booster Pump',source:'dcon'}])]};
     if(type==='electricity') return {...base,summary:'4.2 kWh',
       sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')])]};
     if(type==='pressure') return {...base,summary:'2.1 bar',

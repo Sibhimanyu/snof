@@ -640,7 +640,7 @@ function devicesView(all) {
 
 /* ---- irrigation (vendor motor/valve mirror, read-only) ---- */
 
-/* ---- irrigation reports (vendor motors/valves, on demand) ---- */
+/* ---- irrigation reports (Mobitech DCON controller, on demand) ---- */
 
 /* Nothing on this page is polled. Each report below answers a user pressing
  * Generate: the dashboard appends a request to
@@ -653,30 +653,25 @@ function devicesView(all) {
  * tweak, and would arrive through the /commands queue, never as a direct
  * vendor call from a browser tab. */
 const IRR_TYPES = [
-  // Combined pulls first: they answer a question that spans two vendor calls
-  // (which motors are running, did pressure hold while the valves were open)
-  // and are what most people want. The single-source pulls below stay for
-  // asking one vendor exactly one thing — and for telling which one is down.
-  { type: 'motors', label: 'Motors — river and wells', needs: 'live', group: 'Combined' },
-  { type: 'conditions', label: 'Controller and field conditions', needs: 'live', group: 'Combined' },
+  // Every report reads the same Mobitech DCON controller. The combined ones
+  // answer a question that spans two of its endpoints — did the line hold
+  // while the valves were open, did the motor stop mid-timer — which reading
+  // two separate cards left you to work out by eye.
   { type: 'live_readings', label: 'Power and pressure now', needs: 'live', group: 'Combined' },
   { type: 'session_log', label: 'Irrigation session log', needs: 'range', group: 'Combined' },
   { type: 'performance', label: 'Valve runtime against pressure', needs: 'range', group: 'Combined' },
-  { type: 'river_status', label: 'River motor status', needs: 'live', group: 'Single source' },
-  { type: 'well_status', label: 'Well motor status', needs: 'live', group: 'Single source' },
-  { type: 'controller', label: 'Controller dashboard', needs: 'live', group: 'Single source' },
-  { type: 'weather', label: 'Field weather', needs: 'live', group: 'Single source' },
-  { type: 'electricity', label: 'Electricity snapshot', needs: 'live', group: 'Single source' },
-  { type: 'pressure', label: 'Pressure snapshot', needs: 'live', group: 'Single source' },
-  { type: 'valves', label: 'Valve runtime', needs: 'range', group: 'Single source' },
-  { type: 'timer_log', label: 'Timer log', needs: 'range', group: 'Single source' },
-  { type: 'motor_log', label: 'Motor log', needs: 'range', group: 'Single source' },
-  { type: 'pressure_range', label: 'Pressure range', needs: 'range', group: 'Single source' },
+  { type: 'controller', label: 'Controller dashboard', needs: 'live', group: 'Single endpoint' },
+  { type: 'electricity', label: 'Electricity snapshot', needs: 'live', group: 'Single endpoint' },
+  { type: 'pressure', label: 'Pressure snapshot', needs: 'live', group: 'Single endpoint' },
+  { type: 'valves', label: 'Valve runtime', needs: 'range', group: 'Single endpoint' },
+  { type: 'timer_log', label: 'Timer log', needs: 'range', group: 'Single endpoint' },
+  { type: 'motor_log', label: 'Motor log', needs: 'range', group: 'Single endpoint' },
+  { type: 'pressure_range', label: 'Pressure range', needs: 'range', group: 'Single endpoint' },
 ];
 const IRR_TIMEOUT_MS = 60000;
 // Builder selections survive re-renders (a sensor update mid-form must not
 // wipe the dates), and one waiter per outstanding request resolves it.
-let irrType = 'motors', irrFrom = '', irrTo = '';
+let irrType = 'live_readings', irrFrom = '', irrTo = '';
 const irrWaiters = new Map();   // reqKey -> { ref, cb, timer }
 
 const irrig = () => state.irrigation || {};
@@ -1008,36 +1003,17 @@ function irrReportCard(key, rep) {
   </div>`;
 }
 
+/* The sidebar badge. It counted running motors until the Livesky and Niagara
+ * feeds were removed; open valves is the equivalent "something is on right
+ * now" number from the one controller that is left. */
 function irrigRunning() {
-  const n = irrig();
-  const running = [...(n.motors || []), ...(n.controllers || [])]
-    .filter((m) => m && m.status === 'on').length;
-  return running;
+  return (irrig().valves || []).filter((v) => v && v.status === 'on').length;
 }
 
 const irrigStatusTag = (s) =>
   s === 'on' ? `<span class="tag tag-on">Running</span>`
   : s === 'off' ? `<span class="tag">Off</span>`
   : `<span class="tag">Unknown</span>`;
-
-function irrigMotorCard(m) {
-  const icon = m.source === 'niagara' ? 'i-switch'
-    : m.source === 'livesky' ? 'i-water_heater' : 'i-default';
-  return `<div class="area-card">
-    <div class="area-top">
-      <span class="area-icon"><svg viewBox="0 0 24 24" class="ico"><use href="#${icon}"/></svg></span>
-    </div>
-    <div>
-      <div class="area-name">${escapeHtml(m.name || 'Motor')}</div>
-      <div class="area-meta">
-        <span class="area-count">${escapeHtml(m.source === 'niagara' ? 'Well controller'
-          : m.source === 'livesky' ? 'River motor' : 'Motor')}</span>
-        ${irrigStatusTag(m.status)}
-      </div>
-      ${m.detail ? `<div class="area-count">${escapeHtml(m.detail)}</div>` : ''}
-    </div>
-  </div>`;
-}
 
 const irrigRow = (icon, name, meta, right) =>
   `<div class="row"><span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#${icon}"/></svg></span>` +
@@ -1084,10 +1060,10 @@ function irrigationView() {
           : 'Build one above — pick a report and press Generate.'));
 
   const n = irrig();
-  const motors = [...(n.motors || []), ...(n.controllers || [])];
   const valves = n.valves || [];
   const dcon = n.dcon || {};
-  const weather = n.weather || {};
+  const readings = [...(n.electricity || []), ...(n.pressure || [])];
+  const names = n.valveNames || [];
   const lastNote = n.meta?.lastUpdated
     ? `<p class="more-note">Last results from ` +
       `${escapeHtml(n.meta.lastType || 'a report')} · ` +
@@ -1095,23 +1071,35 @@ function irrigationView() {
       `${n.meta.lastError ? ` Last error: ${escapeHtml(n.meta.lastError)}.` : ''}</p>`
     : '';
 
-  const running = motors.filter((m) => m.status === 'on').length;
   const valvesOpen = valves.filter((v) => v.status === 'on').length;
-  const cacheSec = (motors.length || valves.length || dcon.device || weather.temp != null)
+  const latest = (rows) => {
+    const last = (rows || [])[(rows || []).length - 1];
+    return last ? [last.value, last.unit].filter(Boolean).join(' ') : '—';
+  };
+  const cacheSec = (valves.length || dcon.device || readings.length || names.length)
     ? sectionHead('i-water_heater', 'Last results') + lastNote +
       `<div class="stats">
-        <div class="stat stat-on"><span class="stat-label">Motors running</span>
-          <span class="stat-value">${running}</span>
-          <span class="stat-note">of ${motors.length} last seen</span></div>
-        <div class="stat"><span class="stat-label">Valves open</span>
+        <div class="stat stat-on"><span class="stat-label">Valves open</span>
           <span class="stat-value">${valvesOpen}</span>
           <span class="stat-note">of ${valves.length} last seen</span></div>
-        <div class="stat"><span class="stat-label">Field temp</span>
-          <span class="stat-value">${weather.temp != null ? `${Math.round(weather.temp)}°` : '—'}</span>
-          <span class="stat-note">${escapeHtml(weather.desc || 'no weather pull yet')}</span></div>
+        <div class="stat"><span class="stat-label">Pressure</span>
+          <span class="stat-value">${escapeHtml(latest(n.pressure))}</span>
+          <span class="stat-note">${escapeHtml((n.pressure || []).length ? 'last reading' : 'no pull yet')}</span></div>
+        <div class="stat"><span class="stat-label">Electricity</span>
+          <span class="stat-value">${escapeHtml(latest(n.electricity))}</span>
+          <span class="stat-note">${escapeHtml((n.electricity || []).length ? 'last reading' : 'no pull yet')}</span></div>
       </div>` +
-      (motors.length
-        ? `<div class="grid">${motors.map(irrigMotorCard).join('')}</div>` : '') +
+      (dcon.device
+        ? `<div class="list">` +
+          [['Device', dcon.device], ['Serial', dcon.serial],
+           ['Last packet', dcon.lastPacket], ['Controller clock', dcon.serverTime]]
+            .filter(([, v]) => v)
+            .map(([k, v]) => irrigRow('i-menu', String(v), k, '')).join('') +
+          `</div>` : '') +
+      (names.length
+        ? `<div class="list${names.length > 8 ? ' cols' : ''}">` +
+          names.map((v) => irrigRow('i-valve', v.name,
+            v.type || `valve ${v.id}`, '')).join('') + `</div>` : '') +
       (valves.length
         ? `<div class="list${valves.length > 8 ? ' cols' : ''}">` +
           valves.map((v) => irrigRow('i-valve', v.name || `Valve ${v.id || ''}`,
@@ -1119,7 +1107,7 @@ function irrigationView() {
             irrigStatusTag(v.status))).join('') + `</div>` : '')
     : '';
 
-  return head('Irrigation', 'Build a vendor report — motors, valves, weather.') +
+  return head('Irrigation', 'Build a report from the irrigation controller.') +
     sectionHead('n-irrigation', 'Generate report') + builder + repsSec + cacheSec +
     `<p class="more-note">Read-only pulls — this page cannot operate pumps or valves.</p>`;
 }

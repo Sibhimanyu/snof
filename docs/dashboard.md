@@ -16,7 +16,7 @@ shell, a hash router picks the view:
 | `#/areas` | a card per area, with active and offline counts |
 | `#/area/<id>` | one area, grouped by domain, operable domains first |
 | `#/devices` | everything, with status segment and domain chips |
-| `#/irrigation` | report builder + results: fifteen vendor reports on demand (five of them combining two vendor calls into one card), sectioned results, last-results cache — see [irrigation.md](irrigation.md) |
+| `#/irrigation` | report builder + results: ten reports on demand from the DCON controller (three of them combining two calls into one card), sectioned results, last-results cache — see [irrigation.md](irrigation.md) |
 | `#/admin` | admin-only: grant/revoke view and control for other accounts — see [firebase-deploy.md](firebase-deploy.md#the-allowlist) |
 
 `render()` rebuilds `#view` wholesale on every RTDB delta. At ~1366 registry

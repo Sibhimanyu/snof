@@ -1,5 +1,5 @@
 name: SNOF Firebase Bridge
-version: "0.6.3"
+version: "0.7.4"
 slug: snof_bridge
 description: Mirrors Home Assistant entity states to Firebase Realtime Database, grouped by area, for the SNOF dashboard.
 url: https://github.com/sibhimanyu/snof
@@ -48,25 +48,17 @@ options:
     - input_boolean
   control_max_age_seconds: 120
   log_level: info
-  # Irrigation reports (Mobitech DCON, Livesky, Niagara, OpenWeather). Leave
+  # Irrigation reports, all of them from the Mobitech DCON controller. Leave
   # false to answer nothing; turning it on lets allowlisted controllers build
   # report requests in the dashboard, which the bridge executes on demand —
   # nothing is polled. Credentials stay on the NUC and are never mirrored.
-  # Nothing here can operate a pump.
+  # Nothing here can operate a pump or a valve.
   irrigation_enabled: false
-  livesky_base: "https://gsm.liveskytech.com:3001"
-  livesky_bearer: ""
-  livesky_imei: ""
-  niagara_base: ""
-  niagara_user: ""
-  niagara_clusters: []
   dcon_base: "https://dcon.mobitechwireless.com"
   dcon_serial: ""
   dcon_device_id: ""
   dcon_token_id: ""
   dcon_product: "DCON"
-  owm_appid: ""
-  owm_place: ""
 schema:
   firebase_db_url: url
   service_account_path: str
@@ -88,17 +80,8 @@ schema:
   control_max_age_seconds: float(5,3600)
   log_level: list(trace|debug|info|warning|error)
   irrigation_enabled: bool
-  livesky_base: url
-  livesky_bearer: str
-  livesky_imei: str
-  niagara_base: str
-  niagara_user: str
-  niagara_clusters:
-    - str
   dcon_base: url
   dcon_serial: str
   dcon_device_id: str
   dcon_token_id: str
   dcon_product: str
-  owm_appid: str
-  owm_place: str

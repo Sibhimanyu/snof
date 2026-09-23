@@ -12,7 +12,7 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | The NUC or the add-on | [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) |
 | Anything that can operate hardware | [docs/device-control.md](docs/device-control.md) |
 | `dashboard/public/` | [docs/dashboard.md](docs/dashboard.md) |
-| Vendor motors/valves (Livesky, Niagara, Mobitech) | [docs/irrigation.md](docs/irrigation.md) |
+| Irrigation reports (Mobitech DCON) | [docs/irrigation.md](docs/irrigation.md) |
 | Hosting, rules, the allowlist | [docs/firebase-deploy.md](docs/firebase-deploy.md) |
 | Tests or the preview harness | [docs/testing-and-preview.md](docs/testing-and-preview.md) |
 
@@ -133,11 +133,26 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   managed wildcard `ProxyCommand`. Use
   `ssh -o ProxyCommand=none -i ~/.ssh/snof_ha sibhiorchards@192.168.68.200`,
   or the same via `SSH_OPTS` for `deploy-addon.sh`.
-- Irrigation reports are **deployed but inert** too: `irrigation_enabled` is
-  still false, so the log says `Irrigation reports are disabled; not watching
-  the request queue` and no vendor API has ever been called from the NUC. The
-  fifteen report types, the RTDB allow-list and the dashboard builder are all
-  live and waiting on that one option plus the vendor credentials.
+- Irrigation is **Mobitech DCON only** as of 2026-09-23. Livesky, Niagara and
+  OpenWeather were removed at the owner's request — parsers, add-on options,
+  report types and RTDB allow-list entries all deleted, not left dormant. Ten
+  report types remain, three of them combining two controller calls.
+- Reports are **armed and proven against the real controller** (add-on 0.7.4):
+  `irrigation_enabled: true`, `dcon_token_id` and `dcon_serial` set through the
+  Supervisor API. Verified live: controller (SibhiSump, 16 valves), power and
+  pressure now, valve runtime against pressure (23h 4m over 11 valves,
+  1.0–2.9 bar), session log (32 entries). The DCON token is a credential and
+  lives only in the add-on options.
+- **The first live pull leaked.** `normalize_dcon_dashboard()` used to mirror a
+  scrubbed dump of the whole node; the DCON dashboard payload carries the
+  farm's phone book and the modem IMEI, and eleven numbers reached Firebase
+  before being purged the same hour. Two defences now: the parser is a
+  five-field allow-list, and `scrub()` redacts any run of ten or more digits
+  anywhere in a string. Never widen a vendor parser to "everything else".
+- Every parser was rewritten against real payloads on 2026-09-23 — all of them
+  were wrong when written blind. `docs/irrigation.md` has the actual shapes.
+  A snapshot query needs a `dt` in the past: the controller returns samples at
+  or after it and stores one every ~11 seconds.
 - Control is **armed** as of 2026-09-23: `allow_control: true`, the log says
   `Watching command queue for domains: fan, input_boolean, light, switch` and
   `Command queue stream open`, and `meta/bridge.control` is true. Set through

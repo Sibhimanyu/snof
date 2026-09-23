@@ -1,11 +1,15 @@
-# Irrigation reports (vendor motors & valves)
+# Irrigation reports (the DCON controller)
 
-The farm's pumps and valves are driven by vendor controllers, not Home
-Assistant: a Livesky GSM unit on the river motor, Niagara controllers on the
-well motors, and a Mobitech DCON unit for the irrigation valves and timers,
-plus OpenWeather for field conditions. The Postman collection that captured
-these APIs ("Mobitech Hack") lives outside the repo; nothing from it is
-quoted here.
+The farm's valves and timers are driven by a Mobitech DCON (MCON) controller,
+not Home Assistant. Reports read it and nothing else.
+
+Livesky (river motor), Niagara (well motors) and OpenWeather were wired here
+too until **2026-09-23**, when the owner confirmed the farm does not use them.
+They were removed rather than left dormant: parsers, add-on options, report
+types and the RTDB allow-list entries are all gone. A dead code path holding a
+credential slot is worse than no code path. The Postman collection that
+captured these APIs ("Mobitech Hack") lives outside the repo; nothing from it
+is quoted here.
 
 ## How it works: the user builds the request
 
@@ -13,9 +17,9 @@ Nothing is polled — every vendor call answers a user pressing **Generate
 report** on `#/irrigation`. An idle farm costs zero vendor traffic:
 
 ```
-Dashboard report builder          Bridge (NUC)                     Vendor APIs
-  pick type + dates          /farms/<slug>/                  Livesky / Niagara /
-  press Generate ──append──▶ irrigation_requests              Mobitech / OWM
+Dashboard report builder          Bridge (NUC)                    Mobitech DCON
+  pick type + dates          /farms/<slug>/
+  press Generate ──append──▶ irrigation_requests
                               (controller-only) ──1-2 calls──▶   ▲
   render card ◀──sanitized── irrigation_reports/<id> ──write──┘
                 result       (bridge-only writes)
@@ -80,77 +84,43 @@ looks like a token, id or URL before it can reach the mirror.
 
 ## The reports
 
-Five **combined** pulls and ten single-source ones. A combined report is one
-press, two vendor calls, one card — they exist because the farm's questions
-span vendors, and answering them from two cards left the correlating to the
-reader. They cost two calls; the single-source reports stay for asking one
-vendor exactly one thing, and for telling which vendor is broken.
+Ten of them, all reading the same controller. The first three are
+**combined**: one press, two calls, one card. They exist because the questions
+the farm actually asks span two endpoints, and answering them from two
+separate cards left the correlating to the reader.
 
-| Builder label | Vendor calls | Dates? |
+| Builder label | Controller calls | Dates? |
 |---|---|---|
-| **Motors — river and wells** | Livesky `getMotors` + Niagara `/controller` | no |
-| **Controller and field conditions** | DCON `dashboard`+`get_node` + OpenWeather | no |
-| **Power and pressure now** | DCON `reports?type=electricity` + `pressure_cond` | no |
-| **Irrigation session log** | DCON `timer_log` + `motor_log`, woven into one chronology | from → to |
-| **Valve runtime against pressure** | DCON `get_all_valve` + `reports?type=pressure_timer` | from → to |
-| River motor status | Livesky `getMotors` | no |
-| Well motor status | Niagara `/controller` per cluster | no |
-| Controller dashboard | DCON `dashboard` + `get_node` | no |
-| Field weather | OpenWeather `weather` | no |
-| Electricity snapshot | DCON `reports?type=electricity`, stamped now | no |
-| Pressure snapshot | DCON `reports?type=pressure_cond`, stamped now | no |
-| Valve runtime | DCON `get_all_valve` | from → to |
-| Timer log | DCON `logs?method=timer_log` | from → to |
-| Motor log | DCON `logs?method=motor_log` | from → to |
-| Pressure range | DCON `reports?type=pressure_timer` | from → to |
+| **Power and pressure now** | `reports?type=electricity` + `pressure_cond` | no |
+| **Irrigation session log** | `logs?method=timer_log` + `motor_log`, woven into one chronology | from → to |
+| **Valve runtime against pressure** | `get_all_valve` + `reports?type=pressure_timer` | from → to |
+| Controller dashboard | `dashboard` + `get_node` | no |
+| Electricity snapshot | `reports?type=electricity`, stamped now | no |
+| Pressure snapshot | `reports?type=pressure_cond`, stamped now | no |
+| Valve runtime | `get_all_valve` | from → to |
+| Timer log | `logs?method=timer_log` | from → to |
+| Motor log | `logs?method=motor_log` | from → to |
+| Pressure range | `reports?type=pressure_timer` | from → to |
 
 **A leg that fails costs a section, not the report.** Each call of a combined
 report runs in its own `_leg()`; a failed one becomes an errored section with
 a plain-word reason, and the card is tagged **Partly ready** rather than
 Ready — a half-answer must never read as a whole one. Nothing from a failed
-leg is written to the `/irrigation` last-results cache, so a dead vendor
-leaves the previous good value standing rather than blanking it. All legs
-failing is an ordinary `error` report.
-
-## When nothing is listening
-
-`meta/bridge.irrigation` — `{ enabled, requestsRun, requestsRefused, lastOk,
-lastError }` — rides every heartbeat, and the builder reads it. With
-`irrigation_enabled` false, or the bridge stale or offline, Generate is
-disabled and the page says which of those it is. Before that check existed the
-button wrote a request nothing was watching, spun for the full 60-second
-deadline, and then said the result would appear below when it landed. It never
-landed, and the request stayed in the queue: four had accumulated in production
-by 2026-09-23, the oldest a day old.
-
-Two guards, because one is not enough:
-
-- **The page.** `irrBridgeState()` in `app.js` gates both the button and
-  `sendReportRequest()`, so a stale render cannot slip a write through. A
-  bridge too old to publish the field leaves `irrigation` undefined, which is
-  not the same as off and does not block.
-- **The bridge.** A runner starting up with reports disabled drains whatever is
-  in `irrigation_requests` once and logs how many it dropped. Nothing else ever
-  deletes from that path, and clients can append to it.
+leg is written to the `/irrigation` last-results cache, so a dead call leaves
+the previous good value standing. All legs failing is an ordinary `error`
+report.
 
 ## Setup
 
 Off by default. In the add-on Configuration tab:
 
-1. `irrigation_enabled: true` (combined reports and sections shipped in
-   add-on 0.6.0 — update it on the NUC via the usual Supervisor flow).
-2. Fill in only the vendors on the farm. Each is optional and fails
-   independently — an unconfigured vendor's report errors with a
-   plain-word reason on its card, and the rest still run:
-   - Livesky: `livesky_bearer` (JWT — expires, renew it when the feed
-     reports an error), `livesky_imei`.
-   - Niagara: `niagara_base`, `niagara_user`, `niagara_clusters` as
-     `"id:label"` entries, e.g. `"6039:Well Motor 7.5HP"`.
-   - DCON: `dcon_token_id`, `dcon_serial` (`dcon_device_id`,
-     `dcon_product` if they differ from defaults).
-   - Weather: `owm_appid`, `owm_place` (e.g. `638673,in`).
-3. Deploy rules with the dashboard (`firebase deploy --only
-   database`), or the request write is refused.
+1. `irrigation_enabled: true`.
+2. `dcon_token_id` and `dcon_serial`. `dcon_base`, `dcon_device_id` and
+   `dcon_product` have working defaults and only need touching if the vendor
+   changes them. The token is an FCM-style app registration string ending in
+   `@ios`; it is a credential and lives only in the add-on options.
+3. Deploy rules with the dashboard (`firebase deploy --only database`), or the
+   request write is refused.
 
 RTDB rules needed no new trust tier: `irrigation_requests` reuses the
 controllers allow-list, and `irrigation_reports` has no client write rule,
@@ -167,12 +137,57 @@ would arrive through the `/commands` queue with its own domain allow-list
 and validator cases, never as a direct vendor call. The page says so
 ("this page cannot operate pumps").
 
-## Response shapes
+## Response shapes, as they actually are
 
-The collection was exported without saved responses, so `vendors.py`
-parsers accept a list, a dict holding a list, or a single object, pick
-from several likely key spellings, and degrade unknown states to
-`unknown`. When live responses are seen, tighten the key lists against
-real payloads — the tests in `tests/test_logic.py` pin the request
-validator and the current parser behaviour, including the credential
-scrub.
+The parsers were written blind against a collection exported without saved
+responses. The first live pull, **2026-09-23**, showed every one of them was
+wrong in some way. What the controller really returns:
+
+**`dashboard`** is keyed by serial, and is mostly not showable:
+
+```
+{"MCON874Q000568": {"device_id": ..., "server_time": ..., "sim": "vi-76395…",
+                    "packets": {"live": "##,DCON-…!<ts>+05:30,V68,SibhiSump,…",
+                                "4": "##,DCON,9195…,9163…"},
+                    "users": {"A1": {"name": …, "mobile": "9195…"}}}}
+```
+
+Packets 1/4/8 are SMS recipient lists, `users` maps names to mobile numbers,
+`sim` is the controller's own number and packet 5 carries the modem IMEI. The
+device name (`SibhiSump`) lives inside the `live` packet, not under any key.
+An earlier `normalize_dcon_dashboard()` mirrored a scrubbed copy of the whole
+node and **put eleven phone numbers and the IMEI into Firebase**; they were
+removed the same hour. It now returns five named fields and nothing else, and
+`scrub()` redacts any run of ten or more digits wherever it appears, because
+DCON hides numbers inside comma-joined strings where no key names them.
+
+**`get_node`** is the only source of valve *names* — `4 Veg`, `6 Kulam`,
+`9 Mulberry`. Without it a runtime report is a list of integers.
+
+**`get_all_valve`** is keyed by valve number, with runtime bucketed per day as
+`HH:MM`. A window's runtime is the sum of its days, and `"00:36"` is 36
+minutes, not 36 hours.
+
+**`timer_log`** entries carry `timer_name`, `timer_no`, `completed`,
+`run_time` and an `on_valves` string of ten zero-padded slots. **`motor_log`**
+is a different shape again: no `dt`, but `dt1` (date) plus `time`, and each row
+is a day's running total with the energy meter either side of it. Joining that
+stamp matters — a bare `09:09:06` sorts into the wrong day of a merged
+timeline.
+
+**`reports?type=pressure_cond|pressure_timer`** returns
+`{"dt": …, "pressure": "2.5-1.7", "flow_rate": "0"}`. The pair is inlet and
+outlet; the series charts the inlet, because that is the number that answers
+"did the line hold".
+
+**`reports?type=electricity`** returns no readings at all — it returns the raw
+controller packet. Only two groups in it are safely identifiable, a
+phase-voltage triple and a phase-current triple, recognised by shape and
+plausible range rather than by position. The rest is left unlabelled: a wrong
+label on an electrical reading is worse than no label.
+
+**A snapshot query needs a `dt` in the past.** The controller answers with the
+samples at or after `dt` and stores one every ~11 seconds, so asking for the
+current second returns an empty list. The bridge asks for five minutes back
+and takes the newest row; the first live pull returned "no reading" for
+exactly this reason.

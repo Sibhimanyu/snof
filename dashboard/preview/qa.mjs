@@ -151,10 +151,10 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     groups:[...document.querySelectorAll('#irr-type optgroup')].map(o=>o.label),
     seeded:document.querySelectorAll('.rep-card').length,
     scripts:[...document.documentElement.innerHTML].join('').includes('token_id')}));
-  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options.length===15,
+  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options.length===10,
     `${r.options.length} options`);
   check('combined pulls are offered first and labelled as such',
-    r.groups[0]==='Combined'&&r.groups[1]==='Single source', r.groups.join('|'));
+    r.groups[0]==='Combined'&&r.groups[1]==='Single endpoint', r.groups.join('|'));
   // Drift here is a PERMISSION_DENIED the user meets as "the database refused
   // that request": every type the builder offers must be on the rules
   // allow-list, and the allow-list must not carry a type nobody can pick.
@@ -203,11 +203,11 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // A half-answered composite must not read as a whole one.
   const partial=await p.evaluate(()=>{
     const card=[...document.querySelectorAll('.rep-card')]
-      .find(c=>c.querySelector('.rep-title').textContent.startsWith('Motors'));
+      .find(c=>c.querySelector('.rep-title').textContent.startsWith('Irrigation session log'));
     return card&&{tag:card.querySelector('.tag').textContent,
       err:card.querySelector('.rep-err')?.textContent||''};});
   check('a partly-failed report says so on the card',
-    partial&&partial.tag==='Partly ready'&&/Livesky/.test(partial.err),
+    partial&&partial.tag==='Partly ready'&&/DCON logs/.test(partial.err),
     JSON.stringify(partial));
   // History written before sections existed still renders.
   const legacy=await p.evaluate(()=>{

@@ -47,7 +47,7 @@ returns.
 | [docs/HANDOFF.md](docs/HANDOFF.md) | **Start here** — current state and open items |
 | [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) | SSH to the NUC; §6a deploys the add-on with no UI |
 | [docs/device-control.md](docs/device-control.md) | The command path, its three gates, arming it |
-| [docs/irrigation.md](docs/irrigation.md) | Vendor motor/valve reports (Mobitech, Livesky, Niagara) and the Irrigation view |
+| [docs/irrigation.md](docs/irrigation.md) | Irrigation reports from the Mobitech DCON controller and the Irrigation view |
 | [docs/dashboard.md](docs/dashboard.md) | Front-end architecture and design system |
 | [docs/firebase-deploy.md](docs/firebase-deploy.md) | Hosting, rules, the two-tier allowlist |
 | [docs/testing-and-preview.md](docs/testing-and-preview.md) | Every suite and the fixture that matters |
@@ -173,8 +173,8 @@ cd dashboard && firebase deploy --only hosting,database
   entities/<domain>/<object_id>/
             { entity_id, domain, name, state, area, attrs{}, lastChanged, lastUpdated }
   irrigation/  last results cache, refreshed by each fulfilled report:
-            { motors[], controllers[], dcon{}, valves[], timerLog[], motorLog[],
-              electricity[], pressure[], weather{}, meta{ lastUpdated, lastType, lastError } }
+            { dcon{}, valves[], timerLog[], motorLog[], electricity[],
+              pressure[], meta{ lastUpdated, lastType, lastError } }
   irrigation_requests/  controller-appended report requests (bridge consumes)
   irrigation_reports/<id>/  sanitized results, bridge-written only:
             { type, label, params{from,to}, status: ok|partial|error, summary,

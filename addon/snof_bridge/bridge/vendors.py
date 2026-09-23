@@ -1,9 +1,14 @@
 """Vendor response parsers for the irrigation mirror.
 
-The farm's motors and valves live behind three vendor APIs plus OpenWeather
-(see the "Mobitech Hack" Postman collection): Livesky (river motor), Niagara
-(well-motor controllers) and Mobitech DCON (the MCON irrigation controller:
-dashboard, valves, timer/motor logs, electricity and pressure reports).
+Everything here reads one controller: the Mobitech DCON (MCON) unit that runs
+the farm's irrigation — dashboard, valves, timer and motor logs, electricity
+and pressure reports. See the "Mobitech Hack" Postman collection.
+
+Livesky (river motor), Niagara (well motors) and OpenWeather were wired here
+until 2026-09-23 and were removed at the owner's request: the farm does not
+use them. Their parsers, options and report types are gone rather than left
+dormant, because a dead code path with a credential slot is worse than no
+code path.
 
 Everything in here is pure: bytes in, presentation dicts out. No network, no
 credentials, no aiohttp — so tests/test_logic.py can import this with nothing
@@ -32,11 +37,22 @@ MAX_LIST = 16
 
 # Key fragments that must never reach the mirror. Mirrors the deny-list in
 # mapper.py, extended for the vendor world (FCM tokens, auth headers, URLs).
+# Extended on 2026-09-23 after the first live DCON pull: the dashboard payload
+# carries the farm's phone book (packets 1/4/8 are SMS recipient lists, "users"
+# maps names to mobile numbers, "sim" is the controller's own number) and the
+# modem IMEI. None of it is presentation data and all of it reached the mirror
+# once before this list grew.
 _SECRET_HINTS = (
     "token", "password", "secret", "auth", "appid", "apikey", "api_key",
     "url", "picture", "mac", "ssid", "imei", "mobile", "usermail",
-    "authorization", "session",
+    "authorization", "session", "sim", "packets", "users", "phone",
+    "device_id", "contact",
 )
+
+# Anything that looks like a phone number or a modem id, wherever it appears.
+# The deny-list above is by key; this is by value, because DCON hides numbers
+# inside comma-joined packet strings where no key names them.
+_DIGIT_RUN = re.compile(r"\b\d{10,}\b")
 
 _ON_TOKENS = {"on", "1", "true", "running", "run", "open", "start", "started"}
 _OFF_TOKENS = {"off", "0", "false", "stopped", "stop", "closed", "close", "idle"}
@@ -80,10 +96,10 @@ def scrub(value: Any, depth: int = 0) -> Any:
     if isinstance(value, (list, tuple)):
         return [scrub(item, depth + 1) for item in list(value)[:MAX_LIST]]
     if isinstance(value, str):
-        return value[:MAX_STR]
+        return _DIGIT_RUN.sub("[redacted]", value)[:MAX_STR]
     if isinstance(value, (int, float, bool)) or value is None:
         return value
-    return str(value)[:MAX_STR]
+    return _DIGIT_RUN.sub("[redacted]", str(value))[:MAX_STR]
 
 
 def _as_list(payload: Any) -> list[Any]:
@@ -94,8 +110,8 @@ def _as_list(payload: Any) -> list[Any]:
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
-        for key in ("motors", "data", "result", "rows", "items", "list",
-                    "controllers", "valves", "nodes", "logs"):
+        for key in ("data", "log", "result", "rows", "items", "list",
+                    "valves", "nodes", "logs"):
             inner = payload.get(key)
             if isinstance(inner, list):
                 return inner
@@ -116,157 +132,281 @@ def _text(value: Any) -> str:
     return str(value)[:MAX_STR]
 
 
-# ---- Livesky (river motor) -----------------------------------------------
-
-def normalize_livesky(payload: Any) -> list[dict]:
-    """getMotors?imei=… → [{ id, name, status, source }]."""
-    motors = []
-    for raw in _as_list(payload)[:MAX_LIST]:
-        if not isinstance(raw, dict):
-            continue
-        state = _pick(raw, "motor_status", "status", "state", "on_off",
-                      "motorState", "run_status")
-        motors.append({
-            "id": _text(_pick(raw, "imei", "id", "motor_id", "device_id",
-                              default="river")),
-            "name": _text(_pick(raw, "name", "motor_name", "label",
-                                default="River Motor")),
-            "status": status_of(state),
-            "source": "livesky",
-            "detail": _text(_pick(raw, "detail", "remark", "last_update",
-                                  "updated_at", default="")),
-        })
-    return motors
-
-
-# ---- Niagara (well-motor controllers) -------------------------------------
-
-def normalize_niagara(payload: Any, label: str = "") -> list[dict]:
-    """/controller → [{ id, name, status, source }]. One endpoint per cluster,
-    so the caller labels each (e.g. "Zone valves" vs "7.5HP well motor")."""
-    controllers = []
-    for raw in _as_list(payload)[:MAX_LIST]:
-        if not isinstance(raw, dict):
-            continue
-        state = _pick(raw, "status", "state", "controller_status",
-                      "motor_status", "on_off", "value")
-        controllers.append({
-            "id": _text(_pick(raw, "id", "controller_id", "cluster_id",
-                              "clusterId", default=label or "well")),
-            "name": _text(_pick(raw, "name", "controller_name", "label",
-                                default=label or "Well Motor")),
-            "status": status_of(state),
-            "source": "niagara",
-            "detail": _text(_pick(raw, "detail", "zone_type", "zoneType",
-                                  "updated_at", default="")),
-        })
-    return controllers
-
-
 # ---- Mobitech DCON ---------------------------------------------------------
 
 def normalize_dcon_dashboard(payload: Any) -> dict:
-    """action=dashboard → device card + timer summary. Only presentation
-    fields are kept; SIM/auth/user-list material is scrubbed, not mirrored."""
+    """action=dashboard -> the controller card, presentation fields only.
+
+    The live shape, seen for the first time on 2026-09-23, is keyed by serial:
+
+        {"MCON874Q000568": {"device_id": ..., "server_time": ...,
+                            "sim": ..., "packets": {"live": "##,DCON-...", ...},
+                            "users": {...}}}
+
+    Almost none of that is showable. `packets` 1/4/8 are SMS recipient lists,
+    `users` maps names to mobile numbers, `sim` is the controller's own number
+    and packet 5 carries the modem IMEI. An earlier version of this function
+    mirrored a scrubbed copy of the whole node and put eleven phone numbers
+    into Firebase. It now returns a fixed set of fields and nothing else — an
+    allow-list, like every other export in this bridge.
+    """
     node = payload if isinstance(payload, dict) else {}
-    if not node:
-        for raw in _as_list(payload)[:1]:
-            node = raw if isinstance(raw, dict) else {}
-    timers = node.get("timers") if isinstance(node.get("timers"), dict) else {}
+    serial, inner = "", {}
+    for key, value in node.items():
+        if isinstance(value, dict) and str(key).upper().startswith("MCON"):
+            serial, inner = str(key), value
+            break
+    if not inner:
+        inner = node
+
+    packets = inner.get("packets") if isinstance(inner.get("packets"), dict) else {}
+    live = packets.get("live") if isinstance(packets.get("live"), str) else ""
+    stamp, name = "", ""
+    if live:
+        # "##,DCON-<serial>,0-0-0!<timestamp>+05:30,V68,<name>,1,0--,..."
+        body = live.split("!", 1)[1] if "!" in live else ""
+        fields = [f.strip() for f in body.split(",")]
+        for field in fields[:6]:
+            if not stamp and re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", field):
+                stamp = field[:19]
+                continue
+            # The name is the one plain word in the head of the packet: not a
+            # timestamp, not a Vnn firmware tag, not a number or a flag pair.
+            if (not name and field and not re.match(r"^V?\d", field)
+                    and re.fullmatch(r"[A-Za-z][A-Za-z0-9 _-]{1,40}", field)):
+                name = field
     return {
-        "device": _text(_pick(node, "device_name", "name", "controller_name",
-                              default="Irrigation Controller")),
-        "serial": _text(_pick(node, "serial_no", "serial", default="")),
-        "gprs": _text(_pick(node, "gprs_status", "gprs", "connectivity",
-                            default="")),
-        "last": _text(_pick(timers, "last", "last_completed",
-                            "lastCompleted", default="")),
-        "running": _text(_pick(timers, "running", "current", "currently_running",
-                               default="")),
-        "next": _text(_pick(timers, "next", "upcoming", "next_scheduled",
-                            default="")),
-        "extra": scrub({k: v for k, v in node.items()
-                        if k not in ("timers",)}) if node else {},
+        "device": _text(name or _pick(inner, "device_name", "name",
+                                      default="Irrigation Controller")),
+        "serial": _text(serial or _pick(inner, "serial_no", "serial", default="")),
+        "lastPacket": _text(stamp),
+        "serverTime": _text(_pick(inner, "server_time", default="")),
+        "timeZone": _text(_pick(inner, "time_zone", default="")),
     }
 
 
-def normalize_dcon_valves(payload: Any) -> list[dict]:
-    """get_all_valve → [{ id, name, status, runtime }], newest first when the
-    vendor supplies an ordering, capped for the mirror."""
-    valves = []
-    for raw in _as_list(payload)[:MAX_LIST]:
-        if not isinstance(raw, dict):
+def normalize_dcon_nodes(payload: Any) -> list[dict]:
+    """method=get_node -> the valve registry: [{id, name, type}].
+
+    This is the only place the farm's valve *names* come from — "4 Veg",
+    "6 Kulam", "9 Mulberry". get_all_valve reports runtime against numbers, so
+    without this a runtime report is a list of integers.
+    """
+    node = payload if isinstance(payload, dict) else {}
+    valves: list[dict] = []
+    for key, group in node.items():
+        if not isinstance(group, dict) or not str(key).lower().startswith("node"):
             continue
-        state = _pick(raw, "status", "state", "valve_status", "on_off")
-        valves.append({
-            "id": _text(_pick(raw, "valve_no", "valve", "id", "node_id",
-                              default="")),
-            "name": _text(_pick(raw, "valve_name", "name", "label",
-                                default="Valve")),
-            "status": status_of(state),
-            "runtime": _text(_pick(raw, "runtime", "run_time", "duration",
-                                   default="")),
-        })
+        entries = group.get("valve")
+        if not isinstance(entries, dict):
+            continue
+        for number, valve in entries.items():
+            if not isinstance(valve, dict):
+                continue
+            valves.append({
+                "id": _text(number),
+                "name": _text(_pick(valve, "valve_name", "name",
+                                    default=f"Valve {number}")),
+                "type": _text(_pick(valve, "valve_type", default="")),
+            })
+            if len(valves) >= MAX_LIST:
+                return valves
     return valves
 
 
+def normalize_dcon_valves(payload: Any) -> list[dict]:
+    """method=get_all_valve -> [{id, name, type, runtime, minutes, days}].
+
+    The live shape is keyed by valve number, with runtime bucketed per day as
+    HH:MM:
+
+        {"action": "get_all_valve",
+         "3": {"valve_name": "3 Backwash", "valve_type": "Backwash",
+               "runtime": {"2026-09-20": "00:36", "2026-09-21": "00:23"}}}
+
+    So a valve's runtime over a window is the sum of its days, and the daily
+    split is worth keeping: "57 minutes" and "19 minutes on each of three
+    days" are different facts about a valve.
+    """
+    node = payload if isinstance(payload, dict) else {}
+    valves: list[dict] = []
+    for key, entry in node.items():
+        if not isinstance(entry, dict) or not str(key).strip().isdigit():
+            continue
+        per_day = entry.get("runtime") if isinstance(entry.get("runtime"), dict) else {}
+        days = []
+        total = 0
+        for day, spent in list(per_day.items())[:31]:
+            minutes = _hhmm_minutes(spent)
+            total += minutes
+            if minutes:
+                days.append({"at": _text(day), "value": minutes, "unit": "min"})
+        valves.append({
+            "id": _text(key),
+            "name": _text(_pick(entry, "valve_name", "name",
+                                default=f"Valve {key}")),
+            "type": _text(_pick(entry, "valve_type", default="")),
+            "minutes": total,
+            "runtime": fmt_minutes(total) if total else "",
+            "status": "on" if total else "off",
+            "days": days[:MAX_LIST],
+        })
+        if len(valves) >= MAX_LIST:
+            break
+    return valves
+
+
+def _hhmm_minutes(value: Any) -> int:
+    """DCON reports valve runtime as HH:MM, and "00:36" is 36 minutes, not 36
+    hours. Anything else is not a runtime and counts as zero rather than as a
+    guess."""
+    text = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,3}):(\d{2})", text)
+    if not match:
+        return 0
+    return int(match.group(1)) * 60 + int(match.group(2))
+
+
 def normalize_dcon_logs(payload: Any, kind: str = "event") -> list[dict]:
-    """timer_log / motor_log → capped [{ at, event, detail }]."""
+    """timer_log / motor_log -> capped [{at, event, detail}].
+
+    A live timer entry carries the timer's name and number, whether it
+    completed, how long it ran, and which valves were open:
+
+        {"dt": "2026-09-22 06:44:50", "timer_name": "Grass", "timer_no": "11",
+         "completed": "1", "run_time": "00:01-00:30",
+         "on_valves": "7-0-0-0-0-0-0-0-0-0"}
+
+    The detail line is assembled from those rather than dumped, because the
+    zero-padded valve slots are noise in every entry that has them.
+    """
     logs = []
-    for raw in _as_list(payload)[:MAX_LIST]:
-        if isinstance(raw, dict):
-            logs.append({
-                "at": _text(_pick(raw, "at", "time", "date", "datetime",
-                                   "timestamp", default="")),
-                "event": _text(_pick(raw, "event", "action", "type",
-                                      "method", default=kind)),
-                "detail": _text(_pick(raw, "detail", "desc", "description",
-                                       "message", "name", default="")),
-            })
-        else:
+    for raw in _as_list(payload)[:MAX_ROWS]:
+        if not isinstance(raw, dict):
             logs.append({"at": "", "event": kind, "detail": _text(raw)})
+            continue
+        name = _pick(raw, "timer_name", "name", "event", "action", default="")
+        number = _pick(raw, "timer_no", "motor_no", default="")
+        # A motor row is a day's running total, not an event: three-phase
+        # runtime and the energy meter either side of it.
+        run3 = _pick(raw, "ph3_runtime", default="")
+        if run3:
+            start = number_of(_pick(raw, "kilowatt_start", default=""))
+            end = number_of(_pick(raw, "kilowatt_end", default=""))
+            used = (f"{round(end - start, 2)} kWh"
+                    if start is not None and end is not None and end >= start else "")
+            logs.append({
+                "at": _text(" ".join(str(x) for x in
+                                     (_pick(raw, "dt1", default=""),
+                                      _pick(raw, "time", default="")) if x)),
+                "event": "Motor run",
+                "detail": _text(" · ".join(x for x in (f"3-phase {run3}", used) if x)),
+            })
+            continue
+        event = _text(name or f"{kind} {number}".strip() or kind)
+        bits = []
+        completed = raw.get("completed")
+        if completed is not None and str(completed) != "":
+            bits.append("completed" if str(completed) == "1" else "did not complete")
+        run_time = _pick(raw, "run_time", "on_time", default="")
+        if run_time:
+            bits.append(f"ran {run_time}")
+        valves = [v for v in str(_pick(raw, "on_valves", default="")).split("-")
+                  if v and v != "0"]
+        if valves:
+            bits.append("valve " + ", ".join(valves[:6]))
+        if number and name:
+            bits.append(f"timer {number}")
+        # timer_log stamps a row with "dt"; motor_log splits it into "dt1"
+        # (date) and "time". Without joining them a motor row sorts by a bare
+        # clock time and lands in the wrong day.
+        at = _pick(raw, "dt", "at", "timestamp", default="")
+        if not at:
+            day, clock = _pick(raw, "dt1", "date", default=""), _pick(raw, "time", default="")
+            at = " ".join(str(x) for x in (day, clock) if x)
+        logs.append({
+            "at": _text(at),
+            "event": event,
+            "detail": _text(" · ".join(bits)) or _text(
+                _pick(raw, "detail", "desc", "description", "message", default="")),
+        })
     return logs
 
 
 def normalize_report(payload: Any, kind: str = "reading") -> list[dict]:
-    """reports?type=electricity|pressure_* → capped [{ at, value, unit }]."""
+    """reports?type=pressure_cond|pressure_timer -> [{at, value, unit, detail}].
+
+    Live rows are {"dt": ..., "pressure": "2.5-1.7", "flow_rate": "0"}, where
+    the pair is inlet and outlet. The series charts the inlet, because that is
+    the number that answers "did the line hold"; the outlet and the flow ride
+    along as detail rather than being dropped or averaged into a fiction.
+    """
     readings = []
-    for raw in _as_list(payload)[:MAX_LIST]:
-        if isinstance(raw, dict):
-            readings.append({
-                "at": _text(_pick(raw, "at", "dt", "time", "date",
-                                   "timestamp", default="")),
-                "value": _text(_pick(raw, "value", "reading", "data",
-                                      "electricity", "pressure", default="")),
-                "unit": _text(_pick(raw, "unit", default="")),
-            })
-        else:
+    for raw in _as_list(payload)[:MAX_ROWS]:
+        if not isinstance(raw, dict):
             readings.append({"at": "", "value": _text(raw), "unit": ""})
+            continue
+        at = _text(_pick(raw, "dt", "at", "time", "date", "timestamp", default=""))
+        pair = str(_pick(raw, "pressure", default="") or "")
+        parts = [p for p in pair.split("-") if p.strip()]
+        if parts:
+            detail = (f"outlet {parts[1]} bar" if len(parts) > 1 else "")
+            flow = _pick(raw, "flow_rate", default="")
+            if flow not in (None, "", "0"):
+                detail = " · ".join(x for x in (detail, f"flow {flow}") if x)
+            readings.append({"at": at, "value": _text(parts[0]), "unit": "bar",
+                             "detail": _text(detail)})
+            continue
+        value = _pick(raw, "value", "reading", "electricity", default="")
+        if value != "" and value is not None:
+            readings.append({"at": at, "value": _text(value),
+                             "unit": _text(_pick(raw, "unit", default=""))})
     return readings
 
 
-# ---- OpenWeather -------------------------------------------------------------
+# Three numbers joined by hyphens: how DCON writes a per-phase measurement.
+_TRIPLE = re.compile(r"^\d{1,3}(?:\.\d+)?(?:-\d{1,3}(?:\.\d+)?){2}$")
 
-def normalize_weather(payload: Any) -> dict:
-    """api.openweathermap.org → { temp, feels, humidity, desc, wind }."""
-    node = payload if isinstance(payload, dict) else {}
-    main = node.get("main") if isinstance(node.get("main"), dict) else {}
-    wind = node.get("wind") if isinstance(node.get("wind"), dict) else {}
-    weather = node.get("weather")
-    desc = ""
-    if isinstance(weather, list) and weather and isinstance(weather[0], dict):
-        desc = _text(_pick(weather[0], "description", "main", default=""))
-    return {
-        "temp": main.get("temp") if isinstance(main.get("temp"),
-                                               (int, float)) else None,
-        "feels": main.get("feels_like") if isinstance(main.get("feels_like"),
-                                                      (int, float)) else None,
-        "humidity": main.get("humidity") if isinstance(main.get("humidity"),
-                                                       (int, float)) else None,
-        "desc": desc,
-        "wind": wind.get("speed") if isinstance(wind.get("speed"),
-                                                (int, float)) else None,
-    }
+
+def normalize_dcon_electricity(payload: Any) -> list[dict]:
+    """reports?type=electricity -> [{label, value, unit, note}] for the newest
+    packet.
+
+    Electricity does not come back as readings. It comes back as the raw
+    controller packet:
+
+        ##,DCON-<serial>,6-0-0!<ts>+05:30,,225-219-263,384-417-422,
+        9.7-9.5-9.6,0.35-0-1.0,...
+
+    Only two of those groups are safely identifiable: a phase-voltage triple
+    and a phase-current triple, recognised by shape and by plausible range
+    rather than by position, since the packet is undocumented. Everything else
+    is left alone — a wrong label on an electrical reading is worse than no
+    label.
+    """
+    rows = _as_list(payload)
+    newest = None
+    for raw in rows:
+        if isinstance(raw, dict) and raw.get("raw_data"):
+            newest = raw
+    if not newest:
+        return []
+    packet = str(newest.get("raw_data") or "")
+    body = packet.split("!", 1)[1] if "!" in packet else ""
+    fields = [f.strip() for f in body.split(",")]
+    triples = [f for f in fields if _TRIPLE.match(f)]
+    out = []
+    for field in triples:
+        values = [float(v) for v in field.split("-")]
+        if all(90 <= v <= 300 for v in values) and not any(
+                r["label"] == "Phase voltage" for r in out):
+            out.append({"label": "Phase voltage", "value": " / ".join(field.split("-")),
+                        "unit": "V", "note": _text(newest.get("dt") or "")})
+        elif all(0 <= v <= 100 for v in values) and not any(
+                r["label"] == "Phase current" for r in out):
+            out.append({"label": "Phase current", "value": " / ".join(field.split("-")),
+                        "unit": "A", "note": _text(newest.get("dt") or "")})
+    return out
 
 
 # ---- snapshot ------------------------------------------------------------------
@@ -276,15 +416,13 @@ def build_snapshot(parts: dict) -> dict:
     cleanly; missing sections stay empty so a dead vendor degrades one card,
     not the page."""
     return {
-        "motors": list(parts.get("motors") or [])[:MAX_LIST],
-        "controllers": list(parts.get("controllers") or [])[:MAX_LIST],
         "dcon": parts.get("dcon") or {},
+        "valveNames": list(parts.get("valveNames") or [])[:MAX_LIST],
         "valves": list(parts.get("valves") or [])[:MAX_LIST],
         "timerLog": list(parts.get("timerLog") or [])[:MAX_LIST],
         "motorLog": list(parts.get("motorLog") or [])[:MAX_LIST],
         "electricity": list(parts.get("electricity") or [])[:MAX_LIST],
         "pressure": list(parts.get("pressure") or [])[:MAX_LIST],
-        "weather": parts.get("weather") or {},
         "meta": {
             "sources": parts.get("sources") or {},
             "error": _text(parts.get("error") or ""),
