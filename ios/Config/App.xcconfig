@@ -1,0 +1,8 @@
+// Committed defaults. scripts/fetch-firebase-config.sh writes Firebase.xcconfig
+// next to this file with the real values; the optional include means a fresh
+// clone still builds (into demo mode) without it.
+SNOF_BUNDLE_ID = com.sibhiorchards.snof
+SNOF_SOURCE_URL = https:/$()/snof-ios.web.app/source.json
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.unconfigured
+
+#include? "Firebase.xcconfig"

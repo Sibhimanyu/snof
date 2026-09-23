@@ -1,0 +1,181 @@
+import Foundation
+
+/* The RTDB mirror, as Swift values. Shapes follow what the bridge actually
+ * writes (addon/snof_bridge/bridge/mapper.py, irrigation.py), not what would be
+ * convenient: an entity lives at /farms/<farm>/entities/<domain>/<object_id>,
+ * area is absent rather than null when Home Assistant has none, and every
+ * attribute is optional because ALLOWED_ATTRS is an allow-list. */
+
+public struct Attrs: Hashable, Sendable {
+    public var unit: String?
+    public var deviceClass: String?
+    public var batteryLevel: Double?
+    /// Home Assistant's 0–255 scale, as published.
+    public var brightness: Double?
+    /// Fans, 0–100.
+    public var percentage: Double?
+
+    public init(unit: String? = nil, deviceClass: String? = nil, batteryLevel: Double? = nil,
+                brightness: Double? = nil, percentage: Double? = nil) {
+        self.unit = unit
+        self.deviceClass = deviceClass
+        self.batteryLevel = batteryLevel
+        self.brightness = brightness
+        self.percentage = percentage
+    }
+}
+
+public struct Entity: Identifiable, Hashable, Sendable {
+    /// `<domain>.<object_id>` — the RTDB path, which is also the HA entity id.
+    public let key: String
+    public let domain: String
+    public let objectId: String
+    public let entityId: String
+    public let name: String
+    public let state: String?
+    /// An area id, or `unassigned`.
+    public let area: String
+    public let attrs: Attrs
+    public let lastChanged: String?
+
+    public var id: String { key }
+
+    public init(domain: String, objectId: String, entityId: String? = nil, name: String? = nil,
+                state: String?, area: String? = nil, attrs: Attrs = Attrs(), lastChanged: String? = nil) {
+        self.domain = domain
+        self.objectId = objectId
+        self.key = "\(domain).\(objectId)"
+        self.entityId = entityId ?? "\(domain).\(objectId)"
+        self.name = (name?.isEmpty == false ? name : nil) ?? self.entityId
+        self.state = state
+        self.area = (area?.isEmpty == false ? area : nil) ?? Area.unassigned
+        self.attrs = attrs
+        self.lastChanged = lastChanged
+    }
+}
+
+public struct Area: Identifiable, Hashable, Sendable {
+    public static let unassigned = "unassigned"
+    public let id: String
+    public let name: String
+    public init(id: String, name: String) { self.id = id; self.name = name }
+}
+
+/// `meta/bridge`, rewritten by the add-on every `heartbeatSeconds`.
+public struct BridgeMeta: Hashable, Sendable {
+    public var status: String?
+    /// Server milliseconds.
+    public var lastSeen: Double?
+    public var heartbeatSeconds: Double?
+    /// `allow_control`. nil means a bridge too old to publish it — not the same as off.
+    public var control: Bool?
+    /// `irrigation.enabled`, same caveat.
+    public var irrigationEnabled: Bool?
+    public var commandsRun: Int?
+    public var commandsRefused: Int?
+
+    public init(status: String? = nil, lastSeen: Double? = nil, heartbeatSeconds: Double? = nil,
+                control: Bool? = nil, irrigationEnabled: Bool? = nil,
+                commandsRun: Int? = nil, commandsRefused: Int? = nil) {
+        self.status = status
+        self.lastSeen = lastSeen
+        self.heartbeatSeconds = heartbeatSeconds
+        self.control = control
+        self.irrigationEnabled = irrigationEnabled
+        self.commandsRun = commandsRun
+        self.commandsRefused = commandsRefused
+    }
+}
+
+public struct FarmMeta: Hashable, Sendable {
+    public var name: String?
+    public var bridge: BridgeMeta?
+    public init(name: String? = nil, bridge: BridgeMeta? = nil) { self.name = name; self.bridge = bridge }
+}
+
+/* ---- irrigation ---- */
+
+/// One row of a report section. Values are kept as display strings; the bridge
+/// has already normalised them, and the app parses nothing it does not have to.
+public typealias ReportRow = [String: String]
+
+public struct ReportSection: Hashable, Sendable {
+    /// metrics | status | series | bars | timeline | facts. An unknown kind is
+    /// skipped, never guessed at — see docs/irrigation.md.
+    public var kind: String
+    public var title: String
+    public var note: String
+    public var source: String
+    public var status: String
+    public var error: String
+    public var unit: String
+    public var rows: [ReportRow]
+
+    public init(kind: String, title: String = "", note: String = "", source: String = "",
+                status: String = "ok", error: String = "", unit: String = "", rows: [ReportRow] = []) {
+        self.kind = kind
+        self.title = title
+        self.note = note
+        self.source = source
+        self.status = status
+        self.error = error
+        self.unit = unit
+        self.rows = rows
+    }
+}
+
+public struct Report: Identifiable, Hashable, Sendable {
+    public let key: String
+    public var type: String
+    public var label: String
+    public var from: String?
+    public var to: String?
+    /// ok | partial | error | anything else = still working.
+    public var status: String
+    public var summary: String
+    public var error: String
+    /// Milliseconds.
+    public var at: Double
+    public var sections: [ReportSection]
+    /// Reports written before sections existed carry only these.
+    public var legacyRows: [ReportRow]
+
+    public var id: String { key }
+
+    public init(key: String, type: String, label: String, from: String? = nil, to: String? = nil,
+                status: String, summary: String = "", error: String = "", at: Double,
+                sections: [ReportSection] = [], legacyRows: [ReportRow] = []) {
+        self.key = key
+        self.type = type
+        self.label = label
+        self.from = from
+        self.to = to
+        self.status = status
+        self.summary = summary
+        self.error = error
+        self.at = at
+        self.sections = sections
+        self.legacyRows = legacyRows
+    }
+}
+
+/// `/farms/<farm>/irrigation` — whatever the last reports left behind.
+public struct IrrigationCache: Hashable, Sendable {
+    public var device: String?
+    public var serial: String?
+    public var lastPacket: String?
+    public var serverTime: String?
+    public var valveNames: [ReportRow] = []
+    public var valves: [ReportRow] = []
+    public var electricity: [ReportRow] = []
+    public var pressure: [ReportRow] = []
+    public var lastUpdated: Double?
+    public var lastType: String?
+    public var lastError: String?
+
+    public init() {}
+
+    public var isEmpty: Bool {
+        device == nil && valveNames.isEmpty && valves.isEmpty && electricity.isEmpty && pressure.isEmpty
+    }
+}

@@ -1,0 +1,572 @@
+{
+ "meta": {
+  "name": "Sibhi Natural Orchards",
+  "bridge": {
+   "status": "online",
+   "lastSeen": 1790153618675,
+   "heartbeatSeconds": 30,
+   "control": true,
+   "irrigation": {
+    "enabled": true,
+    "requestsRun": 0,
+    "requestsRefused": 0,
+    "lastOk": "",
+    "lastError": ""
+   }
+  }
+ },
+ "areas": {
+  "pump_house": {
+   "name": "Pump House"
+  },
+  "packing_shed": {
+   "name": "Packing Shed"
+  },
+  "orchard_east": {
+   "name": "East Orchard"
+  },
+  "farmhouse": {
+   "name": "Farmhouse"
+  },
+  "cold_store": {
+   "name": "Cold Store"
+  },
+  "nursery": {
+   "name": "Nursery"
+  }
+ },
+ "entities": {
+  "sensor": {
+   "tank_level": {
+    "name": "Main tank level",
+    "entity_id": "sensor.tank_level",
+    "state": "71",
+    "area": "pump_house",
+    "attrs": {
+     "unit_of_measurement": "%",
+     "device_class": "moisture"
+    }
+   },
+   "soil_e1": {
+    "name": "Soil moisture row 1",
+    "entity_id": "sensor.soil_e1",
+    "state": "34.2",
+    "area": "orchard_east",
+    "attrs": {
+     "unit_of_measurement": "%",
+     "battery_level": 82
+    }
+   },
+   "soil_e2": {
+    "name": "Soil moisture row 2",
+    "entity_id": "sensor.soil_e2",
+    "state": "unavailable",
+    "area": "orchard_east",
+    "attrs": {
+     "battery_level": 12
+    }
+   },
+   "temp_out": {
+    "name": "Outdoor temperature",
+    "entity_id": "sensor.temp_out",
+    "state": "31.4",
+    "area": "farmhouse",
+    "attrs": {
+     "unit_of_measurement": "°C",
+     "device_class": "temperature"
+    }
+   },
+   "power": {
+    "name": "Grid import",
+    "entity_id": "sensor.power",
+    "state": "1840",
+    "attrs": {
+     "unit_of_measurement": "W",
+     "device_class": "power"
+    }
+   },
+   "humidity": {
+    "name": "Shed humidity",
+    "entity_id": "sensor.humidity",
+    "state": "58",
+    "area": "packing_shed",
+    "attrs": {
+     "unit_of_measurement": "%",
+     "device_class": "humidity"
+    }
+   },
+   "cold_temp": {
+    "name": "Cold store temperature",
+    "entity_id": "sensor.cold_temp",
+    "state": "3.8",
+    "area": "cold_store",
+    "attrs": {
+     "unit_of_measurement": "°C",
+     "device_class": "temperature"
+    }
+   },
+   "flow": {
+    "name": "Bore flow rate",
+    "entity_id": "sensor.flow",
+    "state": "42.5",
+    "area": "pump_house",
+    "attrs": {
+     "unit_of_measurement": "L/min"
+    }
+   },
+   "nursery_lux": {
+    "name": "Nursery light level",
+    "entity_id": "sensor.nursery_lux",
+    "state": "12400",
+    "area": "nursery",
+    "attrs": {
+     "unit_of_measurement": "lx",
+     "device_class": "illuminance"
+    }
+   }
+  },
+  "switch": {
+   "pump_main": {
+    "name": "Bore pump",
+    "entity_id": "switch.pump_main",
+    "state": "on",
+    "area": "pump_house",
+    "attrs": {}
+   },
+   "pump_drip": {
+    "name": "Drip line pump",
+    "entity_id": "switch.pump_drip",
+    "state": "off",
+    "area": "pump_house",
+    "attrs": {}
+   },
+   "shed_lights": {
+    "name": "Shed lights",
+    "entity_id": "switch.shed_lights",
+    "state": "off",
+    "area": "packing_shed",
+    "attrs": {}
+   },
+   "compressor": {
+    "name": "Cold room compressor",
+    "entity_id": "switch.compressor",
+    "state": "on",
+    "area": "cold_store",
+    "attrs": {}
+   },
+   "fence": {
+    "name": "Fence energiser",
+    "entity_id": "switch.fence",
+    "state": "on",
+    "area": "orchard_east",
+    "attrs": {}
+   },
+   "mister": {
+    "name": "Nursery misters",
+    "entity_id": "switch.mister",
+    "state": "off",
+    "area": "nursery",
+    "attrs": {}
+   }
+  },
+  "light": {
+   "porch": {
+    "name": "Porch light",
+    "entity_id": "light.porch",
+    "state": "on",
+    "area": "farmhouse",
+    "attrs": {
+     "brightness": 196
+    }
+   },
+   "packing_bay": {
+    "name": "Packing bay light",
+    "entity_id": "light.packing_bay",
+    "state": "on",
+    "area": "packing_shed",
+    "attrs": {
+     "brightness": 128
+    }
+   },
+   "grow_1": {
+    "name": "Grow light bank 1",
+    "entity_id": "light.grow_1",
+    "state": "off",
+    "area": "nursery",
+    "attrs": {
+     "brightness": 0
+    }
+   }
+  },
+  "fan": {
+   "shed_extract": {
+    "name": "Shed extractor",
+    "entity_id": "fan.shed_extract",
+    "state": "on",
+    "area": "packing_shed",
+    "attrs": {
+     "percentage": 66
+    }
+   },
+   "cold_circ": {
+    "name": "Cold store circulation",
+    "entity_id": "fan.cold_circ",
+    "state": "on",
+    "area": "cold_store",
+    "attrs": {
+     "percentage": 40
+    }
+   },
+   "nursery_fan": {
+    "name": "Nursery fan",
+    "entity_id": "fan.nursery_fan",
+    "state": "off",
+    "area": "nursery",
+    "attrs": {
+     "percentage": 0
+    }
+   }
+  },
+  "binary_sensor": {
+   "gate": {
+    "name": "Front gate",
+    "entity_id": "binary_sensor.gate",
+    "state": "off",
+    "area": "farmhouse",
+    "attrs": {
+     "device_class": "opening"
+    }
+   },
+   "cold_room_door": {
+    "name": "Cold room door",
+    "entity_id": "binary_sensor.cold_room_door",
+    "state": "on",
+    "area": "cold_store",
+    "attrs": {
+     "device_class": "door",
+     "battery_level": 64
+    }
+   },
+   "motion_yard": {
+    "name": "Yard motion",
+    "entity_id": "binary_sensor.motion_yard",
+    "state": "off",
+    "attrs": {
+     "device_class": "motion"
+    }
+   },
+   "leak": {
+    "name": "Pump house leak",
+    "entity_id": "binary_sensor.leak",
+    "state": "unavailable",
+    "area": "pump_house",
+    "attrs": {
+     "device_class": "moisture"
+    }
+   }
+  },
+  "lock": {
+   "gate_lock": {
+    "name": "Gate lock",
+    "entity_id": "lock.gate_lock",
+    "state": "locked",
+    "area": "farmhouse",
+    "attrs": {}
+   }
+  }
+ },
+ "irrigation": {
+  "dcon": {
+   "device": "SibhiSump",
+   "serial": "MCON874Q000568",
+   "lastPacket": "2026-02-22 09:00:43",
+   "serverTime": "2026-02-22 09:04:04",
+   "timeZone": "+05:30"
+  },
+  "valveNames": [
+   {
+    "id": "4",
+    "name": "4 Veg",
+    "type": "Irrigation"
+   },
+   {
+    "id": "6",
+    "name": "6 Kulam",
+    "type": "Irrigation"
+   },
+   {
+    "id": "2",
+    "name": "2 BPump",
+    "type": "Booster Pump"
+   }
+  ],
+  "valves": [
+   {
+    "id": "V012",
+    "name": "East orchard valve",
+    "status": "on",
+    "runtime": "1h 20m"
+   },
+   {
+    "id": "V015",
+    "name": "Nursery valve",
+    "status": "off",
+    "runtime": "40m"
+   }
+  ],
+  "timerLog": [
+   {
+    "at": "2026-02-22 06:00",
+    "event": "timer",
+    "detail": "Timer 12 completed"
+   }
+  ],
+  "motorLog": [
+   {
+    "at": "2026-02-22 06:05",
+    "event": "motor",
+    "detail": "Well motor stopped"
+   }
+  ],
+  "electricity": [
+   {
+    "at": "2026-02-22 06:00",
+    "value": "4.2",
+    "unit": "kWh"
+   }
+  ],
+  "pressure": [
+   {
+    "at": "2026-02-22 06:00",
+    "value": "2.1",
+    "unit": "bar"
+   }
+  ],
+  "meta": {
+   "sources": {
+    "dcon": "ok"
+   },
+   "error": ""
+  }
+ },
+ "irrigation_reports": {
+  "rep_seed1": {
+   "type": "timer_log",
+   "label": "Timer log",
+   "params": {
+    "from": "2026-02-20",
+    "to": "2026-02-22"
+   },
+   "status": "ok",
+   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "rows": [
+    {
+     "at": "2026-02-22 06:00",
+     "event": "timer",
+     "detail": "Timer 12 completed"
+    }
+   ],
+   "at": 1790150023675
+  },
+  "rep_seed2": {
+   "type": "performance",
+   "label": "Valve runtime against pressure",
+   "params": {
+    "from": "2026-02-20",
+    "to": "2026-02-22"
+   },
+   "status": "ok",
+   "summary": "4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22",
+   "sections": [
+    {
+     "kind": "metrics",
+     "title": "Valves",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "label": "Valves run",
+       "value": 3,
+       "unit": "",
+       "note": "of 3 in 2026-02-20 → 2026-02-22"
+      },
+      {
+       "label": "Total runtime",
+       "value": "4h 5m",
+       "unit": "",
+       "note": "longest 2h 5m"
+      },
+      {
+       "label": "Open now",
+       "value": 1,
+       "unit": "",
+       "note": "at the time of the pull"
+      }
+     ]
+    },
+    {
+     "kind": "bars",
+     "title": "Runtime per valve",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "name": "Packing shed valve",
+       "value": 125,
+       "unit": "min",
+       "status": "off"
+      },
+      {
+       "name": "East orchard valve",
+       "value": 80,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "Nursery valve",
+       "value": 40,
+       "unit": "min",
+       "status": "off"
+      }
+     ]
+    },
+    {
+     "kind": "metrics",
+     "title": "Pressure",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "label": "Average",
+       "value": 2.08,
+       "unit": "bar",
+       "note": "6 readings"
+      },
+      {
+       "label": "Low",
+       "value": 1.6,
+       "unit": "bar",
+       "note": "2026-02-20 → 2026-02-22"
+      },
+      {
+       "label": "High",
+       "value": 2.6,
+       "unit": "bar",
+       "note": "2026-02-20 → 2026-02-22"
+      }
+     ]
+    },
+    {
+     "kind": "series",
+     "title": "Pressure over time",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "at": "2026-02-20 06:00",
+       "value": "1.8",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-20 12:00",
+       "value": "2.4",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-20 18:00",
+       "value": "2.0",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-22 06:00",
+       "value": "1.6",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-22 12:00",
+       "value": "2.6",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-22 18:00",
+       "value": "2.1",
+       "unit": "bar"
+      }
+     ]
+    }
+   ],
+   "rows": [],
+   "at": 1790146423675
+  },
+  "rep_seed3": {
+   "type": "session_log",
+   "label": "Irrigation session log",
+   "params": {
+    "from": "2026-02-20",
+    "to": "2026-02-22"
+   },
+   "status": "partial",
+   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "error": "DCON logs: POST -> 500",
+   "sections": [
+    {
+     "kind": "metrics",
+     "title": "Entries",
+     "note": "",
+     "source": "",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "label": "Timer entries",
+       "value": 1,
+       "unit": "",
+       "note": "2026-02-20 → 2026-02-22"
+      },
+      {
+       "label": "Motor entries",
+       "value": 0,
+       "unit": "",
+       "note": "DCON logs: POST -> 500"
+      }
+     ]
+    },
+    {
+     "kind": "timeline",
+     "title": "Combined log",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "at": "2026-02-22 06:00",
+       "event": "timer",
+       "detail": "Timer 12 completed",
+       "source": "timer"
+      }
+     ]
+    },
+    {
+     "kind": "timeline",
+     "title": "Motor log",
+     "note": "",
+     "source": "dcon",
+     "status": "error",
+     "error": "DCON logs: POST -> 500",
+     "rows": []
+    }
+   ],
+   "rows": [],
+   "at": 1790142823675
+  }
+ }
+}

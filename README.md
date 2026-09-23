@@ -51,6 +51,7 @@ returns.
 | [docs/dashboard.md](docs/dashboard.md) | Front-end architecture and design system |
 | [docs/firebase-deploy.md](docs/firebase-deploy.md) | Hosting, rules, the two-tier allowlist |
 | [docs/testing-and-preview.md](docs/testing-and-preview.md) | Every suite and the fixture that matters |
+| [docs/ios-app.md](docs/ios-app.md) | The native iOS app: build, demo mode, connecting it to Firebase |
 
 ## Layout
 
@@ -58,6 +59,7 @@ returns.
 |---|---|
 | `addon/snof_bridge/` | The Home Assistant add-on (Python). Deploy to `/addons` on the NUC. |
 | `dashboard/` | Hosting site + RTDB security rules. |
+| `ios/` | Native SwiftUI app, a second client of the same database. |
 | `tools/` | `grant-access.js` — manage the viewer allowlist. |
 | `scripts/` | `setup-firebase.sh`, `deploy-addon.sh`. |
 

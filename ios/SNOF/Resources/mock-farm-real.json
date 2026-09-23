@@ -1,0 +1,5023 @@
+{
+ "meta": {
+  "name": "Sibhi Natural Orchards and Farms",
+  "bridge": {
+   "status": "online",
+   "lastSeen": 1790153618768,
+   "heartbeatSeconds": 30,
+   "control": true,
+   "irrigation": {
+    "enabled": true,
+    "requestsRun": 0,
+    "requestsRefused": 0,
+    "lastOk": "",
+    "lastError": ""
+   }
+  }
+ },
+ "areas": {
+  "abhis_room": {
+   "name": "Abhi's Room"
+  },
+  "family_room": {
+   "name": "Family room"
+  },
+  "front_yard": {
+   "name": "Front Yard"
+  },
+  "kitchen": {
+   "name": "Kitchen"
+  },
+  "master_bedroom": {
+   "name": "Master Bedroom"
+  },
+  "garage": {
+   "name": "Garage"
+  },
+  "pooja_room": {
+   "name": "Pooja Room"
+  },
+  "store_room": {
+   "name": "Store Room"
+  },
+  "terrace": {
+   "name": "Terrace"
+  },
+  "guest_room": {
+   "name": "Guest Room"
+  },
+  "hall": {
+   "name": "Hall"
+  },
+  "back_yard": {
+   "name": "Back Yard"
+  }
+ },
+ "entities": {
+  "switch": {
+   "e0": {
+    "name": "Abhi's AC Display lighting",
+    "entity_id": "switch.e0",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 0
+    }
+   },
+   "e9": {
+    "name": "Abhi's AC Sound effect",
+    "entity_id": "switch.e9",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 53
+    }
+   },
+   "e18": {
+    "name": "Front Door Motion detection",
+    "entity_id": "switch.e18",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 6
+    }
+   },
+   "e27": {
+    "name": "Atom Fan sleep mode",
+    "entity_id": "switch.e27",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 59
+    }
+   },
+   "e36": {
+    "name": "Atom Fan LED indicator",
+    "entity_id": "switch.e36",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 12
+    }
+   },
+   "e45": {
+    "name": "Geyser master switch",
+    "entity_id": "switch.e45",
+    "state": "off",
+    "attrs": {
+     "battery_level": 65
+    }
+   },
+   "e54": {
+    "name": "Motor auto cut-off",
+    "entity_id": "switch.e54",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 18
+    }
+   },
+   "e63": {
+    "name": "Sump pump overflow protection",
+    "entity_id": "switch.e63",
+    "state": "off",
+    "attrs": {
+     "battery_level": 71
+    }
+   },
+   "e72": {
+    "name": "Terrace light scheduler",
+    "entity_id": "switch.e72",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 24
+    }
+   },
+   "e81": {
+    "name": "Abhi's AC Display lighting 4",
+    "entity_id": "switch.e81",
+    "state": "off",
+    "attrs": {
+     "battery_level": 77
+    }
+   },
+   "e90": {
+    "name": "Abhi's AC Sound effect 4",
+    "entity_id": "switch.e90",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 30
+    }
+   },
+   "e99": {
+    "name": "Front Door Motion detection 4",
+    "entity_id": "switch.e99",
+    "state": "off",
+    "attrs": {
+     "battery_level": 83
+    }
+   },
+   "e108": {
+    "name": "Atom Fan sleep mode 4",
+    "entity_id": "switch.e108",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 36
+    }
+   },
+   "e117": {
+    "name": "Atom Fan LED indicator 4",
+    "entity_id": "switch.e117",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 89
+    }
+   },
+   "e126": {
+    "name": "Geyser master switch 5",
+    "entity_id": "switch.e126",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 42
+    }
+   },
+   "e135": {
+    "name": "Motor auto cut-off 5",
+    "entity_id": "switch.e135",
+    "state": "off",
+    "attrs": {
+     "battery_level": 95
+    }
+   },
+   "e144": {
+    "name": "Sump pump overflow protection 5",
+    "entity_id": "switch.e144",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 48
+    }
+   },
+   "e153": {
+    "name": "Terrace light scheduler 5",
+    "entity_id": "switch.e153",
+    "state": "off",
+    "attrs": {
+     "battery_level": 1
+    }
+   },
+   "e162": {
+    "name": "Abhi's AC Display lighting 6",
+    "entity_id": "switch.e162",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 54
+    }
+   },
+   "e171": {
+    "name": "Abhi's AC Sound effect 6",
+    "entity_id": "switch.e171",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 7
+    }
+   },
+   "e180": {
+    "name": "Front Door Motion detection 6",
+    "entity_id": "switch.e180",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 60
+    }
+   },
+   "e189": {
+    "name": "Atom Fan sleep mode 6",
+    "entity_id": "switch.e189",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 13
+    }
+   },
+   "e198": {
+    "name": "Atom Fan LED indicator 6",
+    "entity_id": "switch.e198",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 66
+    }
+   },
+   "e207": {
+    "name": "Geyser master switch 7",
+    "entity_id": "switch.e207",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 19
+    }
+   },
+   "e216": {
+    "name": "Motor auto cut-off 7",
+    "entity_id": "switch.e216",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 72
+    }
+   },
+   "e225": {
+    "name": "Sump pump overflow protection 7",
+    "entity_id": "switch.e225",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 25
+    }
+   },
+   "e234": {
+    "name": "Terrace light scheduler 7",
+    "entity_id": "switch.e234",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 78
+    }
+   },
+   "e243": {
+    "name": "Abhi's AC Display lighting 8",
+    "entity_id": "switch.e243",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 31
+    }
+   },
+   "e252": {
+    "name": "Abhi's AC Sound effect 8",
+    "entity_id": "switch.e252",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 84
+    }
+   },
+   "e261": {
+    "name": "Front Door Motion detection 8",
+    "entity_id": "switch.e261",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 37
+    }
+   },
+   "e270": {
+    "name": "Atom Fan sleep mode 8",
+    "entity_id": "switch.e270",
+    "state": "on",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 90
+    }
+   },
+   "e279": {
+    "name": "Atom Fan LED indicator 8",
+    "entity_id": "switch.e279",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 43
+    }
+   },
+   "e288": {
+    "name": "Geyser master switch 9",
+    "entity_id": "switch.e288",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 96
+    }
+   },
+   "e297": {
+    "name": "Motor auto cut-off 9",
+    "entity_id": "switch.e297",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 49
+    }
+   },
+   "e306": {
+    "name": "Sump pump overflow protection 9",
+    "entity_id": "switch.e306",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 2
+    }
+   },
+   "e315": {
+    "name": "Terrace light scheduler 9",
+    "entity_id": "switch.e315",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 55
+    }
+   },
+   "e324": {
+    "name": "Abhi's AC Display lighting 10",
+    "entity_id": "switch.e324",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 8
+    }
+   },
+   "e333": {
+    "name": "Abhi's AC Sound effect 10",
+    "entity_id": "switch.e333",
+    "state": "off",
+    "attrs": {
+     "battery_level": 61
+    }
+   },
+   "e342": {
+    "name": "Front Door Motion detection 10",
+    "entity_id": "switch.e342",
+    "state": "on",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 14
+    }
+   },
+   "e351": {
+    "name": "Atom Fan sleep mode 10",
+    "entity_id": "switch.e351",
+    "state": "off",
+    "attrs": {
+     "battery_level": 67
+    }
+   },
+   "e360": {
+    "name": "Atom Fan LED indicator 11",
+    "entity_id": "switch.e360",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 20
+    }
+   },
+   "e369": {
+    "name": "Geyser master switch 11",
+    "entity_id": "switch.e369",
+    "state": "off",
+    "attrs": {
+     "battery_level": 73
+    }
+   },
+   "e378": {
+    "name": "Motor auto cut-off 11",
+    "entity_id": "switch.e378",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 26
+    }
+   },
+   "e387": {
+    "name": "Sump pump overflow protection 11",
+    "entity_id": "switch.e387",
+    "state": "off",
+    "attrs": {
+     "battery_level": 79
+    }
+   },
+   "e396": {
+    "name": "Terrace light scheduler 11",
+    "entity_id": "switch.e396",
+    "state": "on",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 32
+    }
+   },
+   "e405": {
+    "name": "Abhi's AC Display lighting 12",
+    "entity_id": "switch.e405",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 85
+    }
+   },
+   "e414": {
+    "name": "Abhi's AC Sound effect 12",
+    "entity_id": "switch.e414",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 38
+    }
+   },
+   "e423": {
+    "name": "Front Door Motion detection 12",
+    "entity_id": "switch.e423",
+    "state": "off",
+    "attrs": {
+     "battery_level": 91
+    }
+   },
+   "e432": {
+    "name": "Atom Fan sleep mode 12",
+    "entity_id": "switch.e432",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 44
+    }
+   },
+   "e441": {
+    "name": "Atom Fan LED indicator 13",
+    "entity_id": "switch.e441",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 97
+    }
+   },
+   "e450": {
+    "name": "Geyser master switch 13",
+    "entity_id": "switch.e450",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 50
+    }
+   },
+   "e459": {
+    "name": "Motor auto cut-off 13",
+    "entity_id": "switch.e459",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 3
+    }
+   },
+   "e468": {
+    "name": "Sump pump overflow protection 13",
+    "entity_id": "switch.e468",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 56
+    }
+   },
+   "e477": {
+    "name": "Terrace light scheduler 13",
+    "entity_id": "switch.e477",
+    "state": "off",
+    "attrs": {
+     "battery_level": 9
+    }
+   },
+   "e486": {
+    "name": "Abhi's AC Display lighting 14",
+    "entity_id": "switch.e486",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 62
+    }
+   },
+   "e495": {
+    "name": "Abhi's AC Sound effect 14",
+    "entity_id": "switch.e495",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 15
+    }
+   },
+   "e504": {
+    "name": "Front Door Motion detection 14",
+    "entity_id": "switch.e504",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 68
+    }
+   },
+   "e513": {
+    "name": "Atom Fan sleep mode 14",
+    "entity_id": "switch.e513",
+    "state": "off",
+    "attrs": {
+     "battery_level": 21
+    }
+   },
+   "e522": {
+    "name": "Atom Fan LED indicator 15",
+    "entity_id": "switch.e522",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 74
+    }
+   },
+   "e531": {
+    "name": "Geyser master switch 15",
+    "entity_id": "switch.e531",
+    "state": "off",
+    "attrs": {
+     "battery_level": 27
+    }
+   },
+   "e540": {
+    "name": "Motor auto cut-off 15",
+    "entity_id": "switch.e540",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 80
+    }
+   },
+   "e549": {
+    "name": "Sump pump overflow protection 15",
+    "entity_id": "switch.e549",
+    "state": "off",
+    "attrs": {
+     "battery_level": 33
+    }
+   },
+   "e558": {
+    "name": "Terrace light scheduler 15",
+    "entity_id": "switch.e558",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 86
+    }
+   },
+   "e567": {
+    "name": "Abhi's AC Display lighting 16",
+    "entity_id": "switch.e567",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 39
+    }
+   },
+   "e576": {
+    "name": "Abhi's AC Sound effect 16",
+    "entity_id": "switch.e576",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 92
+    }
+   },
+   "e585": {
+    "name": "Front Door Motion detection 16",
+    "entity_id": "switch.e585",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 45
+    }
+   },
+   "e594": {
+    "name": "Atom Fan sleep mode 16",
+    "entity_id": "switch.e594",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 98
+    }
+   },
+   "e603": {
+    "name": "Atom Fan LED indicator 17",
+    "entity_id": "switch.e603",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 51
+    }
+   },
+   "e612": {
+    "name": "Geyser master switch 17",
+    "entity_id": "switch.e612",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 4
+    }
+   },
+   "e621": {
+    "name": "Motor auto cut-off 17",
+    "entity_id": "switch.e621",
+    "state": "off",
+    "attrs": {
+     "battery_level": 57
+    }
+   },
+   "e630": {
+    "name": "Sump pump overflow protection 17",
+    "entity_id": "switch.e630",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 10
+    }
+   },
+   "e639": {
+    "name": "Terrace light scheduler 17",
+    "entity_id": "switch.e639",
+    "state": "off",
+    "attrs": {
+     "battery_level": 63
+    }
+   },
+   "e648": {
+    "name": "Abhi's AC Display lighting 18",
+    "entity_id": "switch.e648",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 16
+    }
+   },
+   "e657": {
+    "name": "Abhi's AC Sound effect 18",
+    "entity_id": "switch.e657",
+    "state": "off",
+    "attrs": {
+     "battery_level": 69
+    }
+   },
+   "e666": {
+    "name": "Front Door Motion detection 18",
+    "entity_id": "switch.e666",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {
+     "battery_level": 22
+    }
+   },
+   "e675": {
+    "name": "Atom Fan sleep mode 18",
+    "entity_id": "switch.e675",
+    "state": "off",
+    "attrs": {
+     "battery_level": 75
+    }
+   },
+   "e684": {
+    "name": "Atom Fan LED indicator 19",
+    "entity_id": "switch.e684",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {
+     "battery_level": 28
+    }
+   },
+   "e693": {
+    "name": "Geyser master switch 19",
+    "entity_id": "switch.e693",
+    "state": "unavailable",
+    "attrs": {
+     "battery_level": 81
+    }
+   }
+  },
+  "light": {
+   "e1": {
+    "name": "Atom Fan LED",
+    "entity_id": "light.e1",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e10": {
+    "name": "Ceiling light warm white",
+    "entity_id": "light.e10",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e19": {
+    "name": "Hall chandelier dimmer",
+    "entity_id": "light.e19",
+    "state": "on",
+    "attrs": {
+     "brightness": 64
+    }
+   },
+   "e28": {
+    "name": "Pooja room lamp",
+    "entity_id": "light.e28",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e37": {
+    "name": "Kitchen under-cabinet strip",
+    "entity_id": "light.e37",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e46": {
+    "name": "Porch light",
+    "entity_id": "light.e46",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e55": {
+    "name": "Atom Fan LED 3",
+    "entity_id": "light.e55",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e64": {
+    "name": "Ceiling light warm white 3",
+    "entity_id": "light.e64",
+    "state": "off",
+    "attrs": {}
+   },
+   "e73": {
+    "name": "Hall chandelier dimmer 3",
+    "entity_id": "light.e73",
+    "state": "off",
+    "attrs": {}
+   },
+   "e82": {
+    "name": "Pooja room lamp 4",
+    "entity_id": "light.e82",
+    "state": "off",
+    "attrs": {}
+   },
+   "e91": {
+    "name": "Kitchen under-cabinet strip 4",
+    "entity_id": "light.e91",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e100": {
+    "name": "Porch light 4",
+    "entity_id": "light.e100",
+    "state": "off",
+    "attrs": {}
+   },
+   "e109": {
+    "name": "Atom Fan LED 4",
+    "entity_id": "light.e109",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e118": {
+    "name": "Ceiling light warm white 4",
+    "entity_id": "light.e118",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e127": {
+    "name": "Hall chandelier dimmer 5",
+    "entity_id": "light.e127",
+    "state": "on",
+    "attrs": {
+     "brightness": 87
+    }
+   },
+   "e136": {
+    "name": "Pooja room lamp 5",
+    "entity_id": "light.e136",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e145": {
+    "name": "Kitchen under-cabinet strip 5",
+    "entity_id": "light.e145",
+    "state": "off",
+    "attrs": {}
+   },
+   "e154": {
+    "name": "Porch light 5",
+    "entity_id": "light.e154",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e163": {
+    "name": "Atom Fan LED 6",
+    "entity_id": "light.e163",
+    "state": "on",
+    "attrs": {
+     "brightness": 58
+    }
+   },
+   "e172": {
+    "name": "Ceiling light warm white 6",
+    "entity_id": "light.e172",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e181": {
+    "name": "Hall chandelier dimmer 6",
+    "entity_id": "light.e181",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e190": {
+    "name": "Pooja room lamp 6",
+    "entity_id": "light.e190",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e199": {
+    "name": "Kitchen under-cabinet strip 6",
+    "entity_id": "light.e199",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e208": {
+    "name": "Porch light 7",
+    "entity_id": "light.e208",
+    "state": "off",
+    "attrs": {}
+   },
+   "e217": {
+    "name": "Atom Fan LED 7",
+    "entity_id": "light.e217",
+    "state": "off",
+    "attrs": {}
+   },
+   "e226": {
+    "name": "Ceiling light warm white 7",
+    "entity_id": "light.e226",
+    "state": "off",
+    "attrs": {}
+   },
+   "e235": {
+    "name": "Hall chandelier dimmer 7",
+    "entity_id": "light.e235",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e244": {
+    "name": "Pooja room lamp 8",
+    "entity_id": "light.e244",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e253": {
+    "name": "Kitchen under-cabinet strip 8",
+    "entity_id": "light.e253",
+    "state": "off",
+    "attrs": {}
+   },
+   "e262": {
+    "name": "Porch light 8",
+    "entity_id": "light.e262",
+    "state": "off",
+    "attrs": {}
+   },
+   "e271": {
+    "name": "Atom Fan LED 8",
+    "entity_id": "light.e271",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e280": {
+    "name": "Ceiling light warm white 9",
+    "entity_id": "light.e280",
+    "state": "on",
+    "attrs": {
+     "brightness": 203
+    }
+   },
+   "e289": {
+    "name": "Hall chandelier dimmer 9",
+    "entity_id": "light.e289",
+    "state": "off",
+    "attrs": {}
+   },
+   "e298": {
+    "name": "Pooja room lamp 9",
+    "entity_id": "light.e298",
+    "state": "off",
+    "attrs": {}
+   },
+   "e307": {
+    "name": "Kitchen under-cabinet strip 9",
+    "entity_id": "light.e307",
+    "state": "off",
+    "attrs": {}
+   },
+   "e316": {
+    "name": "Porch light 9",
+    "entity_id": "light.e316",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e325": {
+    "name": "Atom Fan LED 10",
+    "entity_id": "light.e325",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e334": {
+    "name": "Ceiling light warm white 10",
+    "entity_id": "light.e334",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e343": {
+    "name": "Hall chandelier dimmer 10",
+    "entity_id": "light.e343",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e352": {
+    "name": "Pooja room lamp 10",
+    "entity_id": "light.e352",
+    "state": "off",
+    "attrs": {}
+   },
+   "e361": {
+    "name": "Kitchen under-cabinet strip 11",
+    "entity_id": "light.e361",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e370": {
+    "name": "Porch light 11",
+    "entity_id": "light.e370",
+    "state": "off",
+    "attrs": {}
+   },
+   "e379": {
+    "name": "Atom Fan LED 11",
+    "entity_id": "light.e379",
+    "state": "off",
+    "attrs": {}
+   },
+   "e388": {
+    "name": "Ceiling light warm white 11",
+    "entity_id": "light.e388",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e397": {
+    "name": "Hall chandelier dimmer 11",
+    "entity_id": "light.e397",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e406": {
+    "name": "Pooja room lamp 12",
+    "entity_id": "light.e406",
+    "state": "off",
+    "attrs": {}
+   },
+   "e415": {
+    "name": "Kitchen under-cabinet strip 12",
+    "entity_id": "light.e415",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e424": {
+    "name": "Porch light 12",
+    "entity_id": "light.e424",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e433": {
+    "name": "Atom Fan LED 12",
+    "entity_id": "light.e433",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e442": {
+    "name": "Ceiling light warm white 13",
+    "entity_id": "light.e442",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e451": {
+    "name": "Hall chandelier dimmer 13",
+    "entity_id": "light.e451",
+    "state": "off",
+    "attrs": {}
+   },
+   "e460": {
+    "name": "Pooja room lamp 13",
+    "entity_id": "light.e460",
+    "state": "off",
+    "attrs": {
+     "brightness": 235
+    }
+   },
+   "e469": {
+    "name": "Kitchen under-cabinet strip 13",
+    "entity_id": "light.e469",
+    "state": "off",
+    "attrs": {}
+   },
+   "e478": {
+    "name": "Porch light 13",
+    "entity_id": "light.e478",
+    "state": "off",
+    "attrs": {}
+   },
+   "e487": {
+    "name": "Atom Fan LED 14",
+    "entity_id": "light.e487",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e496": {
+    "name": "Ceiling light warm white 14",
+    "entity_id": "light.e496",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e505": {
+    "name": "Hall chandelier dimmer 14",
+    "entity_id": "light.e505",
+    "state": "off",
+    "attrs": {
+     "brightness": 100
+    }
+   },
+   "e514": {
+    "name": "Pooja room lamp 14",
+    "entity_id": "light.e514",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e523": {
+    "name": "Kitchen under-cabinet strip 15",
+    "entity_id": "light.e523",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e532": {
+    "name": "Porch light 15",
+    "entity_id": "light.e532",
+    "state": "off",
+    "attrs": {}
+   },
+   "e541": {
+    "name": "Atom Fan LED 15",
+    "entity_id": "light.e541",
+    "state": "off",
+    "attrs": {}
+   },
+   "e550": {
+    "name": "Ceiling light warm white 15",
+    "entity_id": "light.e550",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e559": {
+    "name": "Hall chandelier dimmer 15",
+    "entity_id": "light.e559",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e568": {
+    "name": "Pooja room lamp 16",
+    "entity_id": "light.e568",
+    "state": "off",
+    "attrs": {}
+   },
+   "e577": {
+    "name": "Kitchen under-cabinet strip 16",
+    "entity_id": "light.e577",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e586": {
+    "name": "Porch light 16",
+    "entity_id": "light.e586",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e595": {
+    "name": "Atom Fan LED 16",
+    "entity_id": "light.e595",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e604": {
+    "name": "Ceiling light warm white 17",
+    "entity_id": "light.e604",
+    "state": "on",
+    "attrs": {
+     "brightness": 174
+    }
+   },
+   "e613": {
+    "name": "Hall chandelier dimmer 17",
+    "entity_id": "light.e613",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e622": {
+    "name": "Pooja room lamp 17",
+    "entity_id": "light.e622",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e631": {
+    "name": "Kitchen under-cabinet strip 17",
+    "entity_id": "light.e631",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e640": {
+    "name": "Porch light 18",
+    "entity_id": "light.e640",
+    "state": "off",
+    "attrs": {
+     "brightness": 205
+    }
+   },
+   "e649": {
+    "name": "Atom Fan LED 18",
+    "entity_id": "light.e649",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e658": {
+    "name": "Ceiling light warm white 18",
+    "entity_id": "light.e658",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e667": {
+    "name": "Hall chandelier dimmer 18",
+    "entity_id": "light.e667",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e676": {
+    "name": "Pooja room lamp 18",
+    "entity_id": "light.e676",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e685": {
+    "name": "Kitchen under-cabinet strip 19",
+    "entity_id": "light.e685",
+    "state": "off",
+    "attrs": {
+     "brightness": 70
+    }
+   },
+   "e694": {
+    "name": "Porch light 19",
+    "entity_id": "light.e694",
+    "state": "unavailable",
+    "attrs": {}
+   }
+  },
+  "fan": {
+   "e2": {
+    "name": "Atom Fan",
+    "entity_id": "fan.e2",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e11": {
+    "name": "Aux fan",
+    "entity_id": "fan.e11",
+    "state": "off",
+    "attrs": {}
+   },
+   "e20": {
+    "name": "Back Exit",
+    "entity_id": "fan.e20",
+    "state": "off",
+    "attrs": {}
+   },
+   "e29": {
+    "name": "Ceiling fan with remote",
+    "entity_id": "fan.e29",
+    "state": "off",
+    "attrs": {}
+   },
+   "e38": {
+    "name": "Exhaust fan kitchen",
+    "entity_id": "fan.e38",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e47": {
+    "name": "Atom Fan 3",
+    "entity_id": "fan.e47",
+    "state": "off",
+    "attrs": {}
+   },
+   "e56": {
+    "name": "Aux fan 3",
+    "entity_id": "fan.e56",
+    "state": "off",
+    "attrs": {}
+   },
+   "e65": {
+    "name": "Back Exit 3",
+    "entity_id": "fan.e65",
+    "state": "on",
+    "attrs": {
+     "percentage": 0
+    }
+   },
+   "e74": {
+    "name": "Ceiling fan with remote 3",
+    "entity_id": "fan.e74",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e83": {
+    "name": "Exhaust fan kitchen 4",
+    "entity_id": "fan.e83",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e92": {
+    "name": "Atom Fan 4",
+    "entity_id": "fan.e92",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e101": {
+    "name": "Aux fan 4",
+    "entity_id": "fan.e101",
+    "state": "off",
+    "attrs": {}
+   },
+   "e110": {
+    "name": "Back Exit 4",
+    "entity_id": "fan.e110",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e119": {
+    "name": "Ceiling fan with remote 4",
+    "entity_id": "fan.e119",
+    "state": "off",
+    "attrs": {}
+   },
+   "e128": {
+    "name": "Exhaust fan kitchen 5",
+    "entity_id": "fan.e128",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e137": {
+    "name": "Atom Fan 5",
+    "entity_id": "fan.e137",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e146": {
+    "name": "Aux fan 5",
+    "entity_id": "fan.e146",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e155": {
+    "name": "Back Exit 5",
+    "entity_id": "fan.e155",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e164": {
+    "name": "Ceiling fan with remote 6",
+    "entity_id": "fan.e164",
+    "state": "off",
+    "attrs": {}
+   },
+   "e173": {
+    "name": "Exhaust fan kitchen 6",
+    "entity_id": "fan.e173",
+    "state": "off",
+    "attrs": {}
+   },
+   "e182": {
+    "name": "Atom Fan 6",
+    "entity_id": "fan.e182",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e191": {
+    "name": "Aux fan 6",
+    "entity_id": "fan.e191",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e200": {
+    "name": "Back Exit 7",
+    "entity_id": "fan.e200",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e209": {
+    "name": "Ceiling fan with remote 7",
+    "entity_id": "fan.e209",
+    "state": "off",
+    "attrs": {}
+   },
+   "e218": {
+    "name": "Exhaust fan kitchen 7",
+    "entity_id": "fan.e218",
+    "state": "off",
+    "attrs": {}
+   },
+   "e227": {
+    "name": "Atom Fan 7",
+    "entity_id": "fan.e227",
+    "state": "off",
+    "attrs": {}
+   },
+   "e236": {
+    "name": "Aux fan 7",
+    "entity_id": "fan.e236",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e245": {
+    "name": "Back Exit 8",
+    "entity_id": "fan.e245",
+    "state": "off",
+    "attrs": {}
+   },
+   "e254": {
+    "name": "Ceiling fan with remote 8",
+    "entity_id": "fan.e254",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e263": {
+    "name": "Exhaust fan kitchen 8",
+    "entity_id": "fan.e263",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e272": {
+    "name": "Atom Fan 8",
+    "entity_id": "fan.e272",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e281": {
+    "name": "Aux fan 9",
+    "entity_id": "fan.e281",
+    "state": "off",
+    "attrs": {}
+   },
+   "e290": {
+    "name": "Back Exit 9",
+    "entity_id": "fan.e290",
+    "state": "off",
+    "attrs": {}
+   },
+   "e299": {
+    "name": "Ceiling fan with remote 9",
+    "entity_id": "fan.e299",
+    "state": "on",
+    "attrs": {
+     "percentage": 43
+    }
+   },
+   "e308": {
+    "name": "Exhaust fan kitchen 9",
+    "entity_id": "fan.e308",
+    "state": "off",
+    "attrs": {}
+   },
+   "e317": {
+    "name": "Atom Fan 9",
+    "entity_id": "fan.e317",
+    "state": "off",
+    "attrs": {}
+   },
+   "e326": {
+    "name": "Aux fan 10",
+    "entity_id": "fan.e326",
+    "state": "off",
+    "attrs": {}
+   },
+   "e335": {
+    "name": "Back Exit 10",
+    "entity_id": "fan.e335",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e344": {
+    "name": "Ceiling fan with remote 10",
+    "entity_id": "fan.e344",
+    "state": "off",
+    "attrs": {}
+   },
+   "e353": {
+    "name": "Exhaust fan kitchen 10",
+    "entity_id": "fan.e353",
+    "state": "off",
+    "attrs": {}
+   },
+   "e362": {
+    "name": "Atom Fan 11",
+    "entity_id": "fan.e362",
+    "state": "on",
+    "attrs": {
+     "percentage": 54
+    }
+   },
+   "e371": {
+    "name": "Aux fan 11",
+    "entity_id": "fan.e371",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e380": {
+    "name": "Back Exit 11",
+    "entity_id": "fan.e380",
+    "state": "off",
+    "attrs": {
+     "percentage": 40
+    }
+   },
+   "e389": {
+    "name": "Ceiling fan with remote 11",
+    "entity_id": "fan.e389",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e398": {
+    "name": "Exhaust fan kitchen 11",
+    "entity_id": "fan.e398",
+    "state": "off",
+    "attrs": {}
+   },
+   "e407": {
+    "name": "Atom Fan 12",
+    "entity_id": "fan.e407",
+    "state": "off",
+    "attrs": {}
+   },
+   "e416": {
+    "name": "Aux fan 12",
+    "entity_id": "fan.e416",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e425": {
+    "name": "Back Exit 12",
+    "entity_id": "fan.e425",
+    "state": "on",
+    "attrs": {
+     "percentage": 32
+    }
+   },
+   "e434": {
+    "name": "Ceiling fan with remote 12",
+    "entity_id": "fan.e434",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e443": {
+    "name": "Exhaust fan kitchen 13",
+    "entity_id": "fan.e443",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e452": {
+    "name": "Atom Fan 13",
+    "entity_id": "fan.e452",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e461": {
+    "name": "Aux fan 13",
+    "entity_id": "fan.e461",
+    "state": "off",
+    "attrs": {}
+   },
+   "e470": {
+    "name": "Back Exit 13",
+    "entity_id": "fan.e470",
+    "state": "off",
+    "attrs": {
+     "percentage": 10
+    }
+   },
+   "e479": {
+    "name": "Ceiling fan with remote 13",
+    "entity_id": "fan.e479",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e488": {
+    "name": "Exhaust fan kitchen 14",
+    "entity_id": "fan.e488",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e497": {
+    "name": "Atom Fan 14",
+    "entity_id": "fan.e497",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e506": {
+    "name": "Aux fan 14",
+    "entity_id": "fan.e506",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e515": {
+    "name": "Back Exit 14",
+    "entity_id": "fan.e515",
+    "state": "off",
+    "attrs": {
+     "percentage": 95
+    }
+   },
+   "e524": {
+    "name": "Ceiling fan with remote 15",
+    "entity_id": "fan.e524",
+    "state": "off",
+    "attrs": {}
+   },
+   "e533": {
+    "name": "Exhaust fan kitchen 15",
+    "entity_id": "fan.e533",
+    "state": "off",
+    "attrs": {}
+   },
+   "e542": {
+    "name": "Atom Fan 15",
+    "entity_id": "fan.e542",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e551": {
+    "name": "Aux fan 15",
+    "entity_id": "fan.e551",
+    "state": "off",
+    "attrs": {}
+   },
+   "e560": {
+    "name": "Back Exit 16",
+    "entity_id": "fan.e560",
+    "state": "off",
+    "attrs": {
+     "percentage": 80
+    }
+   },
+   "e569": {
+    "name": "Ceiling fan with remote 16",
+    "entity_id": "fan.e569",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e578": {
+    "name": "Exhaust fan kitchen 16",
+    "entity_id": "fan.e578",
+    "state": "off",
+    "attrs": {}
+   },
+   "e587": {
+    "name": "Atom Fan 16",
+    "entity_id": "fan.e587",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e596": {
+    "name": "Aux fan 16",
+    "entity_id": "fan.e596",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e605": {
+    "name": "Back Exit 17",
+    "entity_id": "fan.e605",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e614": {
+    "name": "Ceiling fan with remote 17",
+    "entity_id": "fan.e614",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e623": {
+    "name": "Exhaust fan kitchen 17",
+    "entity_id": "fan.e623",
+    "state": "off",
+    "attrs": {}
+   },
+   "e632": {
+    "name": "Atom Fan 17",
+    "entity_id": "fan.e632",
+    "state": "off",
+    "attrs": {}
+   },
+   "e641": {
+    "name": "Aux fan 18",
+    "entity_id": "fan.e641",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e650": {
+    "name": "Back Exit 18",
+    "entity_id": "fan.e650",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e659": {
+    "name": "Ceiling fan with remote 18",
+    "entity_id": "fan.e659",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e668": {
+    "name": "Exhaust fan kitchen 18",
+    "entity_id": "fan.e668",
+    "state": "off",
+    "attrs": {}
+   },
+   "e677": {
+    "name": "Atom Fan 18",
+    "entity_id": "fan.e677",
+    "state": "off",
+    "attrs": {}
+   },
+   "e686": {
+    "name": "Aux fan 19",
+    "entity_id": "fan.e686",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e695": {
+    "name": "Back Exit 19",
+    "entity_id": "fan.e695",
+    "state": "off",
+    "attrs": {
+     "percentage": 35
+    }
+   }
+  },
+  "sensor": {
+   "e3": {
+    "name": "Abhi's AC Energy consumption today",
+    "entity_id": "sensor.e3",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e12": {
+    "name": "Outdoor temperature",
+    "entity_id": "sensor.e12",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e21": {
+    "name": "Sump water level percentage",
+    "entity_id": "sensor.e21",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e30": {
+    "name": "Grid voltage phase 1",
+    "entity_id": "sensor.e30",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e39": {
+    "name": "Solar inverter daily yield",
+    "entity_id": "sensor.e39",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e48": {
+    "name": "Soil moisture bed 3",
+    "entity_id": "sensor.e48",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e57": {
+    "name": "Abhi's AC Energy consumption today 3",
+    "entity_id": "sensor.e57",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e66": {
+    "name": "Outdoor temperature 3",
+    "entity_id": "sensor.e66",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e75": {
+    "name": "Sump water level percentage 3",
+    "entity_id": "sensor.e75",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e84": {
+    "name": "Grid voltage phase 1 4",
+    "entity_id": "sensor.e84",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e93": {
+    "name": "Solar inverter daily yield 4",
+    "entity_id": "sensor.e93",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e102": {
+    "name": "Soil moisture bed 3 4",
+    "entity_id": "sensor.e102",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e111": {
+    "name": "Abhi's AC Energy consumption today 4",
+    "entity_id": "sensor.e111",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e120": {
+    "name": "Outdoor temperature 5",
+    "entity_id": "sensor.e120",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e129": {
+    "name": "Sump water level percentage 5",
+    "entity_id": "sensor.e129",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e138": {
+    "name": "Grid voltage phase 1 5",
+    "entity_id": "sensor.e138",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e147": {
+    "name": "Solar inverter daily yield 5",
+    "entity_id": "sensor.e147",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e156": {
+    "name": "Soil moisture bed 3 5",
+    "entity_id": "sensor.e156",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e165": {
+    "name": "Abhi's AC Energy consumption today 6",
+    "entity_id": "sensor.e165",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e174": {
+    "name": "Outdoor temperature 6",
+    "entity_id": "sensor.e174",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e183": {
+    "name": "Sump water level percentage 6",
+    "entity_id": "sensor.e183",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e192": {
+    "name": "Grid voltage phase 1 6",
+    "entity_id": "sensor.e192",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e201": {
+    "name": "Solar inverter daily yield 7",
+    "entity_id": "sensor.e201",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e210": {
+    "name": "Soil moisture bed 3 7",
+    "entity_id": "sensor.e210",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e219": {
+    "name": "Abhi's AC Energy consumption today 7",
+    "entity_id": "sensor.e219",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e228": {
+    "name": "Outdoor temperature 7",
+    "entity_id": "sensor.e228",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e237": {
+    "name": "Sump water level percentage 7",
+    "entity_id": "sensor.e237",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e246": {
+    "name": "Grid voltage phase 1 8",
+    "entity_id": "sensor.e246",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e255": {
+    "name": "Solar inverter daily yield 8",
+    "entity_id": "sensor.e255",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e264": {
+    "name": "Soil moisture bed 3 8",
+    "entity_id": "sensor.e264",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e273": {
+    "name": "Abhi's AC Energy consumption today 8",
+    "entity_id": "sensor.e273",
+    "state": "42.0",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e282": {
+    "name": "Outdoor temperature 9",
+    "entity_id": "sensor.e282",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e291": {
+    "name": "Sump water level percentage 9",
+    "entity_id": "sensor.e291",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e300": {
+    "name": "Grid voltage phase 1 9",
+    "entity_id": "sensor.e300",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e309": {
+    "name": "Solar inverter daily yield 9",
+    "entity_id": "sensor.e309",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e318": {
+    "name": "Soil moisture bed 3 9",
+    "entity_id": "sensor.e318",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e327": {
+    "name": "Abhi's AC Energy consumption today 10",
+    "entity_id": "sensor.e327",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e336": {
+    "name": "Outdoor temperature 10",
+    "entity_id": "sensor.e336",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e345": {
+    "name": "Sump water level percentage 10",
+    "entity_id": "sensor.e345",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e354": {
+    "name": "Grid voltage phase 1 10",
+    "entity_id": "sensor.e354",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e363": {
+    "name": "Solar inverter daily yield 11",
+    "entity_id": "sensor.e363",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e372": {
+    "name": "Soil moisture bed 3 11",
+    "entity_id": "sensor.e372",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e381": {
+    "name": "Abhi's AC Energy consumption today 11",
+    "entity_id": "sensor.e381",
+    "state": "9.7",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e390": {
+    "name": "Outdoor temperature 11",
+    "entity_id": "sensor.e390",
+    "state": "43.0",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e399": {
+    "name": "Sump water level percentage 11",
+    "entity_id": "sensor.e399",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e408": {
+    "name": "Grid voltage phase 1 12",
+    "entity_id": "sensor.e408",
+    "state": "9.6",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e417": {
+    "name": "Solar inverter daily yield 12",
+    "entity_id": "sensor.e417",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e426": {
+    "name": "Soil moisture bed 3 12",
+    "entity_id": "sensor.e426",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e435": {
+    "name": "Abhi's AC Energy consumption today 12",
+    "entity_id": "sensor.e435",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e444": {
+    "name": "Outdoor temperature 13",
+    "entity_id": "sensor.e444",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e453": {
+    "name": "Sump water level percentage 13",
+    "entity_id": "sensor.e453",
+    "state": "76.1",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e462": {
+    "name": "Grid voltage phase 1 13",
+    "entity_id": "sensor.e462",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e471": {
+    "name": "Solar inverter daily yield 13",
+    "entity_id": "sensor.e471",
+    "state": "42.7",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e480": {
+    "name": "Soil moisture bed 3 14",
+    "entity_id": "sensor.e480",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e489": {
+    "name": "Abhi's AC Energy consumption today 14",
+    "entity_id": "sensor.e489",
+    "state": "9.3",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e498": {
+    "name": "Outdoor temperature 14",
+    "entity_id": "sensor.e498",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e507": {
+    "name": "Sump water level percentage 14",
+    "entity_id": "sensor.e507",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e516": {
+    "name": "Grid voltage phase 1 14",
+    "entity_id": "sensor.e516",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e525": {
+    "name": "Solar inverter daily yield 15",
+    "entity_id": "sensor.e525",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e534": {
+    "name": "Soil moisture bed 3 15",
+    "entity_id": "sensor.e534",
+    "state": "75.8",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e543": {
+    "name": "Abhi's AC Energy consumption today 15",
+    "entity_id": "sensor.e543",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e552": {
+    "name": "Outdoor temperature 15",
+    "entity_id": "sensor.e552",
+    "state": "42.4",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e561": {
+    "name": "Sump water level percentage 16",
+    "entity_id": "sensor.e561",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e570": {
+    "name": "Grid voltage phase 1 16",
+    "entity_id": "sensor.e570",
+    "state": "9.0",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e579": {
+    "name": "Solar inverter daily yield 16",
+    "entity_id": "sensor.e579",
+    "state": "42.3",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e588": {
+    "name": "Soil moisture bed 3 16",
+    "entity_id": "sensor.e588",
+    "state": "75.6",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e597": {
+    "name": "Abhi's AC Energy consumption today 16",
+    "entity_id": "sensor.e597",
+    "state": "8.9",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e606": {
+    "name": "Outdoor temperature 17",
+    "entity_id": "sensor.e606",
+    "state": "42.2",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e615": {
+    "name": "Sump water level percentage 17",
+    "entity_id": "sensor.e615",
+    "state": "75.5",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e624": {
+    "name": "Grid voltage phase 1 17",
+    "entity_id": "sensor.e624",
+    "state": "8.8",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e633": {
+    "name": "Solar inverter daily yield 17",
+    "entity_id": "sensor.e633",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e642": {
+    "name": "Soil moisture bed 3 18",
+    "entity_id": "sensor.e642",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e651": {
+    "name": "Abhi's AC Energy consumption today 18",
+    "entity_id": "sensor.e651",
+    "state": "8.7",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e660": {
+    "name": "Outdoor temperature 18",
+    "entity_id": "sensor.e660",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e669": {
+    "name": "Sump water level percentage 18",
+    "entity_id": "sensor.e669",
+    "state": "unavailable",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e678": {
+    "name": "Grid voltage phase 1 18",
+    "entity_id": "sensor.e678",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e687": {
+    "name": "Solar inverter daily yield 19",
+    "entity_id": "sensor.e687",
+    "state": "41.9",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   },
+   "e696": {
+    "name": "Soil moisture bed 3 19",
+    "entity_id": "sensor.e696",
+    "state": "75.2",
+    "area": "abhis_room",
+    "attrs": {
+     "unit_of_measurement": "°C"
+    }
+   }
+  },
+  "binary_sensor": {
+   "e4": {
+    "name": "Front Door Motion detection",
+    "entity_id": "binary_sensor.e4",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e13": {
+    "name": "Kitchen smoke detector",
+    "entity_id": "binary_sensor.e13",
+    "state": "off",
+    "attrs": {}
+   },
+   "e22": {
+    "name": "Gate contact sensor",
+    "entity_id": "binary_sensor.e22",
+    "state": "off",
+    "attrs": {}
+   },
+   "e31": {
+    "name": "Water leak under sink",
+    "entity_id": "binary_sensor.e31",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e40": {
+    "name": "Front Door Motion detection 3",
+    "entity_id": "binary_sensor.e40",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e49": {
+    "name": "Kitchen smoke detector 3",
+    "entity_id": "binary_sensor.e49",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e58": {
+    "name": "Gate contact sensor 3",
+    "entity_id": "binary_sensor.e58",
+    "state": "off",
+    "attrs": {}
+   },
+   "e67": {
+    "name": "Water leak under sink 3",
+    "entity_id": "binary_sensor.e67",
+    "state": "off",
+    "attrs": {}
+   },
+   "e76": {
+    "name": "Front Door Motion detection 3",
+    "entity_id": "binary_sensor.e76",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e85": {
+    "name": "Kitchen smoke detector 4",
+    "entity_id": "binary_sensor.e85",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e94": {
+    "name": "Gate contact sensor 4",
+    "entity_id": "binary_sensor.e94",
+    "state": "off",
+    "attrs": {}
+   },
+   "e103": {
+    "name": "Water leak under sink 4",
+    "entity_id": "binary_sensor.e103",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e112": {
+    "name": "Front Door Motion detection 4",
+    "entity_id": "binary_sensor.e112",
+    "state": "off",
+    "attrs": {}
+   },
+   "e121": {
+    "name": "Kitchen smoke detector 5",
+    "entity_id": "binary_sensor.e121",
+    "state": "off",
+    "attrs": {}
+   },
+   "e130": {
+    "name": "Gate contact sensor 5",
+    "entity_id": "binary_sensor.e130",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e139": {
+    "name": "Water leak under sink 5",
+    "entity_id": "binary_sensor.e139",
+    "state": "off",
+    "attrs": {}
+   },
+   "e148": {
+    "name": "Front Door Motion detection 5",
+    "entity_id": "binary_sensor.e148",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e157": {
+    "name": "Kitchen smoke detector 5",
+    "entity_id": "binary_sensor.e157",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e166": {
+    "name": "Gate contact sensor 6",
+    "entity_id": "binary_sensor.e166",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e175": {
+    "name": "Water leak under sink 6",
+    "entity_id": "binary_sensor.e175",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e184": {
+    "name": "Front Door Motion detection 6",
+    "entity_id": "binary_sensor.e184",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e193": {
+    "name": "Kitchen smoke detector 6",
+    "entity_id": "binary_sensor.e193",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e202": {
+    "name": "Gate contact sensor 7",
+    "entity_id": "binary_sensor.e202",
+    "state": "off",
+    "attrs": {}
+   },
+   "e211": {
+    "name": "Water leak under sink 7",
+    "entity_id": "binary_sensor.e211",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e220": {
+    "name": "Front Door Motion detection 7",
+    "entity_id": "binary_sensor.e220",
+    "state": "off",
+    "attrs": {}
+   },
+   "e229": {
+    "name": "Kitchen smoke detector 7",
+    "entity_id": "binary_sensor.e229",
+    "state": "off",
+    "attrs": {}
+   },
+   "e238": {
+    "name": "Gate contact sensor 7",
+    "entity_id": "binary_sensor.e238",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e247": {
+    "name": "Water leak under sink 8",
+    "entity_id": "binary_sensor.e247",
+    "state": "off",
+    "attrs": {}
+   },
+   "e256": {
+    "name": "Front Door Motion detection 8",
+    "entity_id": "binary_sensor.e256",
+    "state": "off",
+    "attrs": {}
+   },
+   "e265": {
+    "name": "Kitchen smoke detector 8",
+    "entity_id": "binary_sensor.e265",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e274": {
+    "name": "Gate contact sensor 8",
+    "entity_id": "binary_sensor.e274",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e283": {
+    "name": "Water leak under sink 9",
+    "entity_id": "binary_sensor.e283",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e292": {
+    "name": "Front Door Motion detection 9",
+    "entity_id": "binary_sensor.e292",
+    "state": "off",
+    "attrs": {}
+   },
+   "e301": {
+    "name": "Kitchen smoke detector 9",
+    "entity_id": "binary_sensor.e301",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e310": {
+    "name": "Gate contact sensor 9",
+    "entity_id": "binary_sensor.e310",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e319": {
+    "name": "Water leak under sink 9",
+    "entity_id": "binary_sensor.e319",
+    "state": "on",
+    "attrs": {}
+   },
+   "e328": {
+    "name": "Front Door Motion detection 10",
+    "entity_id": "binary_sensor.e328",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e337": {
+    "name": "Kitchen smoke detector 10",
+    "entity_id": "binary_sensor.e337",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e346": {
+    "name": "Gate contact sensor 10",
+    "entity_id": "binary_sensor.e346",
+    "state": "off",
+    "attrs": {}
+   },
+   "e355": {
+    "name": "Water leak under sink 10",
+    "entity_id": "binary_sensor.e355",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e364": {
+    "name": "Front Door Motion detection 11",
+    "entity_id": "binary_sensor.e364",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e373": {
+    "name": "Kitchen smoke detector 11",
+    "entity_id": "binary_sensor.e373",
+    "state": "off",
+    "attrs": {}
+   },
+   "e382": {
+    "name": "Gate contact sensor 11",
+    "entity_id": "binary_sensor.e382",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e391": {
+    "name": "Water leak under sink 11",
+    "entity_id": "binary_sensor.e391",
+    "state": "on",
+    "attrs": {}
+   },
+   "e400": {
+    "name": "Front Door Motion detection 12",
+    "entity_id": "binary_sensor.e400",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e409": {
+    "name": "Kitchen smoke detector 12",
+    "entity_id": "binary_sensor.e409",
+    "state": "off",
+    "attrs": {}
+   },
+   "e418": {
+    "name": "Gate contact sensor 12",
+    "entity_id": "binary_sensor.e418",
+    "state": "off",
+    "attrs": {}
+   },
+   "e427": {
+    "name": "Water leak under sink 12",
+    "entity_id": "binary_sensor.e427",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e436": {
+    "name": "Front Door Motion detection 12",
+    "entity_id": "binary_sensor.e436",
+    "state": "off",
+    "attrs": {}
+   },
+   "e445": {
+    "name": "Kitchen smoke detector 13",
+    "entity_id": "binary_sensor.e445",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e454": {
+    "name": "Gate contact sensor 13",
+    "entity_id": "binary_sensor.e454",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e463": {
+    "name": "Water leak under sink 13",
+    "entity_id": "binary_sensor.e463",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e472": {
+    "name": "Front Door Motion detection 13",
+    "entity_id": "binary_sensor.e472",
+    "state": "on",
+    "attrs": {}
+   },
+   "e481": {
+    "name": "Kitchen smoke detector 14",
+    "entity_id": "binary_sensor.e481",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e490": {
+    "name": "Gate contact sensor 14",
+    "entity_id": "binary_sensor.e490",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e499": {
+    "name": "Water leak under sink 14",
+    "entity_id": "binary_sensor.e499",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e508": {
+    "name": "Front Door Motion detection 14",
+    "entity_id": "binary_sensor.e508",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e517": {
+    "name": "Kitchen smoke detector 14",
+    "entity_id": "binary_sensor.e517",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e526": {
+    "name": "Gate contact sensor 15",
+    "entity_id": "binary_sensor.e526",
+    "state": "off",
+    "attrs": {}
+   },
+   "e535": {
+    "name": "Water leak under sink 15",
+    "entity_id": "binary_sensor.e535",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e544": {
+    "name": "Front Door Motion detection 15",
+    "entity_id": "binary_sensor.e544",
+    "state": "off",
+    "attrs": {}
+   },
+   "e553": {
+    "name": "Kitchen smoke detector 15",
+    "entity_id": "binary_sensor.e553",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e562": {
+    "name": "Gate contact sensor 16",
+    "entity_id": "binary_sensor.e562",
+    "state": "off",
+    "attrs": {}
+   },
+   "e571": {
+    "name": "Water leak under sink 16",
+    "entity_id": "binary_sensor.e571",
+    "state": "off",
+    "attrs": {}
+   },
+   "e580": {
+    "name": "Front Door Motion detection 16",
+    "entity_id": "binary_sensor.e580",
+    "state": "off",
+    "attrs": {}
+   },
+   "e589": {
+    "name": "Kitchen smoke detector 16",
+    "entity_id": "binary_sensor.e589",
+    "state": "off",
+    "attrs": {}
+   },
+   "e598": {
+    "name": "Gate contact sensor 16",
+    "entity_id": "binary_sensor.e598",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e607": {
+    "name": "Water leak under sink 17",
+    "entity_id": "binary_sensor.e607",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e616": {
+    "name": "Front Door Motion detection 17",
+    "entity_id": "binary_sensor.e616",
+    "state": "off",
+    "attrs": {}
+   },
+   "e625": {
+    "name": "Kitchen smoke detector 17",
+    "entity_id": "binary_sensor.e625",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e634": {
+    "name": "Gate contact sensor 17",
+    "entity_id": "binary_sensor.e634",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e643": {
+    "name": "Water leak under sink 18",
+    "entity_id": "binary_sensor.e643",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e652": {
+    "name": "Front Door Motion detection 18",
+    "entity_id": "binary_sensor.e652",
+    "state": "off",
+    "attrs": {}
+   },
+   "e661": {
+    "name": "Kitchen smoke detector 18",
+    "entity_id": "binary_sensor.e661",
+    "state": "off",
+    "attrs": {}
+   },
+   "e670": {
+    "name": "Gate contact sensor 18",
+    "entity_id": "binary_sensor.e670",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e679": {
+    "name": "Water leak under sink 18",
+    "entity_id": "binary_sensor.e679",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e688": {
+    "name": "Front Door Motion detection 19",
+    "entity_id": "binary_sensor.e688",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e697": {
+    "name": "Kitchen smoke detector 19",
+    "entity_id": "binary_sensor.e697",
+    "state": "unavailable",
+    "attrs": {}
+   }
+  },
+  "media_player": {
+   "e5": {
+    "name": "[TV] Samsung 5 Series (32)",
+    "entity_id": "media_player.e5",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e14": {
+    "name": "[TV] Samsung Q60 (55)",
+    "entity_id": "media_player.e14",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e23": {
+    "name": "Living Room Chromecast",
+    "entity_id": "media_player.e23",
+    "state": "off",
+    "attrs": {}
+   },
+   "e32": {
+    "name": "[TV] Samsung 5 Series (32) 2",
+    "entity_id": "media_player.e32",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e41": {
+    "name": "[TV] Samsung Q60 (55) 3",
+    "entity_id": "media_player.e41",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e50": {
+    "name": "Living Room Chromecast 3",
+    "entity_id": "media_player.e50",
+    "state": "off",
+    "attrs": {}
+   },
+   "e59": {
+    "name": "[TV] Samsung 5 Series (32) 3",
+    "entity_id": "media_player.e59",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e68": {
+    "name": "[TV] Samsung Q60 (55) 3",
+    "entity_id": "media_player.e68",
+    "state": "off",
+    "attrs": {}
+   },
+   "e77": {
+    "name": "Living Room Chromecast 3",
+    "entity_id": "media_player.e77",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e86": {
+    "name": "[TV] Samsung 5 Series (32) 4",
+    "entity_id": "media_player.e86",
+    "state": "off",
+    "attrs": {}
+   },
+   "e95": {
+    "name": "[TV] Samsung Q60 (55) 4",
+    "entity_id": "media_player.e95",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e104": {
+    "name": "Living Room Chromecast 4",
+    "entity_id": "media_player.e104",
+    "state": "off",
+    "attrs": {}
+   },
+   "e113": {
+    "name": "[TV] Samsung 5 Series (32) 4",
+    "entity_id": "media_player.e113",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e122": {
+    "name": "[TV] Samsung Q60 (55) 5",
+    "entity_id": "media_player.e122",
+    "state": "off",
+    "attrs": {}
+   },
+   "e131": {
+    "name": "Living Room Chromecast 5",
+    "entity_id": "media_player.e131",
+    "state": "off",
+    "attrs": {}
+   },
+   "e140": {
+    "name": "[TV] Samsung 5 Series (32) 5",
+    "entity_id": "media_player.e140",
+    "state": "off",
+    "attrs": {}
+   },
+   "e149": {
+    "name": "[TV] Samsung Q60 (55) 5",
+    "entity_id": "media_player.e149",
+    "state": "off",
+    "attrs": {}
+   },
+   "e158": {
+    "name": "Living Room Chromecast 5",
+    "entity_id": "media_player.e158",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e167": {
+    "name": "[TV] Samsung 5 Series (32) 6",
+    "entity_id": "media_player.e167",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e176": {
+    "name": "[TV] Samsung Q60 (55) 6",
+    "entity_id": "media_player.e176",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e185": {
+    "name": "Living Room Chromecast 6",
+    "entity_id": "media_player.e185",
+    "state": "off",
+    "attrs": {}
+   },
+   "e194": {
+    "name": "[TV] Samsung 5 Series (32) 6",
+    "entity_id": "media_player.e194",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e203": {
+    "name": "[TV] Samsung Q60 (55) 7",
+    "entity_id": "media_player.e203",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e212": {
+    "name": "Living Room Chromecast 7",
+    "entity_id": "media_player.e212",
+    "state": "off",
+    "attrs": {}
+   },
+   "e221": {
+    "name": "[TV] Samsung 5 Series (32) 7",
+    "entity_id": "media_player.e221",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e230": {
+    "name": "[TV] Samsung Q60 (55) 7",
+    "entity_id": "media_player.e230",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e239": {
+    "name": "Living Room Chromecast 7",
+    "entity_id": "media_player.e239",
+    "state": "off",
+    "attrs": {}
+   },
+   "e248": {
+    "name": "[TV] Samsung 5 Series (32) 8",
+    "entity_id": "media_player.e248",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e257": {
+    "name": "[TV] Samsung Q60 (55) 8",
+    "entity_id": "media_player.e257",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e266": {
+    "name": "Living Room Chromecast 8",
+    "entity_id": "media_player.e266",
+    "state": "off",
+    "attrs": {}
+   },
+   "e275": {
+    "name": "[TV] Samsung 5 Series (32) 8",
+    "entity_id": "media_player.e275",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e284": {
+    "name": "[TV] Samsung Q60 (55) 9",
+    "entity_id": "media_player.e284",
+    "state": "off",
+    "attrs": {}
+   },
+   "e293": {
+    "name": "Living Room Chromecast 9",
+    "entity_id": "media_player.e293",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e302": {
+    "name": "[TV] Samsung 5 Series (32) 9",
+    "entity_id": "media_player.e302",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e311": {
+    "name": "[TV] Samsung Q60 (55) 9",
+    "entity_id": "media_player.e311",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e320": {
+    "name": "Living Room Chromecast 10",
+    "entity_id": "media_player.e320",
+    "state": "off",
+    "attrs": {}
+   },
+   "e329": {
+    "name": "[TV] Samsung 5 Series (32) 10",
+    "entity_id": "media_player.e329",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e338": {
+    "name": "[TV] Samsung Q60 (55) 10",
+    "entity_id": "media_player.e338",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e347": {
+    "name": "Living Room Chromecast 10",
+    "entity_id": "media_player.e347",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e356": {
+    "name": "[TV] Samsung 5 Series (32) 10",
+    "entity_id": "media_player.e356",
+    "state": "off",
+    "attrs": {}
+   },
+   "e365": {
+    "name": "[TV] Samsung Q60 (55) 11",
+    "entity_id": "media_player.e365",
+    "state": "off",
+    "attrs": {}
+   },
+   "e374": {
+    "name": "Living Room Chromecast 11",
+    "entity_id": "media_player.e374",
+    "state": "off",
+    "attrs": {}
+   },
+   "e383": {
+    "name": "[TV] Samsung 5 Series (32) 11",
+    "entity_id": "media_player.e383",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e392": {
+    "name": "[TV] Samsung Q60 (55) 11",
+    "entity_id": "media_player.e392",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e401": {
+    "name": "Living Room Chromecast 12",
+    "entity_id": "media_player.e401",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e410": {
+    "name": "[TV] Samsung 5 Series (32) 12",
+    "entity_id": "media_player.e410",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e419": {
+    "name": "[TV] Samsung Q60 (55) 12",
+    "entity_id": "media_player.e419",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e428": {
+    "name": "Living Room Chromecast 12",
+    "entity_id": "media_player.e428",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e437": {
+    "name": "[TV] Samsung 5 Series (32) 12",
+    "entity_id": "media_player.e437",
+    "state": "off",
+    "attrs": {}
+   },
+   "e446": {
+    "name": "[TV] Samsung Q60 (55) 13",
+    "entity_id": "media_player.e446",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e455": {
+    "name": "Living Room Chromecast 13",
+    "entity_id": "media_player.e455",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e464": {
+    "name": "[TV] Samsung 5 Series (32) 13",
+    "entity_id": "media_player.e464",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e473": {
+    "name": "[TV] Samsung Q60 (55) 13",
+    "entity_id": "media_player.e473",
+    "state": "off",
+    "attrs": {}
+   },
+   "e482": {
+    "name": "Living Room Chromecast 14",
+    "entity_id": "media_player.e482",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e491": {
+    "name": "[TV] Samsung 5 Series (32) 14",
+    "entity_id": "media_player.e491",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e500": {
+    "name": "[TV] Samsung Q60 (55) 14",
+    "entity_id": "media_player.e500",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e509": {
+    "name": "Living Room Chromecast 14",
+    "entity_id": "media_player.e509",
+    "state": "off",
+    "attrs": {}
+   },
+   "e518": {
+    "name": "[TV] Samsung 5 Series (32) 14",
+    "entity_id": "media_player.e518",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e527": {
+    "name": "[TV] Samsung Q60 (55) 15",
+    "entity_id": "media_player.e527",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e536": {
+    "name": "Living Room Chromecast 15",
+    "entity_id": "media_player.e536",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e545": {
+    "name": "[TV] Samsung 5 Series (32) 15",
+    "entity_id": "media_player.e545",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e554": {
+    "name": "[TV] Samsung Q60 (55) 15",
+    "entity_id": "media_player.e554",
+    "state": "off",
+    "attrs": {}
+   },
+   "e563": {
+    "name": "Living Room Chromecast 16",
+    "entity_id": "media_player.e563",
+    "state": "off",
+    "attrs": {}
+   },
+   "e572": {
+    "name": "[TV] Samsung 5 Series (32) 16",
+    "entity_id": "media_player.e572",
+    "state": "off",
+    "attrs": {}
+   },
+   "e581": {
+    "name": "[TV] Samsung Q60 (55) 16",
+    "entity_id": "media_player.e581",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e590": {
+    "name": "Living Room Chromecast 16",
+    "entity_id": "media_player.e590",
+    "state": "off",
+    "attrs": {}
+   },
+   "e599": {
+    "name": "[TV] Samsung 5 Series (32) 16",
+    "entity_id": "media_player.e599",
+    "state": "off",
+    "attrs": {}
+   },
+   "e608": {
+    "name": "[TV] Samsung Q60 (55) 17",
+    "entity_id": "media_player.e608",
+    "state": "off",
+    "attrs": {}
+   },
+   "e617": {
+    "name": "Living Room Chromecast 17",
+    "entity_id": "media_player.e617",
+    "state": "off",
+    "attrs": {}
+   },
+   "e626": {
+    "name": "[TV] Samsung 5 Series (32) 17",
+    "entity_id": "media_player.e626",
+    "state": "off",
+    "attrs": {}
+   },
+   "e635": {
+    "name": "[TV] Samsung Q60 (55) 17",
+    "entity_id": "media_player.e635",
+    "state": "off",
+    "attrs": {}
+   },
+   "e644": {
+    "name": "Living Room Chromecast 18",
+    "entity_id": "media_player.e644",
+    "state": "off",
+    "attrs": {}
+   },
+   "e653": {
+    "name": "[TV] Samsung 5 Series (32) 18",
+    "entity_id": "media_player.e653",
+    "state": "off",
+    "attrs": {}
+   },
+   "e662": {
+    "name": "[TV] Samsung Q60 (55) 18",
+    "entity_id": "media_player.e662",
+    "state": "off",
+    "attrs": {}
+   },
+   "e671": {
+    "name": "Living Room Chromecast 18",
+    "entity_id": "media_player.e671",
+    "state": "off",
+    "attrs": {}
+   },
+   "e680": {
+    "name": "[TV] Samsung 5 Series (32) 19",
+    "entity_id": "media_player.e680",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e689": {
+    "name": "[TV] Samsung Q60 (55) 19",
+    "entity_id": "media_player.e689",
+    "state": "off",
+    "attrs": {}
+   }
+  },
+  "climate": {
+   "e6": {
+    "name": "Abhi's AC",
+    "entity_id": "climate.e6",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e15": {
+    "name": "Master Bedroom AC",
+    "entity_id": "climate.e15",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e24": {
+    "name": "Abhi's AC 2",
+    "entity_id": "climate.e24",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e33": {
+    "name": "Master Bedroom AC 2",
+    "entity_id": "climate.e33",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e42": {
+    "name": "Abhi's AC 3",
+    "entity_id": "climate.e42",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e51": {
+    "name": "Master Bedroom AC 3",
+    "entity_id": "climate.e51",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e60": {
+    "name": "Abhi's AC 3",
+    "entity_id": "climate.e60",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e69": {
+    "name": "Master Bedroom AC 3",
+    "entity_id": "climate.e69",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e78": {
+    "name": "Abhi's AC 3",
+    "entity_id": "climate.e78",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e87": {
+    "name": "Master Bedroom AC 4",
+    "entity_id": "climate.e87",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e96": {
+    "name": "Abhi's AC 4",
+    "entity_id": "climate.e96",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e105": {
+    "name": "Master Bedroom AC 4",
+    "entity_id": "climate.e105",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e114": {
+    "name": "Abhi's AC 4",
+    "entity_id": "climate.e114",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e123": {
+    "name": "Master Bedroom AC 5",
+    "entity_id": "climate.e123",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e132": {
+    "name": "Abhi's AC 5",
+    "entity_id": "climate.e132",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e141": {
+    "name": "Master Bedroom AC 5",
+    "entity_id": "climate.e141",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e150": {
+    "name": "Abhi's AC 5",
+    "entity_id": "climate.e150",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e159": {
+    "name": "Master Bedroom AC 5",
+    "entity_id": "climate.e159",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e168": {
+    "name": "Abhi's AC 6",
+    "entity_id": "climate.e168",
+    "state": "42.0",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e177": {
+    "name": "Master Bedroom AC 6",
+    "entity_id": "climate.e177",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e186": {
+    "name": "Abhi's AC 6",
+    "entity_id": "climate.e186",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e195": {
+    "name": "Master Bedroom AC 6",
+    "entity_id": "climate.e195",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e204": {
+    "name": "Abhi's AC 7",
+    "entity_id": "climate.e204",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e213": {
+    "name": "Master Bedroom AC 7",
+    "entity_id": "climate.e213",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e222": {
+    "name": "Abhi's AC 7",
+    "entity_id": "climate.e222",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e231": {
+    "name": "Master Bedroom AC 7",
+    "entity_id": "climate.e231",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e240": {
+    "name": "Abhi's AC 8",
+    "entity_id": "climate.e240",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e249": {
+    "name": "Master Bedroom AC 8",
+    "entity_id": "climate.e249",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e258": {
+    "name": "Abhi's AC 8",
+    "entity_id": "climate.e258",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e267": {
+    "name": "Master Bedroom AC 8",
+    "entity_id": "climate.e267",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e276": {
+    "name": "Abhi's AC 8",
+    "entity_id": "climate.e276",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e285": {
+    "name": "Master Bedroom AC 9",
+    "entity_id": "climate.e285",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e294": {
+    "name": "Abhi's AC 9",
+    "entity_id": "climate.e294",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e303": {
+    "name": "Master Bedroom AC 9",
+    "entity_id": "climate.e303",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e312": {
+    "name": "Abhi's AC 9",
+    "entity_id": "climate.e312",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e321": {
+    "name": "Master Bedroom AC 10",
+    "entity_id": "climate.e321",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e330": {
+    "name": "Abhi's AC 10",
+    "entity_id": "climate.e330",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e339": {
+    "name": "Master Bedroom AC 10",
+    "entity_id": "climate.e339",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e348": {
+    "name": "Abhi's AC 10",
+    "entity_id": "climate.e348",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e357": {
+    "name": "Master Bedroom AC 10",
+    "entity_id": "climate.e357",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e366": {
+    "name": "Abhi's AC 11",
+    "entity_id": "climate.e366",
+    "state": "42.0",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e375": {
+    "name": "Master Bedroom AC 11",
+    "entity_id": "climate.e375",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e384": {
+    "name": "Abhi's AC 11",
+    "entity_id": "climate.e384",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e393": {
+    "name": "Master Bedroom AC 11",
+    "entity_id": "climate.e393",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e402": {
+    "name": "Abhi's AC 12",
+    "entity_id": "climate.e402",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e411": {
+    "name": "Master Bedroom AC 12",
+    "entity_id": "climate.e411",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e420": {
+    "name": "Abhi's AC 12",
+    "entity_id": "climate.e420",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e429": {
+    "name": "Master Bedroom AC 12",
+    "entity_id": "climate.e429",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e438": {
+    "name": "Abhi's AC 12",
+    "entity_id": "climate.e438",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e447": {
+    "name": "Master Bedroom AC 13",
+    "entity_id": "climate.e447",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e456": {
+    "name": "Abhi's AC 13",
+    "entity_id": "climate.e456",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e465": {
+    "name": "Master Bedroom AC 13",
+    "entity_id": "climate.e465",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e474": {
+    "name": "Abhi's AC 13",
+    "entity_id": "climate.e474",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e483": {
+    "name": "Master Bedroom AC 14",
+    "entity_id": "climate.e483",
+    "state": "off",
+    "attrs": {}
+   },
+   "e492": {
+    "name": "Abhi's AC 14",
+    "entity_id": "climate.e492",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e501": {
+    "name": "Master Bedroom AC 14",
+    "entity_id": "climate.e501",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e510": {
+    "name": "Abhi's AC 14",
+    "entity_id": "climate.e510",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e519": {
+    "name": "Master Bedroom AC 14",
+    "entity_id": "climate.e519",
+    "state": "off",
+    "attrs": {}
+   },
+   "e528": {
+    "name": "Abhi's AC 15",
+    "entity_id": "climate.e528",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e537": {
+    "name": "Master Bedroom AC 15",
+    "entity_id": "climate.e537",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e546": {
+    "name": "Abhi's AC 15",
+    "entity_id": "climate.e546",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e555": {
+    "name": "Master Bedroom AC 15",
+    "entity_id": "climate.e555",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e564": {
+    "name": "Abhi's AC 16",
+    "entity_id": "climate.e564",
+    "state": "unavailable",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e573": {
+    "name": "Master Bedroom AC 16",
+    "entity_id": "climate.e573",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e582": {
+    "name": "Abhi's AC 16",
+    "entity_id": "climate.e582",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e591": {
+    "name": "Master Bedroom AC 16",
+    "entity_id": "climate.e591",
+    "state": "off",
+    "attrs": {}
+   },
+   "e600": {
+    "name": "Abhi's AC 17",
+    "entity_id": "climate.e600",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e609": {
+    "name": "Master Bedroom AC 17",
+    "entity_id": "climate.e609",
+    "state": "off",
+    "attrs": {}
+   },
+   "e618": {
+    "name": "Abhi's AC 17",
+    "entity_id": "climate.e618",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e627": {
+    "name": "Master Bedroom AC 17",
+    "entity_id": "climate.e627",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e636": {
+    "name": "Abhi's AC 17",
+    "entity_id": "climate.e636",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e645": {
+    "name": "Master Bedroom AC 18",
+    "entity_id": "climate.e645",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e654": {
+    "name": "Abhi's AC 18",
+    "entity_id": "climate.e654",
+    "state": "off",
+    "area": "pooja_room",
+    "attrs": {}
+   },
+   "e663": {
+    "name": "Master Bedroom AC 18",
+    "entity_id": "climate.e663",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e672": {
+    "name": "Abhi's AC 18",
+    "entity_id": "climate.e672",
+    "state": "off",
+    "area": "abhis_room",
+    "attrs": {}
+   },
+   "e681": {
+    "name": "Master Bedroom AC 19",
+    "entity_id": "climate.e681",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e690": {
+    "name": "Abhi's AC 19",
+    "entity_id": "climate.e690",
+    "state": "unavailable",
+    "area": "pooja_room",
+    "attrs": {}
+   }
+  },
+  "update": {
+   "e7": {
+    "name": "Home Assistant Core Update",
+    "entity_id": "update.e7",
+    "state": "off",
+    "attrs": {}
+   },
+   "e16": {
+    "name": "Mosquitto broker Update",
+    "entity_id": "update.e16",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e25": {
+    "name": "Zigbee2MQTT Update",
+    "entity_id": "update.e25",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e34": {
+    "name": "Home Assistant Core Update 2",
+    "entity_id": "update.e34",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e43": {
+    "name": "Mosquitto broker Update 3",
+    "entity_id": "update.e43",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e52": {
+    "name": "Zigbee2MQTT Update 3",
+    "entity_id": "update.e52",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e61": {
+    "name": "Home Assistant Core Update 3",
+    "entity_id": "update.e61",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e70": {
+    "name": "Mosquitto broker Update 3",
+    "entity_id": "update.e70",
+    "state": "off",
+    "attrs": {}
+   },
+   "e79": {
+    "name": "Zigbee2MQTT Update 3",
+    "entity_id": "update.e79",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e88": {
+    "name": "Home Assistant Core Update 4",
+    "entity_id": "update.e88",
+    "state": "off",
+    "attrs": {}
+   },
+   "e97": {
+    "name": "Mosquitto broker Update 4",
+    "entity_id": "update.e97",
+    "state": "off",
+    "attrs": {}
+   },
+   "e106": {
+    "name": "Zigbee2MQTT Update 4",
+    "entity_id": "update.e106",
+    "state": "off",
+    "attrs": {}
+   },
+   "e115": {
+    "name": "Home Assistant Core Update 4",
+    "entity_id": "update.e115",
+    "state": "off",
+    "attrs": {}
+   },
+   "e124": {
+    "name": "Mosquitto broker Update 5",
+    "entity_id": "update.e124",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e133": {
+    "name": "Zigbee2MQTT Update 5",
+    "entity_id": "update.e133",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e142": {
+    "name": "Home Assistant Core Update 5",
+    "entity_id": "update.e142",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e151": {
+    "name": "Mosquitto broker Update 5",
+    "entity_id": "update.e151",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e160": {
+    "name": "Zigbee2MQTT Update 6",
+    "entity_id": "update.e160",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e169": {
+    "name": "Home Assistant Core Update 6",
+    "entity_id": "update.e169",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e178": {
+    "name": "Mosquitto broker Update 6",
+    "entity_id": "update.e178",
+    "state": "off",
+    "attrs": {}
+   },
+   "e187": {
+    "name": "Zigbee2MQTT Update 6",
+    "entity_id": "update.e187",
+    "state": "off",
+    "attrs": {}
+   },
+   "e196": {
+    "name": "Home Assistant Core Update 6",
+    "entity_id": "update.e196",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e205": {
+    "name": "Mosquitto broker Update 7",
+    "entity_id": "update.e205",
+    "state": "off",
+    "attrs": {}
+   },
+   "e214": {
+    "name": "Zigbee2MQTT Update 7",
+    "entity_id": "update.e214",
+    "state": "off",
+    "attrs": {}
+   },
+   "e223": {
+    "name": "Home Assistant Core Update 7",
+    "entity_id": "update.e223",
+    "state": "off",
+    "attrs": {}
+   },
+   "e232": {
+    "name": "Mosquitto broker Update 7",
+    "entity_id": "update.e232",
+    "state": "off",
+    "attrs": {}
+   },
+   "e241": {
+    "name": "Zigbee2MQTT Update 8",
+    "entity_id": "update.e241",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e250": {
+    "name": "Home Assistant Core Update 8",
+    "entity_id": "update.e250",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e259": {
+    "name": "Mosquitto broker Update 8",
+    "entity_id": "update.e259",
+    "state": "off",
+    "attrs": {}
+   },
+   "e268": {
+    "name": "Zigbee2MQTT Update 8",
+    "entity_id": "update.e268",
+    "state": "off",
+    "attrs": {}
+   },
+   "e277": {
+    "name": "Home Assistant Core Update 8",
+    "entity_id": "update.e277",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e286": {
+    "name": "Mosquitto broker Update 9",
+    "entity_id": "update.e286",
+    "state": "off",
+    "attrs": {}
+   },
+   "e295": {
+    "name": "Zigbee2MQTT Update 9",
+    "entity_id": "update.e295",
+    "state": "off",
+    "attrs": {}
+   },
+   "e304": {
+    "name": "Home Assistant Core Update 9",
+    "entity_id": "update.e304",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e313": {
+    "name": "Mosquitto broker Update 9",
+    "entity_id": "update.e313",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e322": {
+    "name": "Zigbee2MQTT Update 10",
+    "entity_id": "update.e322",
+    "state": "off",
+    "attrs": {}
+   },
+   "e331": {
+    "name": "Home Assistant Core Update 10",
+    "entity_id": "update.e331",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e340": {
+    "name": "Mosquitto broker Update 10",
+    "entity_id": "update.e340",
+    "state": "off",
+    "attrs": {}
+   },
+   "e349": {
+    "name": "Zigbee2MQTT Update 10",
+    "entity_id": "update.e349",
+    "state": "off",
+    "attrs": {}
+   },
+   "e358": {
+    "name": "Home Assistant Core Update 10",
+    "entity_id": "update.e358",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e367": {
+    "name": "Mosquitto broker Update 11",
+    "entity_id": "update.e367",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e376": {
+    "name": "Zigbee2MQTT Update 11",
+    "entity_id": "update.e376",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e385": {
+    "name": "Home Assistant Core Update 11",
+    "entity_id": "update.e385",
+    "state": "off",
+    "attrs": {}
+   },
+   "e394": {
+    "name": "Mosquitto broker Update 11",
+    "entity_id": "update.e394",
+    "state": "off",
+    "attrs": {}
+   },
+   "e403": {
+    "name": "Zigbee2MQTT Update 12",
+    "entity_id": "update.e403",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e412": {
+    "name": "Home Assistant Core Update 12",
+    "entity_id": "update.e412",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e421": {
+    "name": "Mosquitto broker Update 12",
+    "entity_id": "update.e421",
+    "state": "off",
+    "attrs": {}
+   },
+   "e430": {
+    "name": "Zigbee2MQTT Update 12",
+    "entity_id": "update.e430",
+    "state": "off",
+    "attrs": {}
+   },
+   "e439": {
+    "name": "Home Assistant Core Update 12",
+    "entity_id": "update.e439",
+    "state": "off",
+    "attrs": {}
+   },
+   "e448": {
+    "name": "Mosquitto broker Update 13",
+    "entity_id": "update.e448",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e457": {
+    "name": "Zigbee2MQTT Update 13",
+    "entity_id": "update.e457",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e466": {
+    "name": "Home Assistant Core Update 13",
+    "entity_id": "update.e466",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e475": {
+    "name": "Mosquitto broker Update 13",
+    "entity_id": "update.e475",
+    "state": "off",
+    "attrs": {}
+   },
+   "e484": {
+    "name": "Zigbee2MQTT Update 14",
+    "entity_id": "update.e484",
+    "state": "off",
+    "attrs": {}
+   },
+   "e493": {
+    "name": "Home Assistant Core Update 14",
+    "entity_id": "update.e493",
+    "state": "off",
+    "attrs": {}
+   },
+   "e502": {
+    "name": "Mosquitto broker Update 14",
+    "entity_id": "update.e502",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e511": {
+    "name": "Zigbee2MQTT Update 14",
+    "entity_id": "update.e511",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e520": {
+    "name": "Home Assistant Core Update 15",
+    "entity_id": "update.e520",
+    "state": "off",
+    "attrs": {}
+   },
+   "e529": {
+    "name": "Mosquitto broker Update 15",
+    "entity_id": "update.e529",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e538": {
+    "name": "Zigbee2MQTT Update 15",
+    "entity_id": "update.e538",
+    "state": "off",
+    "attrs": {}
+   },
+   "e547": {
+    "name": "Home Assistant Core Update 15",
+    "entity_id": "update.e547",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e556": {
+    "name": "Mosquitto broker Update 15",
+    "entity_id": "update.e556",
+    "state": "off",
+    "attrs": {}
+   },
+   "e565": {
+    "name": "Zigbee2MQTT Update 16",
+    "entity_id": "update.e565",
+    "state": "off",
+    "attrs": {}
+   },
+   "e574": {
+    "name": "Home Assistant Core Update 16",
+    "entity_id": "update.e574",
+    "state": "off",
+    "attrs": {}
+   },
+   "e583": {
+    "name": "Mosquitto broker Update 16",
+    "entity_id": "update.e583",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e592": {
+    "name": "Zigbee2MQTT Update 16",
+    "entity_id": "update.e592",
+    "state": "off",
+    "attrs": {}
+   },
+   "e601": {
+    "name": "Home Assistant Core Update 17",
+    "entity_id": "update.e601",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e610": {
+    "name": "Mosquitto broker Update 17",
+    "entity_id": "update.e610",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e619": {
+    "name": "Zigbee2MQTT Update 17",
+    "entity_id": "update.e619",
+    "state": "off",
+    "attrs": {}
+   },
+   "e628": {
+    "name": "Home Assistant Core Update 17",
+    "entity_id": "update.e628",
+    "state": "off",
+    "attrs": {}
+   },
+   "e637": {
+    "name": "Mosquitto broker Update 17",
+    "entity_id": "update.e637",
+    "state": "off",
+    "attrs": {}
+   },
+   "e646": {
+    "name": "Zigbee2MQTT Update 18",
+    "entity_id": "update.e646",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e655": {
+    "name": "Home Assistant Core Update 18",
+    "entity_id": "update.e655",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e664": {
+    "name": "Mosquitto broker Update 18",
+    "entity_id": "update.e664",
+    "state": "off",
+    "attrs": {}
+   },
+   "e673": {
+    "name": "Zigbee2MQTT Update 18",
+    "entity_id": "update.e673",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e682": {
+    "name": "Home Assistant Core Update 19",
+    "entity_id": "update.e682",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e691": {
+    "name": "Mosquitto broker Update 19",
+    "entity_id": "update.e691",
+    "state": "unavailable",
+    "attrs": {}
+   }
+  },
+  "device_tracker": {
+   "e8": {
+    "name": "Sibhi's iPhone",
+    "entity_id": "device_tracker.e8",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e17": {
+    "name": "Abhi's Pixel",
+    "entity_id": "device_tracker.e17",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e26": {
+    "name": "Sibhi's iPhone 2",
+    "entity_id": "device_tracker.e26",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e35": {
+    "name": "Abhi's Pixel 2",
+    "entity_id": "device_tracker.e35",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e44": {
+    "name": "Sibhi's iPhone 3",
+    "entity_id": "device_tracker.e44",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e53": {
+    "name": "Abhi's Pixel 3",
+    "entity_id": "device_tracker.e53",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e62": {
+    "name": "Sibhi's iPhone 3",
+    "entity_id": "device_tracker.e62",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e71": {
+    "name": "Abhi's Pixel 3",
+    "entity_id": "device_tracker.e71",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e80": {
+    "name": "Sibhi's iPhone 4",
+    "entity_id": "device_tracker.e80",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e89": {
+    "name": "Abhi's Pixel 4",
+    "entity_id": "device_tracker.e89",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e98": {
+    "name": "Sibhi's iPhone 4",
+    "entity_id": "device_tracker.e98",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e107": {
+    "name": "Abhi's Pixel 4",
+    "entity_id": "device_tracker.e107",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e116": {
+    "name": "Sibhi's iPhone 4",
+    "entity_id": "device_tracker.e116",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e125": {
+    "name": "Abhi's Pixel 5",
+    "entity_id": "device_tracker.e125",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e134": {
+    "name": "Sibhi's iPhone 5",
+    "entity_id": "device_tracker.e134",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e143": {
+    "name": "Abhi's Pixel 5",
+    "entity_id": "device_tracker.e143",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e152": {
+    "name": "Sibhi's iPhone 5",
+    "entity_id": "device_tracker.e152",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e161": {
+    "name": "Abhi's Pixel 6",
+    "entity_id": "device_tracker.e161",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e170": {
+    "name": "Sibhi's iPhone 6",
+    "entity_id": "device_tracker.e170",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e179": {
+    "name": "Abhi's Pixel 6",
+    "entity_id": "device_tracker.e179",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e188": {
+    "name": "Sibhi's iPhone 6",
+    "entity_id": "device_tracker.e188",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e197": {
+    "name": "Abhi's Pixel 6",
+    "entity_id": "device_tracker.e197",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e206": {
+    "name": "Sibhi's iPhone 7",
+    "entity_id": "device_tracker.e206",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e215": {
+    "name": "Abhi's Pixel 7",
+    "entity_id": "device_tracker.e215",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e224": {
+    "name": "Sibhi's iPhone 7",
+    "entity_id": "device_tracker.e224",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e233": {
+    "name": "Abhi's Pixel 7",
+    "entity_id": "device_tracker.e233",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e242": {
+    "name": "Sibhi's iPhone 8",
+    "entity_id": "device_tracker.e242",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e251": {
+    "name": "Abhi's Pixel 8",
+    "entity_id": "device_tracker.e251",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e260": {
+    "name": "Sibhi's iPhone 8",
+    "entity_id": "device_tracker.e260",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e269": {
+    "name": "Abhi's Pixel 8",
+    "entity_id": "device_tracker.e269",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e278": {
+    "name": "Sibhi's iPhone 8",
+    "entity_id": "device_tracker.e278",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e287": {
+    "name": "Abhi's Pixel 9",
+    "entity_id": "device_tracker.e287",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e296": {
+    "name": "Sibhi's iPhone 9",
+    "entity_id": "device_tracker.e296",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e305": {
+    "name": "Abhi's Pixel 9",
+    "entity_id": "device_tracker.e305",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e314": {
+    "name": "Sibhi's iPhone 9",
+    "entity_id": "device_tracker.e314",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e323": {
+    "name": "Abhi's Pixel 10",
+    "entity_id": "device_tracker.e323",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e332": {
+    "name": "Sibhi's iPhone 10",
+    "entity_id": "device_tracker.e332",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e341": {
+    "name": "Abhi's Pixel 10",
+    "entity_id": "device_tracker.e341",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e350": {
+    "name": "Sibhi's iPhone 10",
+    "entity_id": "device_tracker.e350",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e359": {
+    "name": "Abhi's Pixel 10",
+    "entity_id": "device_tracker.e359",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e368": {
+    "name": "Sibhi's iPhone 11",
+    "entity_id": "device_tracker.e368",
+    "state": "42.0",
+    "attrs": {}
+   },
+   "e377": {
+    "name": "Abhi's Pixel 11",
+    "entity_id": "device_tracker.e377",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e386": {
+    "name": "Sibhi's iPhone 11",
+    "entity_id": "device_tracker.e386",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e395": {
+    "name": "Abhi's Pixel 11",
+    "entity_id": "device_tracker.e395",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e404": {
+    "name": "Sibhi's iPhone 12",
+    "entity_id": "device_tracker.e404",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e413": {
+    "name": "Abhi's Pixel 12",
+    "entity_id": "device_tracker.e413",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e422": {
+    "name": "Sibhi's iPhone 12",
+    "entity_id": "device_tracker.e422",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e431": {
+    "name": "Abhi's Pixel 12",
+    "entity_id": "device_tracker.e431",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e440": {
+    "name": "Sibhi's iPhone 13",
+    "entity_id": "device_tracker.e440",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e449": {
+    "name": "Abhi's Pixel 13",
+    "entity_id": "device_tracker.e449",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e458": {
+    "name": "Sibhi's iPhone 13",
+    "entity_id": "device_tracker.e458",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e467": {
+    "name": "Abhi's Pixel 13",
+    "entity_id": "device_tracker.e467",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e476": {
+    "name": "Sibhi's iPhone 13",
+    "entity_id": "device_tracker.e476",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e485": {
+    "name": "Abhi's Pixel 14",
+    "entity_id": "device_tracker.e485",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e494": {
+    "name": "Sibhi's iPhone 14",
+    "entity_id": "device_tracker.e494",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e503": {
+    "name": "Abhi's Pixel 14",
+    "entity_id": "device_tracker.e503",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e512": {
+    "name": "Sibhi's iPhone 14",
+    "entity_id": "device_tracker.e512",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e521": {
+    "name": "Abhi's Pixel 15",
+    "entity_id": "device_tracker.e521",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e530": {
+    "name": "Sibhi's iPhone 15",
+    "entity_id": "device_tracker.e530",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e539": {
+    "name": "Abhi's Pixel 15",
+    "entity_id": "device_tracker.e539",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e548": {
+    "name": "Sibhi's iPhone 15",
+    "entity_id": "device_tracker.e548",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e557": {
+    "name": "Abhi's Pixel 15",
+    "entity_id": "device_tracker.e557",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e566": {
+    "name": "Sibhi's iPhone 16",
+    "entity_id": "device_tracker.e566",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e575": {
+    "name": "Abhi's Pixel 16",
+    "entity_id": "device_tracker.e575",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e584": {
+    "name": "Sibhi's iPhone 16",
+    "entity_id": "device_tracker.e584",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e593": {
+    "name": "Abhi's Pixel 16",
+    "entity_id": "device_tracker.e593",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e602": {
+    "name": "Sibhi's iPhone 17",
+    "entity_id": "device_tracker.e602",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e611": {
+    "name": "Abhi's Pixel 17",
+    "entity_id": "device_tracker.e611",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e620": {
+    "name": "Sibhi's iPhone 17",
+    "entity_id": "device_tracker.e620",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e629": {
+    "name": "Abhi's Pixel 17",
+    "entity_id": "device_tracker.e629",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e638": {
+    "name": "Sibhi's iPhone 17",
+    "entity_id": "device_tracker.e638",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e647": {
+    "name": "Abhi's Pixel 18",
+    "entity_id": "device_tracker.e647",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e656": {
+    "name": "Sibhi's iPhone 18",
+    "entity_id": "device_tracker.e656",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e665": {
+    "name": "Abhi's Pixel 18",
+    "entity_id": "device_tracker.e665",
+    "state": "unavailable",
+    "attrs": {}
+   },
+   "e674": {
+    "name": "Sibhi's iPhone 18",
+    "entity_id": "device_tracker.e674",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e683": {
+    "name": "Abhi's Pixel 19",
+    "entity_id": "device_tracker.e683",
+    "state": "not_home",
+    "attrs": {}
+   },
+   "e692": {
+    "name": "Sibhi's iPhone 19",
+    "entity_id": "device_tracker.e692",
+    "state": "not_home",
+    "attrs": {}
+   }
+  }
+ },
+ "irrigation": {
+  "dcon": {
+   "device": "SibhiSump",
+   "serial": "MCON874Q000568",
+   "lastPacket": "2026-02-22 09:00:43",
+   "serverTime": "2026-02-22 09:04:04",
+   "timeZone": "+05:30"
+  },
+  "valveNames": [
+   {
+    "id": "4",
+    "name": "4 Veg",
+    "type": "Irrigation"
+   },
+   {
+    "id": "6",
+    "name": "6 Kulam",
+    "type": "Irrigation"
+   },
+   {
+    "id": "2",
+    "name": "2 BPump",
+    "type": "Booster Pump"
+   }
+  ],
+  "valves": [
+   {
+    "id": "V012",
+    "name": "East orchard valve",
+    "status": "on",
+    "runtime": "1h 20m"
+   },
+   {
+    "id": "V015",
+    "name": "Nursery valve",
+    "status": "off",
+    "runtime": "40m"
+   }
+  ],
+  "timerLog": [
+   {
+    "at": "2026-02-22 06:00",
+    "event": "timer",
+    "detail": "Timer 12 completed"
+   }
+  ],
+  "motorLog": [
+   {
+    "at": "2026-02-22 06:05",
+    "event": "motor",
+    "detail": "Well motor stopped"
+   }
+  ],
+  "electricity": [
+   {
+    "at": "2026-02-22 06:00",
+    "value": "4.2",
+    "unit": "kWh"
+   }
+  ],
+  "pressure": [
+   {
+    "at": "2026-02-22 06:00",
+    "value": "2.1",
+    "unit": "bar"
+   }
+  ],
+  "meta": {
+   "sources": {
+    "dcon": "ok"
+   },
+   "error": ""
+  }
+ },
+ "irrigation_reports": {
+  "rep_seed1": {
+   "type": "timer_log",
+   "label": "Timer log",
+   "params": {
+    "from": "2026-02-20",
+    "to": "2026-02-22"
+   },
+   "status": "ok",
+   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "rows": [
+    {
+     "at": "2026-02-22 06:00",
+     "event": "timer",
+     "detail": "Timer 12 completed"
+    }
+   ],
+   "at": 1790150023768
+  },
+  "rep_seed2": {
+   "type": "performance",
+   "label": "Valve runtime against pressure",
+   "params": {
+    "from": "2026-02-20",
+    "to": "2026-02-22"
+   },
+   "status": "ok",
+   "summary": "4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22",
+   "sections": [
+    {
+     "kind": "metrics",
+     "title": "Valves",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "label": "Valves run",
+       "value": 3,
+       "unit": "",
+       "note": "of 3 in 2026-02-20 → 2026-02-22"
+      },
+      {
+       "label": "Total runtime",
+       "value": "4h 5m",
+       "unit": "",
+       "note": "longest 2h 5m"
+      },
+      {
+       "label": "Open now",
+       "value": 1,
+       "unit": "",
+       "note": "at the time of the pull"
+      }
+     ]
+    },
+    {
+     "kind": "bars",
+     "title": "Runtime per valve",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "name": "Packing shed valve",
+       "value": 125,
+       "unit": "min",
+       "status": "off"
+      },
+      {
+       "name": "East orchard valve",
+       "value": 80,
+       "unit": "min",
+       "status": "on"
+      },
+      {
+       "name": "Nursery valve",
+       "value": 40,
+       "unit": "min",
+       "status": "off"
+      }
+     ]
+    },
+    {
+     "kind": "metrics",
+     "title": "Pressure",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "label": "Average",
+       "value": 2.08,
+       "unit": "bar",
+       "note": "6 readings"
+      },
+      {
+       "label": "Low",
+       "value": 1.6,
+       "unit": "bar",
+       "note": "2026-02-20 → 2026-02-22"
+      },
+      {
+       "label": "High",
+       "value": 2.6,
+       "unit": "bar",
+       "note": "2026-02-20 → 2026-02-22"
+      }
+     ]
+    },
+    {
+     "kind": "series",
+     "title": "Pressure over time",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "at": "2026-02-20 06:00",
+       "value": "1.8",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-20 12:00",
+       "value": "2.4",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-20 18:00",
+       "value": "2.0",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-22 06:00",
+       "value": "1.6",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-22 12:00",
+       "value": "2.6",
+       "unit": "bar"
+      },
+      {
+       "at": "2026-02-22 18:00",
+       "value": "2.1",
+       "unit": "bar"
+      }
+     ]
+    }
+   ],
+   "rows": [],
+   "at": 1790146423768
+  },
+  "rep_seed3": {
+   "type": "session_log",
+   "label": "Irrigation session log",
+   "params": {
+    "from": "2026-02-20",
+    "to": "2026-02-22"
+   },
+   "status": "partial",
+   "summary": "1 entries · 2026-02-20 → 2026-02-22",
+   "error": "DCON logs: POST -> 500",
+   "sections": [
+    {
+     "kind": "metrics",
+     "title": "Entries",
+     "note": "",
+     "source": "",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "label": "Timer entries",
+       "value": 1,
+       "unit": "",
+       "note": "2026-02-20 → 2026-02-22"
+      },
+      {
+       "label": "Motor entries",
+       "value": 0,
+       "unit": "",
+       "note": "DCON logs: POST -> 500"
+      }
+     ]
+    },
+    {
+     "kind": "timeline",
+     "title": "Combined log",
+     "note": "",
+     "source": "dcon",
+     "status": "ok",
+     "error": "",
+     "rows": [
+      {
+       "at": "2026-02-22 06:00",
+       "event": "timer",
+       "detail": "Timer 12 completed",
+       "source": "timer"
+      }
+     ]
+    },
+    {
+     "kind": "timeline",
+     "title": "Motor log",
+     "note": "",
+     "source": "dcon",
+     "status": "error",
+     "error": "DCON logs: POST -> 500",
+     "rows": []
+    }
+   ],
+   "rows": [],
+   "at": 1790142823768
+  }
+ }
+}

@@ -1,0 +1,85 @@
+# Generates SNOF.xcodeproj — run `xcodegen` in this directory. The .xcodeproj
+# is not committed; this file is the source of truth for it.
+name: SNOF
+options:
+  bundleIdPrefix: com.sibhiorchards
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    TARGETED_DEVICE_FAMILY: "1,2"
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: "12.0.0"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "9.0.0"
+  SNOFCore:
+    path: SNOFCore
+targets:
+  SNOF:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: Config/App.xcconfig
+      Release: Config/App.xcconfig
+    sources:
+      # Includes SNOF/Firebase/GoogleService-Info.plist when it exists —
+      # written by scripts/fetch-firebase-config.sh, never committed. Without
+      # it the app runs on bundled demo data and says so on every screen.
+      - path: SNOF
+    dependencies:
+      - package: SNOFCore
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseDatabase
+      - package: GoogleSignIn
+        product: GoogleSignIn
+    info:
+      path: SNOF/Info.plist
+      properties:
+        CFBundleDisplayName: SNOF
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        # Where UpdateCheck looks for a newer build — the same file SideStore reads.
+        SNOFSourceURL: $(SNOF_SOURCE_URL)
+        # Google Sign-In returns to the app on this scheme. The value comes
+        # from REVERSED_CLIENT_ID in GoogleService-Info.plist, via
+        # Config/Firebase.xcconfig (generated, not committed).
+        CFBundleURLTypes:
+          - CFBundleURLName: google-signin
+            CFBundleURLSchemes:
+              - $(GOOGLE_REVERSED_CLIENT_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SNOF_BUNDLE_ID)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        # Lets the app run on a Mac with no simulator installed — the quickest
+        # way to look at it. Not a shipping target.
+        SUPPORTS_MACCATALYST: YES
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+      configs:
+        # The production-shaped fixture carries real room and device names.
+        # It is for screenshots on a dev Mac; a published .ipa must not ship it.
+        Release:
+          EXCLUDED_SOURCE_FILE_NAMES: mock-farm-real.json

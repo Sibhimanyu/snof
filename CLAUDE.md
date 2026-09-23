@@ -15,6 +15,7 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | Irrigation reports (Mobitech DCON) | [docs/irrigation.md](docs/irrigation.md) |
 | Hosting, rules, the allowlist | [docs/firebase-deploy.md](docs/firebase-deploy.md) |
 | Tests or the preview harness | [docs/testing-and-preview.md](docs/testing-and-preview.md) |
+| `ios/` (native app) | [docs/ios-app.md](docs/ios-app.md) |
 
 Architecture and data shape are in README.md.
 
@@ -170,3 +171,9 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   from them.
 - The SSH add-on had a plaintext `password:` in its options; it was still there
   on 2026-09-22 and should be removed and rotated now that key auth is proven.
+- **iOS app released** on 2026-09-23: `0.1.0 (202609231510)` at
+  https://snof-ios.web.app (its own Hosting site, separate from the
+  dashboard), installed through SideStore from `source.json`. `snof-live` is
+  on **Blaze**, because Spark refuses `.ipa` files on Hosting. Release with
+  `ios/scripts/release.sh "notes"`. Not yet proven on a device: Google sign-in
+  under SideStore's renamed bundle ID (`com.sibhiorchards.snof.<TEAMID>`).
