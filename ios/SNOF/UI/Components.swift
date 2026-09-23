@@ -43,7 +43,11 @@ struct StatePill: View {
     let tone: StateTone
 
     var body: some View {
-        Text(text)
+        // On is a green dot and green text on a neutral pill, not a green wash.
+        HStack(spacing: 5) {
+            if tone == .on { Circle().fill(Theme.brand).frame(width: 6, height: 6) }
+            Text(text)
+        }
             .font(.caption.weight(.semibold).monospacedDigit())
             .lineLimit(1)
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -55,14 +59,14 @@ struct StatePill: View {
 
     private var background: Color {
         switch tone {
-        case .on: return Theme.on.opacity(0.13)
+        case .on: return Theme.panel2
         case .unavailable: return Theme.bad.opacity(0.12)
         default: return Theme.panel2
         }
     }
     private var border: Color {
         switch tone {
-        case .on: return Theme.on.opacity(0.34)
+        case .on: return Theme.line2
         case .unavailable: return Theme.bad.opacity(0.32)
         default: return Theme.line
         }
@@ -79,8 +83,9 @@ struct Tag: View {
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 7).padding(.vertical, 3)
             .foregroundStyle(fg)
-            .background(fg.opacity(kind == .plain ? 0 : 0.12), in: Capsule())
-            .overlay(Capsule().strokeBorder(kind == .plain ? Theme.line2 : fg.opacity(0.32), lineWidth: 1))
+            // Warnings and errors keep a faint tint; green never does.
+            .background(kind == .plain || kind == .on ? Color.clear : fg.opacity(0.12), in: Capsule())
+            .overlay(Capsule().strokeBorder(kind == .plain || kind == .on ? Theme.line2 : fg.opacity(0.32), lineWidth: 1))
     }
     private var fg: Color {
         switch kind {
@@ -202,7 +207,7 @@ struct DeviceIcon: View {
             .font(.system(size: size * 0.44))
             .foregroundStyle(tone == .on ? Theme.on : tone == .unavailable ? Theme.bad : Theme.muted)
             .frame(width: size, height: size)
-            .background(tone == .on ? Theme.on.opacity(0.13) : Theme.panel2,
+            .background(Theme.panel2,
                         in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
     }
 }

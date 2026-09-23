@@ -4,23 +4,26 @@ import SNOFCore
 /* The web dashboard's tokens (dashboard/public/styles.css), carried over
  * value for value. Near-monochrome on purpose: greys carry the layout, and
  * colour appears only where it means something — green on/live, amber stale,
- * muted red unavailable/error. Never as decoration, never as the only signal. */
+ * muted red unavailable/error. Never as decoration, never as the only signal.
+ * Surfaces are always neutral: green is a solid accent (toggle, dot, bar,
+ * line, green text) and never a tinted background behind anything. Dark is
+ * Graphite; light is a warm off-white. */
 enum Theme {
-    static let bg = dyn(light: 0xf4f4f3, dark: 0x111111)
+    static let bg = dyn(light: 0xf5f3ee, dark: 0x111111)
     static let panel = dyn(light: 0xffffff, dark: 0x1a1a1a)
-    static let panel2 = dyn(light: 0xf5f5f4, dark: 0x212121)
-    static let panel3 = dyn(light: 0xebebe9, dark: 0x292929)
-    static let line = dyn(light: 0xe2e2e0, dark: 0x272727)
-    static let line2 = dyn(light: 0xcfcfcc, dark: 0x363636)
-    static let text = dyn(light: 0x141414, dark: 0xe9e9e9)
-    static let muted = dyn(light: 0x5b5b5b, dark: 0x9b9b9b)
-    static let track = dyn(light: 0xdedede, dark: 0x2e2e2e)
+    static let panel2 = dyn(light: 0xf3f1ec, dark: 0x212121)
+    static let panel3 = dyn(light: 0xe9e6df, dark: 0x292929)
+    static let line = dyn(light: 0xe4e0d8, dark: 0x272727)
+    static let line2 = dyn(light: 0xd2cdc3, dark: 0x363636)
+    static let text = dyn(light: 0x171614, dark: 0xe9e9e9)
+    static let muted = dyn(light: 0x5e5a53, dark: 0x9b9b9b)
+    static let track = dyn(light: 0xdedad2, dark: 0x2e2e2e)
 
     /// The brand green, from the Sibhi Natural Orchards logo. Fills only:
     /// toggles, sliders, bars, chart lines, the live dot, primary buttons.
     static let brand = Color(UIColor(hex: 0x018843))
     /// Green text: the same hue, shaded per theme to clear 4.5:1 on every
-    /// surface it sits on, the tinted pill behind it included.
+    /// surface it sits on.
     static let on = dyn(light: 0x017a3c, dark: 0x01ae56)
     static let warn = dyn(light: 0x7a5a12, dark: 0xc9a45f)
     static let bad = dyn(light: 0xa13a3a, dark: 0xc47f7f)

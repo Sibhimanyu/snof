@@ -64,9 +64,15 @@ communicate state, not decoration.
 - Green means live or on only. It is the **brand green** from the Sibhi
   Natural Orchards logo, `#018843`, used exactly for fills (toggles, sliders,
   bars, chart lines, the live dot, primary buttons). Green *text* uses the
-  same hue shaded per theme to clear 4.5:1 on every surface, the tinted pill
-  behind it included: `#017a3c` light, `#01ae56` dark. Tokens: `--brand` /
-  `--accent` on the web, `Theme.brand` / `Theme.on` on iOS.
+  same hue shaded per theme to clear 4.5:1: `#017a3c` light, `#01ae56` dark.
+  Tokens: `--brand` / `--accent` on the web, `Theme.brand` / `Theme.on` on iOS.
+- **Green is never a background.** No tinted wash behind an icon, pill, tag,
+  selected item or chart; those surfaces are neutral, and the green is the
+  dot, the text, the toggle or the line. Chosen by the owner on 2026-09-23
+  after the washes read as "a greenish background".
+- Palettes: **Graphite** dark (`#111111` canvas, `#1a1a1a` panels) and a
+  **warm light** (`#f5f3ee` canvas, white panels, `#171614` text). The OS
+  setting picks between them.
 - Amber means stale only.
 - Muted red means unavailable or error only.
 - Do not use gradients, glow, glassmorphism, neon, or an accent colour without

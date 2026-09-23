@@ -311,8 +311,6 @@ private struct Series: View {
         if pts.count >= 2, let lo = pts.map(\.2).min(), let hi = pts.map(\.2).max(), let last = pts.last {
             VStack(alignment: .leading, spacing: 6) {
                 Chart(pts, id: \.0) { p in
-                    AreaMark(x: .value("Reading", p.0), y: .value("Value", p.2))
-                        .foregroundStyle(Theme.brand.opacity(0.14))
                     LineMark(x: .value("Reading", p.0), y: .value("Value", p.2))
                         .foregroundStyle(Theme.brand)
                         .interpolationMethod(.monotone)
