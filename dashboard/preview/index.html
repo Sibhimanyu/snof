@@ -45,6 +45,7 @@
   <symbol id="n-areas" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
   <symbol id="n-devices" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1.5"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></symbol>
   <symbol id="n-irrigation" viewBox="0 0 24 24"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M4 20h16"/></symbol>
+  <symbol id="n-admin" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
   <symbol id="n-signout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
@@ -94,16 +95,17 @@
         <span class="side-brand-sub">Natural Orchards</span>
       </span>
       <button id="nav-close" class="icon-btn only-narrow" aria-label="Close menu">
-        <svg class="ico"><use href="#i-close"/></svg>
+        <svg viewBox="0 0 24 24" class="ico"><use href="#i-close"/></svg>
       </button>
     </div>
 
     <nav class="side-nav" aria-label="Main">
       <p class="side-label">Main menu</p>
-      <a class="nav-item" href="#/" data-nav="overview"><svg class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
-      <a class="nav-item" href="#/areas" data-nav="areas"><svg class="ico"><use href="#n-areas"/></svg><span>Areas</span><span class="nav-n" id="nav-areas-n"></span></a>
-      <a class="nav-item" href="#/devices" data-nav="devices"><svg class="ico"><use href="#n-devices"/></svg><span>All devices</span><span class="nav-n" id="nav-devices-n"></span></a>
-      <a class="nav-item" href="#/irrigation" data-nav="irrigation"><svg class="ico"><use href="#n-irrigation"/></svg><span>Irrigation</span><span class="nav-n" id="nav-irrig-n"></span></a>
+      <a class="nav-item" href="#/" data-nav="overview"><svg viewBox="0 0 24 24" class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
+      <a class="nav-item" href="#/areas" data-nav="areas"><svg viewBox="0 0 24 24" class="ico"><use href="#n-areas"/></svg><span>Areas</span><span class="nav-n" id="nav-areas-n"></span></a>
+      <a class="nav-item" href="#/devices" data-nav="devices"><svg viewBox="0 0 24 24" class="ico"><use href="#n-devices"/></svg><span>All devices</span><span class="nav-n" id="nav-devices-n"></span></a>
+      <a class="nav-item" href="#/irrigation" data-nav="irrigation"><svg viewBox="0 0 24 24" class="ico"><use href="#n-irrigation"/></svg><span>Irrigation</span><span class="nav-n" id="nav-irrig-n"></span></a>
+      <a class="nav-item nav-admin" href="#/admin" data-nav="admin" hidden><svg viewBox="0 0 24 24" class="ico"><use href="#n-admin"/></svg><span>Admin</span></a>
     </nav>
 
     <div class="side-foot">
@@ -112,25 +114,28 @@
           <span class="dot"></span><span id="bridge-text">connecting</span>
         </span>
       </div>
-      <button id="signout" class="nav-item nav-btn"><svg class="ico"><use href="#n-signout"/></svg><span>Sign out</span></button>
+      <button id="signout" class="nav-item nav-btn"><svg viewBox="0 0 24 24" class="ico"><use href="#n-signout"/></svg><span>Sign out</span></button>
     </div>
   </aside>
 
   <div class="main">
     <header class="topbar">
       <button id="nav-open" class="icon-btn only-narrow" aria-label="Open menu" aria-controls="sidebar">
-        <svg class="ico"><use href="#i-menu"/></svg>
+        <svg viewBox="0 0 24 24" class="ico"><use href="#i-menu"/></svg>
       </button>
 
       <div class="search-wrap">
-        <svg class="ico search-icon"><use href="#i-search"/></svg>
+        <svg viewBox="0 0 24 24" class="ico search-icon"><use href="#i-search"/></svg>
         <input id="search" type="search" aria-label="Search devices and areas" placeholder="Search devices, areas…" autocomplete="off" spellcheck="false">
       </div>
 
       <div class="topbar-right">
+        <span id="m-bridge" class="pill pill-unknown only-narrow" role="status">
+          <span class="dot"></span><span id="m-bridge-text">connecting</span>
+        </span>
         <button id="theme-btn" class="icon-btn" aria-label="Switch theme">
-          <svg class="ico ico-sun"><use href="#i-sun"/></svg>
-          <svg class="ico ico-moon"><use href="#i-moon"/></svg>
+          <svg viewBox="0 0 24 24" class="ico ico-sun"><use href="#i-sun"/></svg>
+          <svg viewBox="0 0 24 24" class="ico ico-moon"><use href="#i-moon"/></svg>
         </button>
         <div class="acct">
           <button id="acct-btn" class="acct-btn" aria-haspopup="menu" aria-expanded="false">
@@ -139,7 +144,7 @@
               <span class="acct-name" id="acct-name">Signed in</span>
               <span class="acct-role" id="acct-role">Viewer</span>
             </span>
-            <svg class="ico ico-sm acct-caret"><use href="#i-chevron"/></svg>
+            <svg viewBox="0 0 24 24" class="ico ico-sm acct-caret"><use href="#i-chevron"/></svg>
           </button>
           <div id="acct-menu" class="acct-menu" role="menu" hidden>
             <p class="acct-email" id="acct-email"></p>
@@ -153,6 +158,14 @@
 
     <footer class="foot"><span id="stats" role="status">Connecting…</span></footer>
   </div>
+
+  <nav class="tabbar only-narrow" aria-label="Main">
+    <a class="tab-item" href="#/" data-nav="overview"><svg viewBox="0 0 24 24" class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
+    <a class="tab-item" href="#/areas" data-nav="areas"><svg viewBox="0 0 24 24" class="ico"><use href="#n-areas"/></svg><span>Areas</span></a>
+    <a class="tab-item" href="#/devices" data-nav="devices"><svg viewBox="0 0 24 24" class="ico"><use href="#n-devices"/></svg><span>Devices</span></a>
+    <a class="tab-item" href="#/irrigation" data-nav="irrigation"><svg viewBox="0 0 24 24" class="ico"><use href="#n-irrigation"/></svg><span>Irrigation</span></a>
+    <a class="tab-item nav-admin" href="#/admin" data-nav="admin" hidden><svg viewBox="0 0 24 24" class="ico"><use href="#n-admin"/></svg><span>Admin</span></a>
+  </nav>
 </div>
 
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -225,11 +238,42 @@
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
   if(params.get('noirrig')) delete data.irrigation;
+  const M=(label,value,unit,note)=>({label,value,unit:unit||'',note:note||''});
+  const SEC=(kind,title,rows,extra)=>({kind,title,note:'',source:'dcon',status:'ok',error:'',rows:rows||[],...(extra||{})});
+  const PRESS=[{at:'2026-02-20 06:00',value:'1.8',unit:'bar'},{at:'2026-02-20 12:00',value:'2.4',unit:'bar'},
+    {at:'2026-02-20 18:00',value:'2.0',unit:'bar'},{at:'2026-02-22 06:00',value:'1.6',unit:'bar'},
+    {at:'2026-02-22 12:00',value:'2.6',unit:'bar'},{at:'2026-02-22 18:00',value:'2.1',unit:'bar'}];
+  const VALVE_BARS=[{name:'Packing shed valve',value:125,unit:'min',status:'off'},
+    {name:'East orchard valve',value:80,unit:'min',status:'on'},
+    {name:'Nursery valve',value:40,unit:'min',status:'off'}];
   data.irrigation_reports={
+    // A pre-sections report, kept on purpose: the card must still render
+    // history written before the section contract existed.
     rep_seed1:{type:'timer_log',label:'Timer log',params:{from:'2026-02-20',to:'2026-02-22'},
       status:'ok',summary:'1 entries · 2026-02-20 → 2026-02-22',
       rows:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
-      at:now-3600000}
+      at:now-3600000},
+    rep_seed2:{type:'performance',label:'Valve runtime against pressure',
+      params:{from:'2026-02-20',to:'2026-02-22'},status:'ok',
+      summary:'4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22',
+      sections:[
+        SEC('metrics','Valves',[M('Valves run',3,'','of 3 in 2026-02-20 → 2026-02-22'),
+          M('Total runtime','4h 5m','','longest 2h 5m'),M('Open now',1,'','at the time of the pull')]),
+        SEC('bars','Runtime per valve',VALVE_BARS),
+        SEC('metrics','Pressure',[M('Average',2.08,'bar','6 readings'),
+          M('Low',1.6,'bar','2026-02-20 → 2026-02-22'),M('High',2.6,'bar','2026-02-20 → 2026-02-22')]),
+        SEC('series','Pressure over time',PRESS)],
+      rows:[],at:now-7200000},
+    // One leg down: the card has to say "Partly ready", not "Ready".
+    rep_seed3:{type:'motors',label:'Motors — river and wells',params:{},status:'partial',
+      summary:'0 running of 2 motors',error:'Livesky is not configured',
+      sections:[
+        SEC('metrics','Now',[M('Motors running',0,'','of 2 reporting')],{source:''}),
+        SEC('status','Motors',[{name:'Well Motor 7.5HP',status:'off',meta:'cluster 6039',source:'niagara'},
+          {name:'Well zone valves',status:'unknown',meta:'cluster 6036',source:'niagara'}],{source:'niagara'}),
+        {kind:'status',title:'River motor',note:'',source:'livesky',status:'error',
+         error:'Livesky is not configured',rows:[]}],
+      rows:[],at:now-10800000}
   };
   if(params.get('noirrig')) delete data.irrigation_reports;
   if(params.get('big')){    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
@@ -246,35 +290,87 @@
   const user=params.get('gate')?null:{uid:'u1',email:'sibhi@example.com',displayName:'Sibhi Govindasamy'};
   const denied=params.get('denied');
   const controller=params.get('viewer')?false:true;
-  const store={'acl/controllers/u1':controller,'.info/serverTimeOffset':0};
+  const isAdmin=params.get('admin')==='0'?false:!params.get('viewer');
+  const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0};
+  // A couple of other accounts, so the Admin page has something to list.
+  data.acl={
+    admins:{u1:true},
+    viewers:{u1:true,u2:true,u3:true},
+    controllers:{u1:true,u2:true},
+    directory:{
+      u1:{email:'sibhi@example.com',name:'Sibhi Govindasamy',at:now-90*864e5},
+      u2:{email:'field.lead@example.com',name:'Field Lead',at:now-20*864e5},
+      u3:{email:'guest.viewer@example.com',name:'',at:now-3600000}
+    },
+    invites:{
+      'new,hire@example,com':{tier:'view',at:now-1800000}
+    }
+  };
   // Stand-in for the bridge: answering an irrigation_requests push with a
   // canned report, so Generate round-trips without vendor credentials.
   const listeners={};
   const fire=(p,val)=>{(listeners[p]||[]).forEach(cb=>{try{cb({val:()=>val});}catch(e){}});};
-  const irrLabels={river_status:'River motor status',well_status:'Well motor status',
-    controller:'Controller dashboard',weather:'Field weather',electricity:'Electricity snapshot',
-    pressure:'Pressure snapshot',valves:'Valve runtime',timer_log:'Timer log',
-    motor_log:'Motor log',pressure_range:'Pressure range'};
+  const irrLabels={motors:'Motors — river and wells',conditions:'Controller and field conditions',
+    live_readings:'Power and pressure now',session_log:'Irrigation session log',
+    performance:'Valve runtime against pressure',river_status:'River motor status',
+    well_status:'Well motor status',controller:'Controller dashboard',weather:'Field weather',
+    electricity:'Electricity snapshot',pressure:'Pressure snapshot',valves:'Valve runtime',
+    timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range'};
+  // Stands in for the bridge's section builders: same kinds, same row shapes,
+  // so what renders here is what renders against the NUC.
   const irrCanned=(type,from,to)=>{
-    const range=(from&&to)?` · ${from} → ${to}`:'';
-    const base={type,label:irrLabels[type]||type,params:{},status:'ok',at:Date.now()};
+    const win=(from&&to)?`${from} → ${to}`:'';
+    const range=win?' · '+win:'';
+    const base={type,label:irrLabels[type]||type,params:{},status:'ok',rows:[],at:Date.now()};
     if(from&&to) base.params={from,to};
-    if(type==='valves') return {...base,summary:'2 valves · 1 open'+range,
-      rows:[{id:'V012',name:'East orchard valve',status:'on',runtime:'1h 20m'},
-            {id:'V015',name:'Nursery valve',status:'off',runtime:'40m'}]};
-    if(type==='timer_log'||type==='motor_log') return {...base,summary:'1 entries'+range,
-      rows:[{at:(to||'2026-02-22')+' 06:00',event:type==='timer_log'?'timer':'motor',
-             detail:type==='timer_log'?'Timer 12 completed':'Well motor stopped'}]};
-    if(type==='river_status') return {...base,summary:'1 running of 1 motors',
-      rows:[{id:'river',name:'River Motor',status:'on',source:'livesky'}]};
-    if(type==='well_status') return {...base,summary:'0 running of 1 controllers',
-      rows:[{id:'6039',name:'Well Motor 7.5HP',status:'off',source:'niagara'}]};
+    const motorRows=[{name:'River Motor',status:'on',meta:'last update 06:10',source:'livesky'},
+      {name:'Well Motor 7.5HP',status:'off',meta:'cluster 6039',source:'niagara'}];
+    const facts=[{label:'Device',value:'DCON controller'},{label:'Serial',value:'MCON874Q000568'},
+      {label:'Connectivity',value:'connected'},{label:'Last completed',value:'Timer 12 · 08:20'},
+      {label:'Next scheduled',value:'Timer 13 · 06:00'}];
+    const weather=[M('Temperature',31.4,'°C','feels 34°C'),M('Humidity',58,'%','haze'),M('Wind',3.1,'m/s','')];
+    const logRows=[{at:'2026-02-21 06:00',event:'timer',detail:'Timer 11 completed',source:'timer'},
+      {at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed',source:'timer'},
+      {at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped',source:'motor'}];
+    const valveSecs=[SEC('metrics','Valves',[M('Valves run',3,'','of 3'+(win?' in '+win:'')),
+        M('Total runtime','4h 5m','','longest 2h 5m'),M('Open now',1,'','at the time of the pull')]),
+      SEC('bars','Runtime per valve',VALVE_BARS)];
+    const pressSecs=[SEC('metrics','Pressure',[M('Average',2.08,'bar','6 readings'),
+        M('Low',1.6,'bar',win),M('High',2.6,'bar',win)]),
+      SEC('series','Pressure over time',PRESS)];
+    if(type==='motors'||type==='river_status'||type==='well_status'){
+      const rows=type==='motors'?motorRows:type==='river_status'?[motorRows[0]]:[motorRows[1]];
+      const on=rows.filter(r=>r.status==='on').length;
+      const metrics=[M('Motors running',on,'',`of ${rows.length} reporting`)];
+      if(type==='motors') metrics.push(M('River',1,'','of 1 Livesky motors'),M('Wells',0,'','of 1 Niagara controllers'));
+      return {...base,summary:`${on} running of ${rows.length} motors`,
+        sections:[SEC('metrics','Now',metrics,{source:''}),SEC('status','Motors',rows,{source:''})]};}
+    if(type==='controller') return {...base,summary:'DCON controller',
+      sections:[SEC('facts','Controller',facts)]};
+    if(type==='weather') return {...base,summary:'31°C, haze',
+      sections:[SEC('metrics','Field conditions',weather,{source:'openweather',note:'haze'})]};
+    if(type==='conditions') return {...base,summary:'31°C · haze · Timer 13 · 06:00',
+      sections:[SEC('metrics','Field conditions',weather,{source:'openweather'}),
+        SEC('facts','Controller',facts)]};
     if(type==='electricity') return {...base,summary:'4.2 kWh',
-      rows:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}]};
-    if(type==='pressure'||type==='pressure_range') return {...base,summary:'2.1 bar'+range,
-      rows:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}]};
-    if(type==='weather') return {...base,summary:'31°C, haze',rows:[]};
-    return {...base,summary:'DCON controller',rows:[]};
+      sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')])]};
+    if(type==='pressure') return {...base,summary:'2.1 bar',
+      sections:[SEC('metrics','Pressure',[M('Pressure',2.1,'bar','2026-02-22 06:00')])]};
+    if(type==='live_readings') return {...base,summary:'4.2 kWh · 2.1 bar',
+      sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')]),
+        SEC('metrics','Pressure',[M('Pressure',2.1,'bar','2026-02-22 06:00')])]};
+    if(type==='valves') return {...base,summary:'3 valves · 1 open'+range,sections:valveSecs};
+    if(type==='pressure_range') return {...base,summary:'1.6–2.6 bar'+range,sections:pressSecs};
+    if(type==='performance') return {...base,
+      summary:'4h 5m of valve runtime · pressure 1.6–2.6 bar'+range,
+      sections:[...valveSecs,...pressSecs]};
+    if(type==='session_log') return {...base,summary:`${logRows.length} entries`+range,
+      sections:[SEC('metrics','Entries',[M('Timer entries',2,'',win),M('Motor entries',1,'',win)],{source:''}),
+        SEC('timeline','Combined log',logRows)]};
+    const kind=type==='motor_log'?'motor':'timer';
+    const rows=logRows.filter(r=>r.source===kind);
+    return {...base,summary:`${rows.length} entries`+range,
+      sections:[SEC('timeline',kind[0].toUpperCase()+kind.slice(1)+' log',rows)]};
   };
   const onImpl=(path,cb,err)=>{
     if(path.endsWith('/entities')) window.__push=(u)=>{
@@ -288,6 +384,17 @@
       ? (key==='irrigation_reports'?data.irrigation_reports:data.irrigation_reports?.[key])
       : data[key];
     cb({val:()=>val}); return cb;
+  };
+  // One-shot read (used by enter()'s invite-claim check). Same resolution
+  // rule as onImpl, minus subscribing a listener.
+  const getImpl=(path)=>{
+    if(path in store) return Promise.resolve({val:()=>store[path]});
+    const key=path.split('/').pop();
+    const parts=path.split('/');
+    let val;
+    if(parts[0]==='acl'&&parts[1]) val=(data.acl||{})[parts[1]];
+    if(parts.length>2&&val) val=val[parts[2]];
+    return Promise.resolve({val:()=>(val===undefined?null:val)});
   };
   window.firebase={
     app:()=>({options:{databaseURL:'https://mock'}}),
@@ -306,6 +413,14 @@
           }
           if(done) setTimeout(()=>done(null),0);
           return Promise.resolve(); }};},
+      // Directory self-registration and the Admin page's grant/revoke writes:
+      // a plain path (not a push), so log it and resolve rather than
+      // reimplementing the RTDB rules engine here.
+      set:(v,done)=>{ console.log('WRITE',path,JSON.stringify(v));
+        if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
+      remove:(done)=>{ console.log('REMOVE',path);
+        if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
+      get:()=>getImpl(path),
       limitToLast:()=>({on:(ev,cb,err)=>onImpl(path,cb,err),off:()=>{}}),
       on:(ev,cb,err)=>onImpl(path,cb,err),
       off:()=>{}

@@ -46,25 +46,57 @@ next to it.
 
 ## The allowlist
 
-RTDB rules cannot match on email — dots are illegal in keys and rules have no
-string functions — so the allowlist is keyed by UID. `tools/grant-access.js`
-resolves an email to its UID.
+Three tiers: **viewer** (sees the farm), **controller** (viewer + can operate
+lights/switches/fans and run irrigation reports), **admin** (controller +
+can add people and grant/revoke the other two tiers for anyone else, from
+the dashboard's `#/admin` page). Each tier implies the ones below it.
+
+### Day to day: the dashboard, not the command line
+
+An admin adds and manages everyone from `#/admin` — no terminal, no service
+account:
+
+- **Add a person** — type an email, pick View or View + control, press Add.
+  This writes `acl/invites/<email key>` (RTDB keys cannot contain `.`, so the
+  key is the lowercased email with `.` swapped for `,`). The invite sits
+  there, cancellable, until that person signs in with that Google account for
+  the first time — `enter()` in `app.js` then claims it automatically
+  (writes `acl/viewers`/`acl/controllers` for their new uid, deletes the
+  invite) before the dashboard even finishes loading for them. They never see
+  a denied screen.
+- **Grant / Revoke** on an existing row — for someone who already signed in
+  at least once (so `acl/directory/$uid` exists) without an invite, or to
+  change or remove someone's tier later.
+
+Both paths are enforced by `database.rules.json`, not just the UI: an admin's
+write to `acl/viewers`/`acl/controllers` must be `true` or a delete, granting
+control requires the target already be a viewer, and the invited person's own
+self-claim is gated on `auth.token.email` matching the invite key — they
+cannot claim someone else's invite or invite themselves.
+
+### Admin is command-line only, on purpose
+
+`acl/admins/$uid` has `.write: false` in the rules regardless of who is
+asking — an admin's dashboard session cannot create another admin, the same
+way the report builder cannot operate a pump. Promoting someone to admin
+always comes back through `tools/grant-access.js` with the service account
+credential:
 
 ```bash
 cd tools && npm install
 export FIREBASE_DB_URL=https://snof-live-default-rtdb.asia-southeast1.firebasedatabase.app
 export GOOGLE_APPLICATION_CREDENTIALS=~/.config/snof/serviceAccount.json
 
-npm run grant  -- someone@example.com            # viewer
-npm run grant  -- someone@example.com --control  # viewer + controller
-npm run revoke -- someone@example.com --control  # demote only
+npm run grant  -- someone@example.com --admin    # viewer + controller + admin
+npm run revoke -- someone@example.com --admin    # demote to controller
 npm run list
 ```
 
-The person must have signed in once so a Firebase Auth user exists. Until they
-are granted, the dashboard shows them their own email and the exact command the
-owner needs to run — that is deliberate, it turns "access denied" into a
-one-line fix.
+The same script still works for plain viewer/controller grants (`npm run
+grant -- someone@example.com [--control]`) — it is the bootstrap path for the
+very first admin (who by definition has no admin dashboard yet to add
+themselves from) and a fallback if the database is ever unreachable from a
+browser. It is no longer the day-to-day path once at least one admin exists.
 
 ## The service account
 
