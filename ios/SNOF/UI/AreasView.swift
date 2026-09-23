@@ -70,7 +70,7 @@ struct AreaDetailView: View {
             }
         }
         .navigationTitle(store.areaName(areaId))
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inlineLarge)
         .searchable(text: $search, prompt: "Search this area")
     }
 }

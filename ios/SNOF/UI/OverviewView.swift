@@ -65,7 +65,9 @@ struct OverviewView: View {
                 }
             }
         }
-        .navigationTitle(store.farmName)
+        // "SNOF", not the farm's full name: short enough to share the bar
+        // with the account button instead of taking a row of its own.
+        .navigationTitle("SNOF")
     }
 }
 

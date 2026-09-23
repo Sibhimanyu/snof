@@ -68,6 +68,9 @@ struct MainTabs: View {
         NavigationStack(path: path) {
             content()
                 .navigationDestination(for: AreaRoute.self) { AreaDetailView(areaId: $0.id) }
+                // Large title on the same row as the account button, not a
+                // second row under it: the page starts a row higher.
+                .toolbarTitleDisplayMode(.inlineLarge)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { account = true } label: {
