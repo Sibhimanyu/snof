@@ -14,7 +14,8 @@ import SNOFCore
  *   -demo-reportsoff  bridge publishes irrigation.enabled: false
  *   -demo-stale       bridge heartbeat 400 s old
  *   -demo-signedout   start on the sign-in screen
- *   -demo-denied      signed in, but not on the allowlist */
+ *   -demo-denied      signed in, but not on the allowlist
+ *   -demo-signinfail  sign-in fails the way a real one can (shows the report) */
 @MainActor
 final class DemoBackend: FarmBackend {
 
@@ -79,6 +80,13 @@ final class DemoBackend: FarmBackend {
 
     func signIn() async throws {
         try await Task.sleep(for: .milliseconds(400))
+        if flag("signinfail") {
+            let cause = NSError(domain: "com.google.HTTPStatus", code: 400,
+                                userInfo: [NSLocalizedDescriptionKey: "invalid_request"])
+            throw NSError(domain: "com.google.GIDSignIn", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "Demo: the sign-in request was refused.",
+                                     NSUnderlyingErrorKey: cause])
+        }
         signedIn = true
         authHandler?(Self.user)
     }

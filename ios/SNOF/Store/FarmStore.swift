@@ -99,14 +99,37 @@ final class FarmStore {
         }
     }
 
+    /// The last sign-in failure, in full. Kept on the gate rather than in a
+    /// 4-second toast: from a sideloaded build this text is the only way to
+    /// learn why sign-in failed, and it has to survive a screenshot.
+    private(set) var signInError: String?
+
     func signIn() async {
+        signInError = nil
         do {
             try await backend.signIn()
         } catch BackendError.cancelled {
             // The user closed the sheet; nothing to say.
         } catch {
-            show(.err, error.localizedDescription)
+            signInError = Self.describe(error)
+            NSLog("SNOF: sign-in failed: %@", signInError ?? "")
         }
+    }
+
+    /// Domain, code and the underlying cause, so a report pins it down.
+    static func describe(_ error: Error) -> String {
+        var lines: [String] = []
+        var current: NSError? = error as NSError
+        var depth = 0
+        while let e = current, depth < 3 {
+            lines.append("\(e.domain) \(e.code): \(e.localizedDescription)")
+            if let name = e.userInfo["FIRAuthErrorUserInfoNameKey"] as? String { lines.append("  \(name)") }
+            current = e.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
+        }
+        let bundle = Bundle.main.bundleIdentifier ?? "?"
+        lines.append("app \(UpdateCheck.installedVersion) (\(UpdateCheck.installedBuild)) · \(bundle)")
+        return lines.joined(separator: "\n")
     }
 
     func signOut() { backend.signOut() }

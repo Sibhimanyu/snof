@@ -26,6 +26,7 @@ enum Snapshot {
         default: break
         }
         if value("-status") == "offline" { store.deviceStatus = .offline }
+        if args.contains("-press-signin") { Task { try? await Task.sleep(for: .seconds(1)); await store.signIn() } }
     }
 
     static func runIfRequested() {

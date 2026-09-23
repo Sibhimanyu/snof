@@ -22,4 +22,5 @@ shot 09-control-off -demo-controloff
 shot 10-stale -demo-stale
 shot 11-signin -demo-signedout
 shot 12-denied -demo-denied
+shot 12b-signin-failed -demo-signedout -demo-signinfail -press-signin
 shot 13-light -AppleInterfaceStyle Light -appearance light

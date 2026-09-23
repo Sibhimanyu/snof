@@ -180,6 +180,7 @@ struct GateView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
+                if let err = store.signInError { SignInFailure(detail: err) }
             case .denied:
                 Button("Sign out") { store.signOut() }
                     .frame(minHeight: Theme.hit)
@@ -188,6 +189,8 @@ struct GateView: View {
                 EmptyView()
             }
             if store.backend.isDemo { DemoBadge() }
+            // Someone stuck here is exactly who needs to hear about a fix.
+            UpdateBanner().frame(maxWidth: 360).padding(.horizontal, 20)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -202,5 +205,31 @@ struct GateView: View {
             return "\(email ?? "This account") is not on the allowlist.\n\nAsk a farm admin to add you from the web dashboard's Admin page."
         case .message(let why): return why
         }
+    }
+}
+
+/// A failed sign-in, in words and in full, with a way to send it on.
+private struct SignInFailure: View {
+    let detail: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Sign-in did not complete", systemImage: "exclamationmark.triangle")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.bad)
+            Text(detail)
+                .font(.caption.monospaced()).foregroundStyle(Theme.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(copied ? "Copied" : "Copy details") {
+                UIPasteboard.general.string = detail
+                copied = true
+            }
+            .font(.footnote.weight(.semibold)).foregroundStyle(Theme.text)
+            .frame(minHeight: Theme.hit)
+        }
+        .panel()
+        .frame(maxWidth: 360)
+        .padding(.horizontal, 20)
     }
 }

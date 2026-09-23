@@ -41,7 +41,7 @@ cd .. && ./scripts/shoot.sh build/shots    # renders every key screen to PNG
 window (`Snapshot.swift`, Debug only). It needs no simulator, no Firebase and
 no screen-recording permission. Demo launch flags mirror the preview's query
 flags: `-demo-real`, `-demo-viewer`, `-demo-controloff`, `-demo-reportsoff`,
-`-demo-stale`, `-demo-signedout`, `-demo-denied`.
+`-demo-stale`, `-demo-signedout`, `-demo-denied`, `-demo-signinfail`.
 
 For the Simulator or a device, Xcode's first-launch components must be
 installed once (`sudo xcodebuild -runFirstLaunch`, then

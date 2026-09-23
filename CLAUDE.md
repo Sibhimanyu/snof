@@ -171,9 +171,12 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   from them.
 - The SSH add-on had a plaintext `password:` in its options; it was still there
   on 2026-09-22 and should be removed and rotated now that key auth is proven.
-- **iOS app released** on 2026-09-23: `0.1.0 (202609231510)` at
+- **iOS app released** on 2026-09-23: `0.1.1 (202609231557)` (first: 0.1.0) at
   https://snof-ios.web.app (its own Hosting site, separate from the
   dashboard), installed through SideStore from `source.json`. `snof-live` is
   on **Blaze**, because Spark refuses `.ipa` files on Hosting. Release with
   `ios/scripts/release.sh "notes"`. Not yet proven on a device: Google sign-in
   under SideStore's renamed bundle ID (`com.sibhiorchards.snof.<TEAMID>`).
+  After the owner installed 0.1.0, **no sign-in reached Firebase Auth** (checked
+  with `firebase auth:export`; `acl/directory` had no new entry either). 0.1.1
+  keeps the full sign-in error on screen with a Copy button to diagnose it.
