@@ -682,8 +682,36 @@ function irrDefaultDates() {
   return { from: iso(past), to: iso(today) };
 }
 
+/* Can a request actually be answered right now?
+ *
+ * The bridge already publishes this on every heartbeat — meta/bridge.irrigation
+ * carries { enabled, requestsRun, requestsRefused, lastOk, lastError } — and the
+ * page used to ignore it. So pressing Generate with reports switched off wrote a
+ * request nothing was listening for, sat in "Working…" for the full 60s
+ * deadline, and then said the result would appear below when it landed. It never
+ * landed, and the request node stayed in the queue forever.
+ *
+ * A bridge too old to publish the field leaves `irrigation` undefined; that is
+ * not the same as off, so only an explicit false blocks. */
+function irrBridgeState() {
+  const hb = state.meta && state.meta.bridge;
+  if (!hb || !hb.lastSeen) {
+    return { ok: false, why: 'The bridge has not reported in yet — nothing would answer a report request.' };
+  }
+  const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
+  if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
+    return { ok: false, why: 'The bridge is not reporting in, so nothing would answer a report request.' };
+  }
+  if (hb.irrigation && hb.irrigation.enabled === false) {
+    return { ok: false, why: 'Vendor reports are switched off on the bridge. Turn on irrigation_enabled in the add-on options, and fill in the vendor credentials, before running one.' };
+  }
+  return { ok: true, why: '' };
+}
+
 function sendReportRequest() {
   if (!canControl) { toast('err', 'Your account can view, but not run reports.'); return; }
+  const reachable = irrBridgeState();
+  if (!reachable.ok) { toast('err', reachable.why); render(); return; }
   const range = irrNeedsRange(irrType);
   const from = irrFrom.trim(), to = irrTo.trim();
   if (range && (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to))) {
@@ -1014,6 +1042,8 @@ function irrigationView() {
     ).join('') + `</optgroup>`).join('');
   const showRange = irrNeedsRange(irrType);
   const pending = irrWaiters.size;
+  const reachable = irrBridgeState();
+  const blocked = !reachable.ok;
   const builder = canControl
     ? `<div class="rep-builder">
         <label class="rep-field"><span>Report</span>
@@ -1022,9 +1052,10 @@ function irrigationView() {
           <input id="irr-from" type="date" value="${escapeHtml(irrFrom)}" data-act="irr-from" max="${escapeHtml(def.to)}"></label>
         <label class="rep-field"${showRange ? '' : ' hidden'}><span>To</span>
           <input id="irr-to" type="date" value="${escapeHtml(irrTo)}" data-act="irr-to" max="${escapeHtml(def.to)}"></label>
-        <button class="btn btn-primary" data-act="irr-gen"${pending ? ' disabled' : ''}>` +
+        <button class="btn btn-primary" data-act="irr-gen"${pending || blocked ? ' disabled' : ''}>` +
           `${pending ? 'Working…' : 'Generate report'}</button>
       </div>
+      ${blocked ? `<p class="more-note note-off">${escapeHtml(reachable.why)}</p>` : ''}
       ${pending ? `<p class="more-note">Pulling from the vendor — the result lands below, usually within a minute.</p>` : ''}`
     : `<p class="more-note">Report generation is limited to controllers — ` +
       `your account can view results below, but not run new pulls.</p>`;
@@ -1034,8 +1065,9 @@ function irrigationView() {
     (reports.length
       ? reports.slice().reverse().map(([k, r]) => irrReportCard(k, r)).join('')
       : emptyBlock('No reports yet',
-          canControl ? 'Build one above — pick a report and press Generate.'
-                     : 'No reports have been run yet.'));
+          !canControl ? 'No reports have been run yet.'
+          : blocked ? reachable.why
+          : 'Build one above — pick a report and press Generate.'));
 
   const n = irrig();
   const motors = [...(n.motors || []), ...(n.controllers || [])];

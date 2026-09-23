@@ -235,6 +235,39 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('viewers get results but no builder', !r.builder&&r.note===true);
   await c.close();
 }
+// Regression: ISSUE-001 — Generate fired into a void when reports were off.
+// Found by /qa on 2026-09-23. The bridge publishes meta/bridge.irrigation and
+// the page ignored it, so the button spun for the full 60s deadline.
+{
+  const [p,c]=await open('?reportsoff=1#/irrigation');
+  await p.waitForSelector('.rep-builder');
+  const before=await p.evaluate(()=>({
+    disabled:document.querySelector('[data-act="irr-gen"]').disabled,
+    why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
+  check('reports switched off on the bridge disables Generate',
+    before.disabled===true, `disabled=${before.disabled}`);
+  check('and says why, in words, not a spinner',
+    /switched off on the bridge/.test(before.why), before.why.slice(0,80));
+  // Force the click past the disabled attribute: a stale render must not be
+  // able to write a request nothing will ever answer.
+  const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND'))writes.push(m.text());});
+  await p.evaluate(()=>document.querySelector('[data-act="irr-gen"]').click());
+  await p.waitForTimeout(250);
+  const spinning=await p.evaluate(()=>document.querySelector('[data-act="irr-gen"]').textContent);
+  check('a forced click writes no request and never enters Working…',
+    writes.length===0&&!/Working/.test(spinning), `writes=${writes.length} btn=${spinning}`);
+  await c.close();
+}
+{
+  const [p,c]=await open('?stale=1#/irrigation');
+  await p.waitForSelector('.rep-builder');
+  const r=await p.evaluate(()=>({
+    disabled:document.querySelector('[data-act="irr-gen"]').disabled,
+    why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
+  check('a stale bridge blocks Generate too', r.disabled===true&&/not reporting in/.test(r.why),
+    r.why.slice(0,80));
+  await c.close();
+}
 {
   const [p,c]=await open('?noirrig=1#/irrigation');
   await p.waitForSelector('.page-title');

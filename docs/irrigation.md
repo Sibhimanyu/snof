@@ -112,6 +112,27 @@ leg is written to the `/irrigation` last-results cache, so a dead vendor
 leaves the previous good value standing rather than blanking it. All legs
 failing is an ordinary `error` report.
 
+## When nothing is listening
+
+`meta/bridge.irrigation` — `{ enabled, requestsRun, requestsRefused, lastOk,
+lastError }` — rides every heartbeat, and the builder reads it. With
+`irrigation_enabled` false, or the bridge stale or offline, Generate is
+disabled and the page says which of those it is. Before that check existed the
+button wrote a request nothing was watching, spun for the full 60-second
+deadline, and then said the result would appear below when it landed. It never
+landed, and the request stayed in the queue: four had accumulated in production
+by 2026-09-23, the oldest a day old.
+
+Two guards, because one is not enough:
+
+- **The page.** `irrBridgeState()` in `app.js` gates both the button and
+  `sendReportRequest()`, so a stale render cannot slip a write through. A
+  bridge too old to publish the field leaves `irrigation` undefined, which is
+  not the same as off and does not block.
+- **The bridge.** A runner starting up with reports disabled drains whatever is
+  in `irrigation_requests` once and logs how many it dropped. Nothing else ever
+  deletes from that path, and clients can append to it.
+
 ## Setup
 
 Off by default. In the add-on Configuration tab:

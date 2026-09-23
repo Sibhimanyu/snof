@@ -178,7 +178,12 @@
   const A={pump_house:'Pump House',packing_shed:'Packing Shed',orchard_east:'East Orchard',
            farmhouse:'Farmhouse',cold_store:'Cold Store',nursery:'Nursery'};
   const data={
-    meta:{name:'Sibhi Natural Orchards', bridge:{status:'online', lastSeen: now-(params.get('stale')?400000:5000), heartbeatSeconds:30, control:true}},
+    meta:{name:'Sibhi Natural Orchards', bridge:{status:'online', lastSeen: now-(params.get('stale')?400000:5000),
+      heartbeatSeconds:30, control:true,
+      // What the bridge publishes about the report runner every heartbeat.
+      // ?reportsoff=1 is the state the live farm was actually in: reports
+      // deployed, irrigation_enabled false, so nothing answers a request.
+      irrigation:{enabled:!params.get('reportsoff'), requestsRun:0, requestsRefused:0, lastOk:'', lastError:''}}},
     areas:Object.fromEntries(Object.entries(A).map(([k,v])=>[k,{name:v}])),
     entities:{
       sensor:{
