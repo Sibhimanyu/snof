@@ -138,9 +138,20 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   the request queue` and no vendor API has ever been called from the NUC. The
   fifteen report types, the RTDB allow-list and the dashboard builder are all
   live and waiting on that one option plus the vendor credentials.
-- Control is **deployed but inert** — the log line to look for is
-  `Device control is disabled; not watching the command queue`. It stays that
-  way until `allow_control: true` AND someone is granted `--control`. The
-  command stream has therefore still never executed against real hardware.
+- Control is **armed** as of 2026-09-23: `allow_control: true`, the log says
+  `Watching command queue for domains: fan, input_boolean, light, switch` and
+  `Command queue stream open`, and `meta/bridge.control` is true. Set through
+  the Supervisor API by merging the one key into the existing options object —
+  never POST a partial options dict, the omitted keys revert to defaults.
+  `commandsRun` was still 0 at the moment of arming, so the first real press is
+  the first time this code has moved physical hardware. To disarm: set
+  `allow_control` false the same way and restart.
+- The dashboard reads `meta/bridge.control` and `meta/bridge.irrigation.enabled`
+  (one helper, `bridgeGate()` in `app.js`). A capability switched off on the
+  bridge now renders its controls disabled with the reason, instead of
+  accepting a press and blaming the farm twelve seconds later. Both consumers
+  also drain their queue at startup when they are off — `/commands` and
+  `irrigation_requests` are client-writable and only their consumer deletes
+  from them.
 - The SSH add-on had a plaintext `password:` in its options; it was still there
   on 2026-09-22 and should be removed and rotated now that key auth is proven.
