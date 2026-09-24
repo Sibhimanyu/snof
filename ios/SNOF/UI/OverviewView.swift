@@ -215,9 +215,11 @@ struct IrrigationRingCard: View {
             } else {
                 HStack(spacing: 14) {
                     if say.running, let p = c.program {
-                        let planned = Double(p.plannedMin ?? 0), left = Double(max(0, p.remainingMin ?? 0))
+                        // The same countdown as the Now card: from the controller's
+                        // last report, not the raw figure in it.
+                        let planned = Double(p.plannedMin ?? 0), left = Double(max(0, say.leftMin ?? p.remainingMin ?? 0))
                         Ring(fraction: planned > 0 ? 1 - left / planned : 0.5, color: Theme.brand,
-                             label: p.remainingMin.map { Format.minutes(max(0, $0)) } ?? "On", sub: "left")
+                             label: say.leftMin.map { Format.minutes(max(0, $0)) } ?? "On", sub: "left")
                     } else if let last {
                         let planned = Double(last.plannedMin ?? 0)
                         let got = Double(last.deliveredMin ?? (last.finished ? last.plannedMin ?? 0 : 0))
@@ -652,7 +654,7 @@ struct WaterNow: View {
         .accessibilityElement(children: .combine)
     }
 
-    struct Say { var running: Bool; var title: String; var detail: String; var checked: String? }
+    struct Say { var running: Bool; var title: String; var detail: String; var checked: String?; var leftMin: Int? = nil }
 
     private var state: Say { Self.say(cache: cache, zone: zone, now: now) }
 
@@ -669,7 +671,7 @@ struct WaterNow: View {
                 var bits = [p.valves].filter { !$0.isEmpty }
                 if let left, let planned = p.plannedMin { bits.append("about \(Format.minutes(left)) left of \(Format.minutes(planned))") }
                 if let since = FarmTime.when(p.start, now: now, zone: zone) { bits.append("since \(since)") }
-                return Say(running: true, title: p.name, detail: bits.joined(separator: " · "), checked: checked)
+                return Say(running: true, title: p.name, detail: bits.joined(separator: " · "), checked: checked, leftMin: left)
             }
         }
         if let last = Irrigation.runs(cache).first {
@@ -712,8 +714,9 @@ struct IrrigationControls: View {
                         .background(Theme.brand, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(refusal != nil)
-                .opacity(refusal != nil ? 0.5 : 1)
+                // A second manual run is refused by the farm while one is going.
+                .disabled(refusal != nil || manual)
+                .opacity(refusal != nil || manual ? 0.5 : 1)
                 if manual {
                     Button { confirmStop = true } label: {
                         HStack(spacing: 6) {

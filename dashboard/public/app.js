@@ -700,7 +700,8 @@ function irrigationCard() {
   let frac = 0, tone = '', label = '—', sub = 'no data';
   let valves = '';
   if (s.running && p) {
-    const left = p.remainingMin, planned = p.plannedMin;
+    // The same countdown as the Now card: from the controller's last report.
+    const left = s.left ?? p.remainingMin, planned = p.plannedMin;
     frac = planned ? 1 - Math.max(0, left || 0) / planned : 0.5;
     tone = 'is-on'; label = left != null ? fmtMin(Math.max(0, left)) : 'On'; sub = 'left';
     valves = p.valves || '';
@@ -1867,7 +1868,7 @@ function irrNowState() {
       const since = farmWhen(p.start);
       if (since) bits.push(`since ${since}`);
       return { running: true, manual: isManualProgram(p), title: p.name, detail: bits.join(' · '),
-               checked: p.at ? agoText(p.at) : '', valves: p.valves || '' };
+               checked: p.at ? agoText(p.at) : '', valves: p.valves || '', left };
     }
   }
   const last = irrRuns()[0];

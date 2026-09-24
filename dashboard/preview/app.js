@@ -700,7 +700,8 @@ function irrigationCard() {
   let frac = 0, tone = '', label = '—', sub = 'no data';
   let valves = '';
   if (s.running && p) {
-    const left = p.remainingMin, planned = p.plannedMin;
+    // The same countdown as the Now card: from the controller's last report.
+    const left = s.left ?? p.remainingMin, planned = p.plannedMin;
     frac = planned ? 1 - Math.max(0, left || 0) / planned : 0.5;
     tone = 'is-on'; label = left != null ? fmtMin(Math.max(0, left)) : 'On'; sub = 'left';
     valves = p.valves || '';
@@ -991,7 +992,8 @@ function solarCard(systems) {
 
 /* The rest of the farm, one tile each: what it is, and one word on how it is. */
 function systemsGrid(systems) {
-  const ids = ['switches', 'climate', 'media', 'printer', 'other'].filter((id) => systems[id]);
+  // Switches have their own tiles (and an "All" link) right above.
+  const ids = ['climate', 'media', 'printer', 'other'].filter((id) => systems[id]);
   if (!ids.length) return '';
   return `<section class="sys-sec" aria-label="Farm systems">
     <div class="panel-head bare"><h2 class="panel-title">Around the farm</h2></div>
@@ -1866,7 +1868,7 @@ function irrNowState() {
       const since = farmWhen(p.start);
       if (since) bits.push(`since ${since}`);
       return { running: true, manual: isManualProgram(p), title: p.name, detail: bits.join(' · '),
-               checked: p.at ? agoText(p.at) : '', valves: p.valves || '' };
+               checked: p.at ? agoText(p.at) : '', valves: p.valves || '', left };
     }
   }
   const last = irrRuns()[0];
