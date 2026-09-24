@@ -413,7 +413,12 @@
    "plannedMin": 30,
    "remainingMin": 18,
    "at": 0,
-   "lastSeen": "2026-02-22 09:05:00"
+   "lastSeen": "2026-02-22 09:05:00",
+   "next": {
+    "name": "Coconut",
+    "valves": "12 Coco 1, 15 Coco 2",
+    "plannedMin": 60
+   }
   }
  },
  "irrigation_reports": {

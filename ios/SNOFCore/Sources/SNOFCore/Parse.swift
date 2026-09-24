@@ -130,6 +130,11 @@ public enum Parse {
                                        remainingMin: double(p["remainingMin"]).map { Int($0) },
                                        at: double(p["at"]))
             c.program?.lastSeen = string(p["lastSeen"]) ?? ""
+            c.program?.faults = list(p["faults"]).compactMap(string)
+            if let n = p["next"] as? [String: Any], let name = string(n["name"]), !name.isEmpty {
+                c.program?.next = NextProgram(name: name, valves: string(n["valves"]) ?? "",
+                                              plannedMin: double(n["plannedMin"]).map { Int($0) })
+            }
         }
         c.valveNames = rows(d["valveNames"])
         c.valves = rows(d["valves"])

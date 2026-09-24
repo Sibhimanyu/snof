@@ -32,7 +32,9 @@ final class OverviewTests: XCTestCase {
             ],
             "pressure": [["at": "2026-09-23 18:10:00", "value": "2.4", "unit": "bar"]],
             "program": ["name": "Mango1", "kind": "Program", "running": true, "valves": "16 Mango 1",
-                        "start": "2026-09-24 05:30:00", "lastSeen": "2026-09-24 06:05:00", "plannedMin": 60, "remainingMin": 25, "at": 1790223215792],
+                        "start": "2026-09-24 05:30:00", "lastSeen": "2026-09-24 06:05:00",
+                        "faults": ["6 Kulam no signal"],
+                        "next": ["name": "Coconut", "valves": "12 Coco 1, 15 Coco 2", "plannedMin": 60], "plannedMin": 60, "remainingMin": 25, "at": 1790223215792],
         ])
     }
 
@@ -78,6 +80,7 @@ final class OverviewTests: XCTestCase {
         XCTAssertTrue(s.missingPhase)
         XCTAssertEqual(s.pumpDrawing, false)
         XCTAssertEqual(s.at, "22:24")
+        XCTAssertEqual(s.imbalancePct, 3)
         XCTAssertEqual(Irrigation.pressure(cache())?.value, "2.4 bar")
     }
 
@@ -88,6 +91,8 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(p.valves, "16 Mango 1")
         XCTAssertEqual(p.at, 1790223215792)
         XCTAssertEqual(p.lastSeen, "2026-09-24 06:05:00")
+        XCTAssertEqual(p.faults, ["6 Kulam no signal"])
+        XCTAssertEqual(p.next, NextProgram(name: "Coconut", valves: "12 Coco 1, 15 Coco 2", plannedMin: 60))
     }
 
     func testFarmTimeIsNotThePhonesTime() {

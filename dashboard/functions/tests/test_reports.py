@@ -105,8 +105,17 @@ DASHBOARD = {"MCON000TEST000": {
     "timers": {"current": seg("2026-09-23 20:41:05", "2026-09-23 20:44:35",
                               "Vegetable", "1", "00:25", "00:30",
                               valves="4-6-0-0-0-0-0-0-0-0"),
-               "previous": wash("2026-09-23 20:37:02", "2026-09-23 20:41:05")},
+               "previous": wash("2026-09-23 20:37:02", "2026-09-23 20:41:05"),
+               # The real shape of `next`, first seen set on 2026-09-24.
+               "next": {"timer_mode_type": "1", "timer_mode": "1", "timer_name": "Coconut",
+                        "timer_no": "2", "valves": "12-15-0-0-0-0-0-0-0-0",
+                        "on_time": "01:00", "off_time": "00:00", "on_days": "0"}},
 }}
+# Packet 6 of the dashboard: the live electricity packet, as it arrived on
+# 2026-09-24 (pump drawing ~9.7 A, supply 13 h 06 m and pump 6 h 38 m today).
+DASHBOARD["MCON000TEST000"]["packets"]["6"] = (
+    "##,DCON-MCON000TEST000,6-0-0!2026-09-24 14:29:06+05:30,,228-223-264,390-421-426,"
+    "9.8-9.5-9.7,1.0-0-1.0,13.06-06.38,00.00-00.00,49.8,20,725.72,6913.70,4.196-100,0.0,00000-00,")
 
 
 def pressure_day(n=4000, day="2026-09-22"):
@@ -373,12 +382,17 @@ def test_controller_report_shows_what_is_running():
     assert facts["Running now"].startswith("Vegetable · Program · 4 Veg, 6 Kulam"), facts
     board = rep["sections"][1]["rows"]
     assert {r["name"]: r["status"] for r in board}["4 Veg"] == "on"
-    assert set(patch) == {"dcon", "valveNames", "program"}
+    assert set(patch) == {"dcon", "valveNames", "program", "electricity"}
+    power = {r["label"]: r["value"] for r in patch["electricity"]}
+    assert power["Phase voltage"] == "228 / 223 / 264", power
+    assert power["Current"] == "9.8 / 9.5 / 9.7" and power["Pump today"] == "6h 38m", power
+    assert facts["Next program"].startswith("Coconut"), facts
     prog = patch["program"]
     assert prog["running"] and prog["name"] == "Vegetable", prog
     assert prog["valves"] == "4 Veg, 6 Kulam" and prog["remainingMin"] == 25, prog
     assert prog["at"] == {".sv": "timestamp"}, prog
-    assert set(prog) == {"at", "name", "kind", "running", "valves", "start", "lastSeen",
+    assert prog["next"] == {"name": "Coconut", "plannedMin": 60, "valves": "12 Coco 1, 15 Coco 2"}, prog
+    assert set(prog) == {"at", "next", "name", "kind", "running", "valves", "start", "lastSeen",
                          "plannedMin", "remainingMin"}
 
 
@@ -613,6 +627,16 @@ def test_dcon_client_cannot_reach_the_command_endpoint():
     body = code.split('"""', 2)[2]      # skip the module docstring
     assert "command" not in body.lower(), "dcon.py mentions a command endpoint"
     assert body.count("/v1/http/") == 1
+
+def test_a_valve_that_did_not_answer_is_named():
+    dash = json.loads(json.dumps(DASHBOARD))
+    dash["MCON000TEST000"]["timers"]["current"]["valve_comm_error"] = "0-1-0-0-0-0-0-0-0-0"
+    src = Source()
+    src.dashboard = lambda: dash
+    rep, patch = R.build("controller", {}, src)
+    assert patch["program"]["faults"] == ["6 Kulam no signal"], patch["program"]
+    facts = {f["label"]: f["value"] for f in rep["sections"][0]["rows"]}
+    assert facts["Valve fault"] == "6 Kulam no signal", facts
 
 
 if __name__ == "__main__":

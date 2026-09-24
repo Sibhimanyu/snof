@@ -84,8 +84,10 @@ installed.
   it. An unauthenticated read or write answers "Permission denied" (checked
   after deploy); only the two service accounts touch it.
 - **The phone book never leaves the NUC.** For the dashboard call, the relay
-  keeps only `server_time`, `time_zone`, `timers` and the `live` packet, and
-  drops `users`, `sim`, `device_id` and packets 1–8 before upload.
+  keeps only `server_time`, `time_zone`, `timers`, the `live` packet and
+  (from add-on 0.9.4) packet `6`, the live electricity reading. It drops
+  `users`, `sim`, `device_id` and packets 1–5 and 8 before upload, and cuts
+  any run of ten or more digits from the two packets it keeps.
 - **Answers are gzip + base64.** A month of electricity packets is ~11 MB of
   JSON, over RTDB's 10 MB string limit; compressed it is about a tenth.
 - **Nothing stays behind.** The NUC deletes each job whether it ran or not.
@@ -241,7 +243,20 @@ fixture full of numbers and fails on any 10-digit run in the output. Never
 widen a vendor parser to "everything else".
 
 `timers.current` is the live view: the program running now, its valves, and
-its countdown. The controller report is built on it.
+its countdown. The controller report is built on it. Its
+`valve_comm_error` / `valve_not_on` / `valve_not_off` lists line up slot for
+slot with `on_valves` (`program_faults()`).
+
+`timers.next` was null until 2026-09-24 and is now set, in a smaller shape:
+`{timer_name, timer_no, valves: "4-6-0-…", on_time: "00:30", off_time,
+on_days, timer_mode, timer_mode_type}`.
+
+Packet `6` is the same live electricity packet `reports?type=electricity`
+returns (phase V, line V, amps, today's supply and pump time as HH.MM), so
+`electricity_packet()` reads it unchanged (`dashboard_electricity()`). The
+controller report therefore also refreshes `/irrigation/electricity`, and
+writes `/irrigation/program` — current program, countdown, `next` and any
+`faults` — for the iOS Overview.
 
 **`get_node`**: `{"Node1": {"type": "FL-10", "valve": {"4": {"valve_name":
 "4 Veg", "valve_type": "Irrigation"}}}, "Node2": …, "Node3": …}`. This is the

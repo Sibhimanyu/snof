@@ -131,8 +131,15 @@ def trim_dashboard(body: Any) -> Any:
             continue
         kept = {k: node[k] for k in _DASHBOARD_KEEP if k in node}
         packets = node.get("packets")
-        if isinstance(packets, dict) and isinstance(packets.get("live"), str):
-            kept["packets"] = {"live": packets["live"]}
+        if isinstance(packets, dict):
+            # `live` names the device; `6` is the live electricity reading
+            # (phase/line volts, amps, today's supply and pump time). Neither
+            # carries a number anyone could call, and any ten-digit run is cut
+            # anyway, so a firmware change cannot leak one through here.
+            kept_packets = {k: re.sub(r"\d{10,}", "", packets[k])
+                            for k in ("live", "6") if isinstance(packets.get(k), str)}
+            if kept_packets:
+                kept["packets"] = kept_packets
         out[serial] = kept
     return out
 
