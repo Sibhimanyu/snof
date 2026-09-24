@@ -68,11 +68,10 @@ private struct Block<Trailing: View, Content: View>: View {
             .padding(.horizontal, 18).padding(.vertical, 10)
             .frame(minHeight: 56)
             .accessibilityElement(children: .contain)
-            if divided { Rectangle().fill(Theme.line).frame(height: 1) }
+            if divided { Rectangle().fill(Theme.line.opacity(0.6)).frame(height: 1) }
             content
         }
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        .card()
     }
 }
 
@@ -197,7 +196,7 @@ private struct RefreshButton: View {
             .font(Theme.font(13, .bold, relativeTo: .caption))
             .foregroundStyle(Theme.on)
             .padding(.horizontal, 12).frame(minHeight: 32)
-            .overlay(Capsule().strokeBorder(Theme.line2, lineWidth: 1))
+            .background(Theme.fill, in: Capsule())
             .frame(minHeight: Theme.hit)
             .contentShape(Rectangle())
         }
@@ -320,8 +319,7 @@ private struct IrrigationControls: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: Theme.hit)
                         .foregroundStyle(Theme.bad)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous)
-                            .strokeBorder(Theme.bad.opacity(0.6), lineWidth: 1))
+                        .background(Theme.bad.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(refusal != nil)
@@ -334,7 +332,7 @@ private struct IrrigationControls: View {
         .padding(.horizontal, 12).padding(.bottom, 12)
         .sheet(isPresented: $picking) { RunValvesSheet(cache: cache) }
         .confirmationDialog("Stop the manual run?", isPresented: $confirmStop, titleVisibility: .visible) {
-            Button("Stop watering", role: .destructive) { Task { await store.stopIrrigation() } }
+            Button("Stop watering", role: .destructive) { Haptics.warn(); Task { await store.stopIrrigation() } }
         } message: {
             Text([program?.valves, "The controller closes the valves and ends Manual Mode."]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
@@ -368,6 +366,7 @@ private struct RunValvesSheet: View {
                     Picker("Minutes", selection: $minutes) {
                         ForEach(Self.choices.filter { $0 <= cap }, id: \.self) { Text(Format.minutes($0)).tag($0) }
                     }
+                    .sensoryFeedback(.selection, trigger: minutes)
                 } footer: {
                     Text("The controller stops by itself when the time is up.")
                 }
@@ -375,6 +374,7 @@ private struct RunValvesSheet: View {
                     ForEach(valves) { v in
                         let on = picked.contains(v.id)
                         Button {
+                            Haptics.select()
                             if on { picked.removeAll { $0 == v.id } }
                             else if picked.count < IrrigationCommand.maxValves { picked.append(v.id) }
                         } label: {
@@ -402,6 +402,7 @@ private struct RunValvesSheet: View {
             }
             .confirmationDialog(summary(valves), isPresented: $confirm, titleVisibility: .visible) {
                 Button("Open the valves") {
+                    Haptics.commit()
                     let chosen = picked, mins = minutes
                     dismiss()
                     Task { await store.runValves(chosen, minutes: mins) }
@@ -749,8 +750,7 @@ struct AreaCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
         .padding(14)
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        .card()
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }

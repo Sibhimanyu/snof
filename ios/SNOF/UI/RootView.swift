@@ -53,7 +53,8 @@ struct MainTabs: View {
             }
         }
         .tint(Theme.text)
-        .toolbarBackground(Theme.bar, for: .tabBar)
+        .toolbarBackground(.bar, for: .tabBar)
+        .sensoryFeedback(.selection, trigger: store.selectedTab)
         .sheet(isPresented: $account) { AccountSheet() }
         #if DEBUG
         .onAppear {
@@ -74,8 +75,8 @@ struct MainTabs: View {
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar(removing: .title)
                 .toolbar { barItems }
-                .toolbarBackground(Theme.bar, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                // The system's frosted bar, as in every iOS app.
+                .toolbarBackground(.bar, for: .navigationBar)
         }
     }
 
@@ -109,7 +110,7 @@ struct MainTabs: View {
                 .font(Theme.font(12, .heavy, relativeTo: .caption))
                 .foregroundStyle(Theme.muted)
                 .frame(width: 30, height: 30)
-                .overlay(Circle().strokeBorder(Theme.line2, lineWidth: 1.5))
+                .background(Theme.panel3, in: Circle())
                 .frame(minWidth: Theme.hit, minHeight: Theme.hit)
         }
         .buttonStyle(.plain)
@@ -146,6 +147,7 @@ struct AccountSheet: View {
                         ForEach(Appearance.allCases) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    .sensoryFeedback(.selection, trigger: appearance)
                 }
                 if store.backend.isDemo {
                     Section {
@@ -227,8 +229,7 @@ struct GateView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 50)
                         .foregroundStyle(Theme.text)
-                        .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
+                        .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.rSm + 2, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
@@ -238,7 +239,7 @@ struct GateView: View {
                         .font(Theme.font(15, .bold, relativeTo: .body))
                         .frame(maxWidth: .infinity, minHeight: 50)
                         .foregroundStyle(Theme.text)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.rMd).strokeBorder(Theme.line2, lineWidth: 1))
+                        .background(Theme.fill, in: RoundedRectangle(cornerRadius: Theme.rSm + 2, style: .continuous))
                 case .message:
                     EmptyView()
                 }

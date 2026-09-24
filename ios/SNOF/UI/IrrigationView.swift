@@ -98,6 +98,7 @@ struct IrrigationView: View {
             }
 
             Button {
+                Haptics.tap()
                 sending = true
                 awaitingNew = true
                 Task {
@@ -219,7 +220,7 @@ struct ReportSheet: View {
                     Button("Done") { dismiss() }.font(Theme.font(16, .bold, relativeTo: .body))
                 }
             }
-            .toolbarBackground(Theme.bar, for: .navigationBar)
+            .toolbarBackground(.bar, for: .navigationBar)
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -761,7 +762,7 @@ private struct Matrix: View {
                 }
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous).strokeBorder(Theme.line.opacity(0.6), lineWidth: 1))
     }
 }
 

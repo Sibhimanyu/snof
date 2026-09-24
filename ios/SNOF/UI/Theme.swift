@@ -8,7 +8,12 @@ import SNOFCore
  * Colour only ever means something: brand green on/live, amber stale, muted
  * brick unavailable/error. Green is a fill or text, never a wash behind
  * anything. Dark is the light theme's complement: same slate hue, low
- * chroma, every text pair re-checked for 4.5:1. */
+ * chroma, every text pair re-checked for 4.5:1.
+ *
+ * Shape and depth follow iOS (owner, 2026-09-24: "a soft, elegant iPhone
+ * feel" instead of sharp corners): cards are 22pt continuous rounds on a
+ * whisper of shadow with a near-invisible edge, controls are 12pt, and the
+ * bars are the system's frosted material. Mirrors styles.css. */
 enum Theme {
     static let bg = dyn(light: 0xf5f7f7, dark: 0x0e1314)
     static let bar = dyn(light: 0xffffff, dark: 0x121819)
@@ -36,9 +41,25 @@ enum Theme {
     static let warn = dyn(light: 0x7a5a12, dark: 0xd3b06c)
     static let bad = dyn(light: 0xa0504a, dark: 0xdd8f87)
 
-    static let rSm: CGFloat = 3
-    static let rMd: CGFloat = 3
-    static let rLg: CGFloat = 4
+    /// Buttons, fields, inner tiles (web --r).
+    static let rSm: CGFloat = 12
+    /// Cards: every panel, block and area card (web --r-xl).
+    static let rMd: CGFloat = 22
+    /// Sheets-within-sheets and banners.
+    static let rLg: CGFloat = 24
+    /// Row icon squircles (web --r-sm).
+    static let rIcon: CGFloat = 8
+
+    /// A card's outline: barely there, so the shadow does the lifting.
+    static let edge = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(white: 1, alpha: 0.06) : UIColor(red: 23/255, green: 37/255, blue: 42/255, alpha: 0.055) })
+    /// The soft lift under a card (web --shadow-card).
+    static let cardShadow = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(white: 0, alpha: 0.45) : UIColor(red: 23/255, green: 37/255, blue: 42/255, alpha: 0.09) })
+    /// Filled neutral fields and capsules (web --seg-track).
+    static let fill = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 140/255, green: 159/255, blue: 164/255, alpha: 0.16)
+        : UIColor(red: 86/255, green: 105/255, blue: 110/255, alpha: 0.12) })
 
     /* ---- type: Manrope, scaled with Dynamic Type from a base size ---- */
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular,
@@ -110,17 +131,33 @@ extension UIColor {
     }
 }
 
-/// A flat panel with a 1px border. No shadows, no gradients.
+/// A soft card, like an inset-grouped cell: continuous corners, a
+/// near-invisible edge, and a two-layer shadow on the shape only (never on
+/// the text inside it). `lifted: false` for the tinted pulse, which sits flat.
+struct Card: ViewModifier {
+    var radius: CGFloat = Theme.rMd
+    var fill: Color = Theme.panel
+    var lifted = true
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        content
+            .background(
+                shape.fill(fill)
+                    .shadow(color: lifted ? Theme.cardShadow.opacity(0.5) : .clear, radius: 1, y: 1)
+                    .shadow(color: lifted ? Theme.cardShadow : .clear, radius: 12, y: 6)
+            )
+            .overlay(shape.strokeBorder(lifted ? Theme.edge : .clear, lineWidth: 1))
+    }
+}
+
+/// A padded card.
 struct Panel: ViewModifier {
     var radius: CGFloat = Theme.rMd
     var padding: CGFloat = 14
     var fill: Color = Theme.panel
-    var stroke: Color = Theme.line
+    var lifted = true
     func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .background(fill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(stroke, lineWidth: 1))
+        content.padding(padding).modifier(Card(radius: radius, fill: fill, lifted: lifted))
     }
 }
 
@@ -128,9 +165,13 @@ extension View {
     func panel(radius: CGFloat = Theme.rMd, padding: CGFloat = 14) -> some View {
         modifier(Panel(radius: radius, padding: padding))
     }
-    /// The one tinted surface: the farm pulse.
+    /// The one tinted surface: the farm pulse. Flat, borderless.
     func tintPanel(padding: CGFloat = 18) -> some View {
-        modifier(Panel(padding: padding, fill: Theme.tint, stroke: Theme.tintLine))
+        modifier(Panel(padding: padding, fill: Theme.tint, lifted: false))
+    }
+    /// An unpadded card, for blocks that lay out their own rows.
+    func card(radius: CGFloat = Theme.rMd) -> some View {
+        modifier(Card(radius: radius))
     }
     /// Uppercase, tracked, faint: where you are, above what you are looking at.
     func eyebrowStyle() -> some View {
@@ -153,4 +194,25 @@ enum Appearance: String, CaseIterable, Identifiable {
         case .system: return nil
         }
     }
+}
+
+/* ---- haptics ----
+ * One small vocabulary, fired from the press itself — never from a state
+ * change, so a device someone else switches does not buzz your phone.
+ *   select  — a choice among options: tabs, chips, segments, valve picks
+ *   toggle  — a switch flipped: firmer turning on than off
+ *   tick    — a slider crossing each 10%
+ *   commit  — something that moves water: a heavy, rigid thump
+ *   warn    — a destructive confirm (stopping a run)
+ * Toasts already carry success/error (FarmStore.show). */
+@MainActor
+enum Haptics {
+    static func select() { UISelectionFeedbackGenerator().selectionChanged() }
+    static func toggle(on: Bool) {
+        UIImpactFeedbackGenerator(style: on ? .medium : .soft).impactOccurred(intensity: on ? 0.9 : 0.7)
+    }
+    static func tick() { UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.45) }
+    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    static func commit() { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 1) }
+    static func warn() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
 }

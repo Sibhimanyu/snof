@@ -39,6 +39,7 @@ struct DevicesView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .sensoryFeedback(.selection, trigger: store.deviceStatus)
             .onChange(of: store.deviceStatus) { _, _ in
                 if let d = store.deviceDomain, !scoped.contains(where: { $0.domain == d }) { store.deviceDomain = nil }
             }
@@ -152,7 +153,7 @@ struct Chip: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button { Haptics.select(); action() } label: {
             HStack(spacing: 6) {
                 Text(label).font(Theme.font(13, .semibold, relativeTo: .footnote))
                 Text("\(count)").font(Theme.font(12, .medium, relativeTo: .caption).monospacedDigit())
@@ -161,8 +162,7 @@ struct Chip: View {
             .foregroundStyle(on ? Theme.panel : Theme.text)
             .padding(.horizontal, 12)
             .frame(height: 32)
-            .background(on ? Theme.text : Theme.panel, in: Capsule())
-            .overlay(Capsule().strokeBorder(on ? Color.clear : Theme.line2, lineWidth: 1))
+            .background(on ? Theme.text : Theme.fill, in: Capsule())
             .frame(minHeight: Theme.hit)
             .contentShape(Rectangle())
         }
