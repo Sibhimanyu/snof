@@ -36,6 +36,7 @@
   --warn:#7a5a12; --warn-soft:rgba(122,90,18,.09); --warn-line:rgba(122,90,18,.3);
   --bad:#a0504a;  --bad-soft:rgba(160,80,74,.08);  --bad-line:rgba(160,80,74,.32);
   --off-soft:rgba(86,105,110,.08); --track:#dfe6e7; --knob:#ffffff;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%2356696e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   --shadow:none; --shadow-lg:0 18px 40px -24px rgba(23,37,42,.35);
   --r:3px; --r-sm:3px; --r-md:3px; --r-lg:4px; --r-xl:6px;
@@ -59,6 +60,7 @@
   --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
   --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
   --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%238c9fa4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --shadow-lg:0 20px 44px -22px rgba(0,0,0,.7);
   color-scheme:dark;
 }}
@@ -74,6 +76,7 @@
   --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
   --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
   --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%238c9fa4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --shadow-lg:0 20px 44px -22px rgba(0,0,0,.7);
   color-scheme:dark;
 }
@@ -104,7 +107,7 @@ body[data-view="gate"],body[data-view="boot"]{overflow:hidden}
 /* ---------- type ---------- */
 .eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
   line-height:1.3}
-.wordmark{font-weight:800;font-size:22px;letter-spacing:-.06em;line-height:1;color:var(--text)}
+.wordmark{font-weight:800;font-size:24px;letter-spacing:-.06em;line-height:1;color:var(--text)}
 .wordmark-sub{font-size:14px;font-weight:600;color:var(--muted);letter-spacing:-.005em;white-space:nowrap}
 
 /* ---------- shared interaction vocabulary ---------- */
@@ -166,7 +169,10 @@ body[data-view="gate"],body[data-view="boot"]{overflow:hidden}
 .brand{display:inline-flex;align-items:center;gap:12px;min-width:0;justify-self:start;border-radius:var(--r)}
 /* The farm's roundel leads the wordmark on every screen, as it does on the
    app icon. Same white disc as everywhere else it appears. */
-.brand-logo{width:32px;height:32px}
+/* logo-mark.png is the roundel trimmed to its circle and already on white,
+   so the green ring runs to the edge: no disc, no padding, no halo. */
+.brand-logo{display:block;flex:none;width:44px;height:44px;border-radius:50%}
+.gate-brand .brand-logo{width:52px;height:52px}
 .brand .wordmark-sub{margin-left:6px}
 .topnav{display:flex;align-items:stretch;gap:4px;height:100%}
 .topnav-item{position:relative;display:flex;align-items:center;padding:0 16px;font-size:14px;font-weight:650;
@@ -262,6 +268,9 @@ body[data-route="area"] .searchbar{display:block}
 .panel-body{padding:12px}
 .area-sec + .area-sec{margin-top:16px}
 .stats + .list,.stats + .grid,.list + .list{margin-top:12px}
+.cache-sec{margin-top:12px}
+/* A note after a panel or list is its own line, not a caption glued to it. */
+:is(.panel,.list,.dgroups,.rep-card) + .more-note{margin-top:12px}
 
 .section-head{display:flex;align-items:center;gap:10px;margin:30px 0 12px}
 .section-head:first-child{margin-top:0}
@@ -290,7 +299,7 @@ a.stat:hover{border-color:var(--line-2)}
 .stat-value{font-size:31px;font-weight:750;letter-spacing:-.05em;line-height:1;color:var(--ink);
   font-variant-numeric:tabular-nums}
 .stat-of{margin-left:2px;font-size:13px;font-weight:650;letter-spacing:0;color:var(--faint)}
-.stat-label{font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.stat-label{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
 .stat-bad .stat-value{color:var(--bad)}
 .stat-on .stat-value{color:var(--ink)}
 
@@ -471,27 +480,52 @@ input[type=range][disabled]{opacity:.42}
 .qc-more:hover{background:var(--panel-2)}
 
 /* ---------- irrigation report builder ---------- */
-.rep-builder{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px}
-.rep-field{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;
-  letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
-.rep-field select,.rep-field input[type=date]{min-height:42px;padding:0 12px;border-radius:var(--r);
-  border:1px solid var(--line-2);background:var(--panel);color:var(--text);
-  font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;}
-.rep-field select:hover,.rep-field input[type=date]:hover{border-color:var(--muted)}
-.rep-field select:focus,.rep-field input[type=date]:focus{border-color:var(--accent);
-  box-shadow:0 0 0 3px var(--accent-soft);outline:none}
+/* ---------- forms (report builder, add a person) ----------
+   One field system: every control is 44px tall with the same border, radius,
+   fill and type, the label sits above it at a fixed height, and the button is
+   the same 44px, so a row of them shares one top line and one bottom line.
+   Before this, only <select> and date inputs were styled: the email box fell
+   back to the browser's own, and the button stood taller than both. */
+.rep-builder{display:flex;gap:14px 12px;flex-wrap:wrap;align-items:flex-end;padding:18px 20px 20px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.rep-field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.rep-field > span{display:block;height:16px;line-height:16px;font-size:12px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--faint)}
+.rep-field :is(input,select){display:block;box-sizing:border-box;height:44px;margin:0;padding:0 14px;
+  border:1px solid var(--line-2);border-radius:var(--r);background-color:var(--panel);color:var(--text);
+  font:500 14.5px/1 var(--font);letter-spacing:0;text-transform:none;min-width:0}
+.rep-field input[type=email]{width:min(320px,100%)}
+.rep-field select{-webkit-appearance:none;appearance:none;padding-right:40px;min-width:220px;cursor:pointer;
+  background-image:var(--chev);background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px}
+.rep-field input[type=date]{min-width:170px}
+.rep-field :is(input,select)::placeholder{color:var(--faint)}
+.rep-field :is(input,select):hover{border-color:var(--muted)}
+.rep-field :is(input,select):focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--off-soft);outline:none}
+.rep-builder .btn{height:44px;min-height:44px;padding:0 22px;font-size:14.5px}
+.rep-builder + .more-note{margin-top:10px}
 .btn-primary{background:var(--brand);color:var(--on-brand);box-shadow:var(--shadow)}
 .btn-primary:hover{filter:brightness(1.07)}
 .btn-primary[disabled]{opacity:.55;cursor:progress}
-.rep-card{padding:18px 20px;border-radius:var(--r);background:var(--panel);
-  border:1px solid var(--line);box-shadow:var(--shadow);margin-bottom:12px}
+.rep-card{padding:0;border-radius:var(--r);background:var(--panel);
+  border:1px solid var(--line);margin-bottom:10px}
 .rep-card:last-child{margin-bottom:0}
-.rep-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.rep-title{font-size:14px;font-weight:700;letter-spacing:-.01em}
-.rep-when{margin-left:auto;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
-.rep-summary{margin-top:6px;font-size:13px;color:var(--muted)}
+.rep-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;min-height:56px;
+  padding:14px 20px 4px;text-align:left;border-radius:var(--r)}
+.rep-head:hover .rep-title{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-2)}
+.rep-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rep-title{font-size:15px;font-weight:700;letter-spacing:-.015em}
+.rep-when{margin-left:auto;font-size:12.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.rep-chev{width:16px;height:16px;color:var(--faint);transition:transform .18s var(--ease)}
+.rep-card.open .rep-chev{transform:rotate(90deg)}
+.rep-summary{margin:0;padding:0 20px 14px;font-size:13.5px;color:var(--muted)}
 .rep-summary.rep-err{color:var(--bad)}
-.rep-card .list{margin-top:10px}
+.rep-body{padding:4px 20px 18px;border-top:1px solid var(--line-soft)}
+/* A list inside a report is part of the card, not a card within it: it runs
+   edge to edge with hairlines above and below instead of its own frame. */
+.rep-card .list{margin:10px -20px 0;border-left:0;border-right:0;border-radius:0;background:transparent}
+.rep-card .list .row{padding-left:20px;padding-right:20px}
+.rep-body > .list:first-child{margin-top:-4px;border-top:0}
+.rep-body > .list:last-child{margin-bottom:-18px;border-bottom:0}
 
 /* ---------- inline report charts (irrigation: readings + valve runtime) ---------- */
 .spark{margin-top:10px}
@@ -501,7 +535,7 @@ input[type=range][disabled]{opacity:.42}
   stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .spark-dot{fill:var(--brand)}
 .spark-labels{display:flex;justify-content:space-between;margin-top:4px;
-  font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+  font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
 .spark-last{color:var(--text);font-weight:600}
 
 .bars{margin-top:10px;display:flex;flex-direction:column;gap:8px}
@@ -517,7 +551,7 @@ input[type=range][disabled]{opacity:.42}
 .row-art{width:28px;height:28px;object-fit:contain;display:block}
 .bar-art{width:22px;height:22px;object-fit:contain;flex:none}
 .tl-art{width:20px;height:20px;object-fit:contain;flex:none}
-.bar-value{flex:none;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.bar-value{flex:none;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
 
 /* Multi-series line chart (voltage per phase, inlet vs outlet). Series are
    told apart by weight and dash, not by hue: the accent for the first, the
@@ -526,7 +560,7 @@ input[type=range][disabled]{opacity:.42}
 .chart{position:relative;margin-top:2px}
 .chart-plot{position:relative;padding-bottom:18px}
 .chart-svg{width:100%;height:150px;display:block;overflow:visible}
-.ln-ax{position:absolute;font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums;
+.ln-ax{position:absolute;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;
   line-height:1;white-space:nowrap;pointer-events:none}
 .ln-ay{left:0;width:30px;text-align:right;transform:translateY(-50%)}
 .ln-xs{position:absolute;left:0;right:0;bottom:0;height:14px}
@@ -541,7 +575,7 @@ input[type=range][disabled]{opacity:.42}
 .ln-on{fill:var(--accent-soft)}
 .ln-hit{fill:transparent}
 .ln-hit:hover{fill:var(--off-soft)}
-.chart-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:11.5px;color:var(--muted)}
+.chart-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:12px;color:var(--muted)}
 .lg{display:inline-flex;align-items:center;gap:6px}
 .lg i{display:inline-block;width:16px;height:0;border-top:2px solid var(--muted)}
 .lg i.ln-0{border-top:2.5px solid var(--brand)}
@@ -558,7 +592,7 @@ input[type=range][disabled]{opacity:.42}
 .stk-whole{display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px 4px 2px 2px;
   background:var(--track);overflow:hidden;min-height:2px}
 .stk-part{display:block;background:var(--brand);border-radius:3px 3px 0 0}
-.stk-at{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-size:10px;
+.stk-at{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-size:11px;
   color:var(--faint);font-variant-numeric:tabular-nums}
 .lg i.stk-k-whole{width:10px;height:10px;border:0;border-radius:2px;background:var(--track)}
 .lg i.stk-k-part{width:10px;height:10px;border:0;border-radius:2px;background:var(--brand)}
@@ -569,7 +603,7 @@ input[type=range][disabled]{opacity:.42}
 .vg{display:grid;grid-template-columns:24px 1fr;grid-template-rows:auto auto;column-gap:8px;
   align-items:center;padding:8px 10px;border-radius:var(--r);background:var(--off-soft)}
 .vg-art{grid-row:1 / 3;width:24px;height:24px;object-fit:contain}
-.vg-name{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vg-name{font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vg-val{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
 .vg-idle{background:transparent;box-shadow:inset 0 0 0 1px var(--line-2)}
 .vg-idle .vg-val{color:var(--faint);font-weight:600}
@@ -578,12 +612,12 @@ input[type=range][disabled]{opacity:.42}
 /* Valve × day. Heat is the accent at an opacity proportional to minutes. */
 .mx-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--r);
   box-shadow:inset 0 0 0 1px var(--line)}
-.mx{border-collapse:collapse;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums}
+.mx{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
 .mx th,.mx td{padding:5px 7px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line)}
 .mx tr:last-child th,.mx tr:last-child td{border-bottom:0}
-.mx th{font-weight:600;color:var(--muted);font-size:10.5px}
+.mx th{font-weight:600;color:var(--muted);font-size:11.5px}
 .mx .mx-name{position:sticky;left:0;text-align:left;background:var(--panel);color:var(--text);
-  font-weight:550;font-size:11.5px;z-index:1}
+  font-weight:550;font-size:12px;z-index:1}
 .mx td{color:var(--text);background:rgb(1 136 67 / var(--heat,0))}
 .mx td.mx-zero{color:var(--faint)}
 .mx .mx-total{font-weight:700;color:var(--text);background:var(--panel)}
@@ -595,9 +629,9 @@ input[type=range][disabled]{opacity:.42}
    should read like the rest of the dashboard, not like a vendor's app. */
 .rep-sec{margin-top:11px}
 .rep-sec:first-of-type{margin-top:9px}
-.sec-title{display:flex;align-items:baseline;gap:8px;margin-bottom:7px;font-size:11px;
+.sec-title{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;font-size:12px;
   font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
-.sec-src{font-size:10.5px;font-weight:600;letter-spacing:.04em;color:var(--faint);
+.sec-src{font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--faint);
   text-transform:none}
 .rep-note{margin:7px 0 0;font-size:12.5px;color:var(--faint)}
 .rep-note.rep-err{color:var(--bad)}
@@ -608,12 +642,12 @@ input[type=range][disabled]{opacity:.42}
 .tiles{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
 .tile{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--r);
   background:var(--off-soft)}
-.tile-label{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+.tile-label{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   color:var(--muted)}
 .tile-value{font-size:21px;font-weight:700;letter-spacing:-.03em;line-height:1.2;
   font-variant-numeric:tabular-nums}
 .tile-unit{margin-left:3px;font-size:12px;font-weight:600;color:var(--muted)}
-.tile-note{font-size:11.5px;color:var(--faint)}
+.tile-note{font-size:12px;color:var(--faint)}
 
 .facts{display:grid;gap:1px;border-radius:var(--r);overflow:hidden;background:var(--line)}
 .fact{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
@@ -622,7 +656,7 @@ input[type=range][disabled]{opacity:.42}
 .fact-value{font-size:13px;font-weight:600;text-align:right;overflow-wrap:anywhere}
 
 .tl{display:flex;flex-direction:column;gap:2px}
-.tl-day{margin:7px 0 3px;font-size:11px;font-weight:700;letter-spacing:.06em;
+.tl-day{margin:7px 0 3px;font-size:12px;font-weight:700;letter-spacing:.06em;
   color:var(--faint);font-variant-numeric:tabular-nums}
 .tl-day:first-child{margin-top:0}
 .tl-row{display:flex;align-items:baseline;gap:10px;padding:5px 0}
@@ -632,7 +666,7 @@ input[type=range][disabled]{opacity:.42}
   white-space:nowrap}
 /* Scoped to the timeline: a bare .chip here silently restyled every filter chip
    on All devices, which is defined further up with the same name. */
-.tl-chip{flex:none;font-size:10.5px;font-weight:650;letter-spacing:.04em;padding:2px 7px;
+.tl-chip{flex:none;font-size:11.5px;font-weight:650;letter-spacing:.04em;padding:2px 7px;
   border-radius:999px;color:var(--muted);background:var(--off-soft)}
 
 /* ---------- skeleton / empty ---------- */
@@ -700,8 +734,8 @@ input[type=range][disabled]{opacity:.42}
   .topnav,.only-wide{display:none}
   .only-narrow{display:inline-flex}
   .brand .wordmark-sub{display:none}
-  .wordmark{font-size:20px}
-  .brand-logo{width:28px;height:28px}
+  .wordmark{font-size:21px}
+  .brand-logo{width:36px;height:36px}
   #m-bridge{padding:7px 12px;font-size:12.5px;gap:7px}
   .page-head .pill-head{display:none}
   .main{padding-bottom:calc(60px + var(--sab))}
@@ -731,8 +765,19 @@ input[type=range][disabled]{opacity:.42}
   .pulse-fig .eyebrow{margin-top:10px}
   .stats{gap:8px}
   .stat{padding:18px 14px 16px;min-height:0}
-  .stat-value{font-size:26px}
-  .stat-label{font-size:10.5px;letter-spacing:.1em}
+  .stat-value{font-size:22px;white-space:nowrap}
+  .stat-note{font-size:12px}
+  /* Report header on a phone: title and status on one line, the date under
+     it from the left edge, the chevron pinned top right. */
+  .rep-head{position:relative;padding:14px 44px 4px 16px;row-gap:4px}
+  .rep-when{margin-left:0;width:100%}
+  .rep-chev{position:absolute;right:16px;top:18px}
+  .rep-summary{padding:0 16px 14px}
+  .rep-body{padding:4px 16px 16px}
+  .rep-card .list{margin-left:-16px;margin-right:-16px}
+  .rep-card .list .row{padding-left:16px;padding-right:16px}
+  .rep-body > .list:last-child{margin-bottom:-16px}
+  .stat-label{font-size:11px;letter-spacing:.1em}
   .att-top{padding:22px 18px;gap:4px 20px}
   .att-row,.att-more{padding-left:18px;padding-right:18px}
   .panel-head{padding:10px 18px;min-height:58px}
@@ -752,10 +797,13 @@ input[type=range][disabled]{opacity:.42}
   .dgroup-head{padding:10px 18px;gap:12px}
   .dgroup-body .row{padding-left:18px}
   .gate-card{padding:28px 22px 22px}
+  .rep-builder{padding:16px}
+  .rep-field,.rep-field :is(input,select),.rep-builder .btn{width:100%;min-width:0}
+  .rep-field input[type=email]{width:100%}
 }
 @media (max-width:360px){
   .grid{grid-template-columns:1fr}
-  .stat-label{font-size:10px;letter-spacing:.06em}
+  .stat-label{font-size:11px;letter-spacing:.04em}
 }
 
 /* The bridge dot pulse, the change flash and card lifts are motivated motion,
