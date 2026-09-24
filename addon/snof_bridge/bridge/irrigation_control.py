@@ -188,8 +188,12 @@ def check_against(action: str, valves: list[int], state: dict, allowed: dict[int
         bad = [v for v in valves if v not in allowed]
         if bad:
             raise Refused(f"not an irrigation valve: {', '.join(map(str, bad))}")
-        if state["running"]:
-            raise Refused(f"{state['name'] or 'a program'} is running — stop it first")
+        # A scheduled program (a cycle timer such as Coconut) does not block a
+        # manual run: the owner runs valves by hand while a cycle is going
+        # (2026-09-24). Only another manual run does — two manual commands
+        # would collide.
+        if state["manual"]:
+            raise Refused("a manual run is already going — stop it first")
     elif not state["manual"]:
         raise Refused("no manual run to stop" if not state["running"]
                       else f"{state['name']} is a scheduled program; only manual runs can be stopped from the app")
