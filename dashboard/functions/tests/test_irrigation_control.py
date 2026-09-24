@@ -256,6 +256,19 @@ def test_nothing_is_sent_while_the_last_change_is_being_confirmed():
     assert result["ok"] and len(c.sent) == 1
 
 
+def test_a_dead_app_token_says_so_and_does_not_hang_confirming():
+    class DeadToken(Commander):
+        def send(self, command):
+            self.sent.append(command)
+            return 400, '{"message":"Bad request"}'
+    store = enabled_store()
+    reads = Reads()
+    result, c = run(store, "-a", cmd(), reads=reads, commander=DeadToken(reads))
+    assert result["ok"] is False and "token has expired" in result["message"], result
+    assert "confirming" not in result or result["confirming"] is False
+    assert store.reference(f"{ROOT}/irrigation_lock").get() is None
+
+
 def test_command_template_matches_the_add_on():
     assert IC.run_command([12, 15], 80, "A8") == "FON 012,015,000,000,000-01 20-" + IC._FON_TAIL + "@A8"
     assert IC.stop_command("A8") == "OFF@A8"
