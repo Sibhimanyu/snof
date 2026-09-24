@@ -12,7 +12,7 @@ struct OverviewView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        Page(eyebrow: Self.today(), title: "Your farm, right now.") {
+        Page(eyebrow: Self.today(), title: "Your farm, right now.", refresh: store.irrigationPull) {
             if !store.firstSnapshot {
                 LoadingBlock()
             } else if sizeClass == .regular {
