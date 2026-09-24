@@ -275,6 +275,7 @@ body[data-route="area"] .searchbar{display:block}
   .search-icon{left:14px!important;top:22px!important}
   body[data-route] .view .page-head{padding-right:min(380px,36vw)}
   body[data-route="overview"] .view .page-head,body[data-route="irrigation"] .view .page-head,
+  body[data-route="sys"] .view .page-head,body[data-route="water"] .view .page-head,
   body[data-route="admin"] .view .page-head{padding-right:0}
 }
 @media (max-width:900px){
@@ -1023,6 +1024,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .sys-sub{font-size:12px;color:var(--faint)}
 .sys-hero{display:flex;align-items:center;gap:20px;padding:20px 22px;margin-bottom:14px}
 .sys-hero .mb-facts{flex:1;border:0;padding:0}
+.sys-hero-body{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0}
 .sys-hero-title{font-size:24px;font-weight:750;letter-spacing:-.035em;color:var(--text)}
 .sys-hero.is-on .sys-hero-title{color:var(--accent)}
 .sys-hero.is-bad .sys-hero-title{color:var(--bad)}
@@ -1063,6 +1065,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .phase.dead .phase-bar i{background:var(--bad)}
 .phase strong{font-size:14px;font-weight:750;color:var(--ink);font-variant-numeric:tabular-nums}
 .phase.warn strong{color:var(--warn)}
+.phase.dead strong{color:var(--bad)}
 .phase small{font-size:10.5px;font-weight:700;color:var(--faint)}
 .pressure{display:flex;flex-direction:column;gap:3px;padding-bottom:4px}
 .pressure-out{font-size:12.5px;color:var(--muted)}

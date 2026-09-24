@@ -258,6 +258,11 @@ final class FarmStore {
         rebuildSystems()
     }
 
+    /// Devices whose being offline is a fault (not an appliance at rest).
+    var faultyDevices: [DeviceGroup] {
+        devices.filter { $0.isOffline && Systems.offlineIsFault($0, system: deviceSystems[$0.id]) }
+    }
+
     /// Systems are rebuilt when entities or device names change, not on every
     /// read: Home reads them from several cards on every clock tick.
     private func rebuildSystems() {
@@ -495,7 +500,6 @@ final class FarmStore {
 
     /* ---- irrigation control ---- */
 
-    /// The Run/Stop the NUC has not answered yet.
     /* ---- the farm, by system (SNOFCore Systems.swift) ---- */
 
     /// Devices sorted into what they are; appliances off at the wall are not faults.
@@ -514,11 +518,13 @@ final class FarmStore {
         default: break
         }
         i.irrigation = irrigation
+        i.programRunning = WaterNow.say(cache: irrigation, zone: FarmTime.zone(irrigation.timeZone), now: now).running
         i.now = now
-        i.mobitechProblem = isAdmin ? mobitechProblem : nil
-        i.liveskyProblem = isAdmin && water.enabled ? liveskyProblem : nil
+        i.mobitechSignInNeeded = isAdmin && mobitechProblem != nil
+        i.liveskySignInNeeded = isAdmin && water.enabled && [.none, .expired].contains(liveskyKind)
         i.water = water
         i.systems = systems
+        i.areaName = areas.mapValues(\.name)
         return Attention.items(i)
     }
 

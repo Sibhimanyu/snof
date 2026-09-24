@@ -437,16 +437,24 @@ function focusToken() {
   if (!a || !el('view').contains(a)) return null;
   if (a.dataset.domain) return { domain: a.dataset.domain };
   const owner = a.closest('[data-key]');
-  if (owner && a.dataset.act) return { key: owner.dataset.key, act: a.dataset.act };
+  if (owner && a.dataset.act) return { key: owner.dataset.key, act: a.dataset.act, same: owner === a };
+  // Buttons that carry their own identity (the day switch, a crop picker).
+  if (a.dataset.act) return { act: a.dataset.act, day: a.dataset.day, valve: a.dataset.valve };
+  const href = a.getAttribute('href');
+  if (href) return { href };
   return null;
 }
 
 function restoreFocus(token) {
   if (!token) return;
-  const sel = token.domain
-    ? `.chip[data-domain="${CSS.escape(token.domain)}"]`
-    : `[data-key="${CSS.escape(token.key)}"] [data-act="${CSS.escape(token.act)}"]`;
-  el('view').querySelector(sel)?.focus();
+  const q = (v) => CSS.escape(v);
+  let sel;
+  if (token.domain) sel = `.chip[data-domain="${q(token.domain)}"]`;
+  else if (token.key) sel = token.same ? `[data-key="${q(token.key)}"][data-act="${q(token.act)}"]`
+    : `[data-key="${q(token.key)}"] [data-act="${q(token.act)}"]`;
+  else if (token.act) sel = `[data-act="${q(token.act)}"]` + (token.day ? `[data-day="${q(token.day)}"]` : '') + (token.valve ? `[data-valve="${q(token.valve)}"]` : '');
+  else if (token.href) sel = `[href="${q(token.href)}"]`;
+  if (sel) el('view').querySelector(sel)?.focus();
 }
 
 const beginInteract = () => { interacting = true; };
@@ -461,7 +469,10 @@ function render() {
   const r = route();
 
   const farmName = state.meta?.name || 'SNOF';
-  document.title = `${farmName} · Live`;
+  // Each page names itself, so tabs, history and bookmarks tell them apart.
+  const pageName = { overview: 'Home', irrigation: 'Irrigation', water: 'Water', areas: 'Rooms', devices: 'All devices',
+    admin: 'Admin', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title }[r.name] || 'Home';
+  document.title = `${pageName} · SNOF`;
   el('brand-sub').textContent =
     farmName.replace(/^Sibhi\s*/i, '').replace(/\s*and Farms$/i, '') || 'Live farm state';
   // The search bar lives outside #view and shows only where it filters.
@@ -535,11 +546,6 @@ const inWords = (n) => (n <= 12 ? WORDS[n] : String(n));
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const plural = (n, one, many) => (n === 1 ? one : many);
 /** ["Cold Store", "East Orchard", "Barn"] -> "Cold Store, East Orchard and Barn". */
-function listWords(items, max = 2) {
-  if (items.length <= max) return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] || '');
-  const rest = items.length - max;
-  return `${items.slice(0, max).join(', ')} and ${rest} ${plural(rest, 'other', 'others')}`;
-}
 const todayLine = () => new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
   .replace(/^(\w+),?\s/, '$1 · ');
 
@@ -549,98 +555,13 @@ function skeletonView() {
 }
 
 /** Rooms with anything not reporting, worst first. */
-function troubledAreas(devices) {
-  const tally = new Map();
-  for (const d of devices) if (deviceOffline(d)) tally.set(d.area, (tally.get(d.area) || 0) + 1);
-  return [...tally.entries()].sort((a, b) => b[1] - a[1] ||
-    areaName(a[0]).localeCompare(areaName(b[0]), undefined, NATURAL)).map(([id]) => id);
-}
 
 /** Which devices are down, and where — a to-do list, not an entity count. */
-function attentionCard(devices) {
-  const troubled = devices.filter((d) => d.ents.some(isBad));
-  const dead = troubled.filter(deviceOffline);
-  if (!dead.length) {
-    const partly = troubled.length;
-    return `<section class="panel att is-clear" aria-label="Attention">
-      <div class="att-top"><span class="att-n">00</span><div>
-        <p class="att-title">Every device is reporting</p>
-        <p class="att-sub"><span>${partly ? `${inWords(partly)} ${plural(partly, 'is', 'are')} partly reporting` : 'Nothing needs a look right now.'}</span></p>
-      </div></div></section>`;
-  }
-  const rooms = troubledAreas(devices).map(areaName);
-  const rows = troubled.map((d) => ({ ...d, bad: d.ents.filter(isBad).length }))
-    .sort((a, b) => (deviceOffline(b) - deviceOffline(a)) || (b.bad - a.bad) ||
-                    a.name.localeCompare(b.name, undefined, NATURAL));
-  // Past a handful, a list of identical "Offline" rows says less than where
-  // they are: one row per room, worst first, with how much of it is down.
-  const byRoom = dead.length > 4;
-  const shown = byRoom ? [] : rows.slice(0, 3);
-  const roomRows = byRoom ? troubledAreas(devices).slice(0, 3).map((id) => {
-    const inRoom = devices.filter((d) => d.area === id);
-    const down = inRoom.filter(deviceOffline).length;
-    return `
-      <a class="att-row" href="#/area/${encodeURIComponent(id)}">
-        <span class="att-main"><span class="att-name">${escapeHtml(areaName(id))}</span>
-          <span class="att-bar" aria-hidden="true"><span style="width:${(down / inRoom.length * 100).toFixed(1)}%"></span></span></span>
-        <span class="att-count">${down}<span class="att-of"> of ${inRoom.length} offline</span></span>
-      </a>`;
-  }).join('') : '';
-  return `<section class="panel att" aria-label="Attention">
-    <div class="att-top"><span class="att-n">${pad2(dead.length)}</span><div>
-      <p class="att-title">${plural(dead.length, 'Device needs', 'Devices need')} attention</p>
-      <a class="att-sub" href="#/devices" data-act="filter" data-status="offline">
-        <span>${escapeHtml(byRoom ? `Across ${rooms.length} ${plural(rooms.length, 'room', 'rooms')}`
-          : rooms.slice(0, 2).join(' · ') + (rooms.length > 2 ? ` · +${rooms.length - 2}` : ''))}</span>${arrow()}</a>
-    </div></div>
-    <div class="att-list">` + roomRows + shown.map((d) => `
-      <a class="att-row" href="#/area/${encodeURIComponent(d.area)}">
-        <span class="att-main"><span class="att-name">${escapeHtml(d.name)}</span>
-          <span class="att-meta">${escapeHtml(areaName(d.area))}</span></span>
-        <span class="tag ${deviceOffline(d) ? 'tag-bad' : 'tag-warn'}">${deviceOffline(d) ? 'Offline' : `${d.bad} of ${d.ents.length} down`}</span>
-      </a>`).join('') + `</div>` +
-    (byRoom
-      ? `<a class="att-more" href="#/devices" data-act="filter" data-status="offline">` +
-        `<span>See all ${rows.length} not reporting</span>${arrow()}</a>`
-      : rows.length > shown.length
-      ? `<a class="att-more" href="#/devices" data-act="filter" data-status="offline">` +
-        `<span>${rows.length - shown.length} more not reporting</span>${arrow()}</a>` : '') +
-    `</section>`;
-}
 
-function quickControls(all) {
-  // An unavailable device in a *control* panel is a dead switch. They belong in
-  // the attention list, never here.
-  const operable = all.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
-  const quick = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 5);
-  const controllableTotal = all.filter((e) => CONTROLLABLE.has(e.domain)).length;
-  const more = operable.length - quick.length;
-  const body = quick.length
-    ? `<div class="dev-list">${quick.map((e) => deviceCard(e, 'quick')).join('')}</div>` +
-      (more > 0 ? `<a class="qc-more" href="#/devices" data-act="filter" data-status="active">` +
-        `<span>${more} more operable ${plural(more, 'device', 'devices')}</span>${arrow()}</a>` : '')
-    : emptyBlock('Nothing to operate right now',
-        controllableTotal
-          ? `All ${controllableTotal} switches, lights and fans are currently unavailable.`
-          : 'No switches, lights or fans are in a room yet.');
-  return `<section class="panel qc" aria-label="Quick controls">` +
-    panelHead(canControl ? 'Quick controls' : 'Controllable devices', ['#/devices', 'All devices']) +
-    controlNote() + body + `</section>`;
-}
 
 /* Home: what needs a look, one line per system, and the switches. Every
  * number here is a link to the page that has the rest (owner, 2026-09-25:
  * "basic and simple to navigate"). */
-function solarGlance(all) {
-  const sensors = all.filter((e) => e.domain === 'sensor');
-  const unit = (e) => e.attrs?.unit_of_measurement;
-  const first = (test) => { const hits = sensors.filter((e) => test(String(e.name || '').toLowerCase(), e)); return hits.find((e) => !isBad(e)) || hits[0]; };
-  const now = first((n, e) => (e.attrs?.device_class === 'power' || ['W', 'kW'].includes(unit(e))) && (n.endsWith('pv power') || n.endsWith('solar power')));
-  const today = first((n, e) => n.includes('today') && (n.includes('pv') || n.includes('solar')) && (e.attrs?.device_class === 'energy' || unit(e) === 'kWh'));
-  if (!now && !today) return null;
-  const val = (e) => (e && !isBad(e) ? `${e.state} ${unit(e) || ''}`.trim() : null);
-  return { area: (now || today).area, now: val(now), today: val(today) };
-}
 
 /* ---- Home, drawn (owner, 2026-09-25: "so dull … I need more visuals") ----
  * Every picture is real data: the water chain as pipes that flow while their
@@ -716,7 +637,7 @@ function irrigationCard() {
   }
   const pics = String(valves).split(/,\s*/).filter(Boolean).slice(0, 5)
     .map((v) => { const a = valveArt(v, 'irrigation'); return a ? artImg(a, 'crop') : ''; }).join('');
-  return `<a class="panel vcard" href="#/irrigation" aria-label="Irrigation">
+  return `<a class="panel vcard" href="#/irrigation">
     <span class="vcard-label">Irrigation${irrChecked() ? ` <em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}</span>
     ${empty ? `<p class="vcard-empty">No data yet</p>` : `<div class="vcard-body">${ring(frac, tone, label, sub)}
       <div class="vcard-text"><strong>${escapeHtml(s.running ? s.title : s.title.replace(/^Last: /, ''))}</strong>
@@ -774,7 +695,6 @@ const SYSTEMS = {
   printer: { title: '3D printer', icon: 'i-printer', offline: 'none' },
   other: { title: 'Other', icon: 'i-default', offline: 'none' },
 };
-const SYSTEM_ORDER = ['security', 'solar', 'switches', 'climate', 'media', 'printer', 'other'];
 const lname = (e) => String(e.name || '').toLowerCase();
 const numOf = (e) => { const n = parseFloat(e?.state); return e && !isBad(e) && Number.isFinite(n) ? n : null; };
 const unitOf = (e) => e?.attrs?.unit_of_measurement || '';
@@ -811,6 +731,11 @@ function farmSystems(all) {
   return out;
 }
 
+/** A device that is an appliance (a fan, an AC, a TV, a remote) is "off at
+ *  the wall" when unavailable, whatever system it sits in: a smart fan
+ *  counted as a switch module was flagged every night (review, 2026-09-25). */
+const isAppliance = (d) => d.ents.some((e) => ['fan', 'climate', 'media_player', 'remote'].includes(e.domain));
+
 /** deviceId -> system id, so any page can tell a fault from an appliance at rest. */
 function deviceSystems(all) {
   const out = new Map();
@@ -820,7 +745,7 @@ function deviceSystems(all) {
 /** Offline devices split into faults and appliances switched off. */
 function offlineSplit(devices, index) {
   const down = devices.filter(deviceOffline);
-  const fault = down.filter((d) => (SYSTEMS[index.get(d.id)] || SYSTEMS.other).offline !== 'none');
+  const fault = down.filter((d) => (SYSTEMS[index.get(d.id)] || SYSTEMS.other).offline !== 'none' && !isAppliance(d));
   return { fault: fault.length, off: down.length - fault.length };
 }
 
@@ -895,17 +820,21 @@ function attentionItems(all, systems) {
   const add = (level, text, sub, href) => items.push({ level, text, sub, href });
   const b = bridgeStatus();
   if (b.cls === 'pill-offline' || b.cls === 'pill-stale') {
-    add('bad', 'Farm box offline', `Switches and controller reads are paused${b.ageSec ? ` · quiet for ${humanAge(b.ageSec)}` : ''}`, '#/');
+    add('bad', 'Farm box offline', `Switches and controller reads are paused${b.ageSec ? ` · quiet for ${humanAge(b.ageSec)}` : ''}`, null);
   }
   // Irrigation.
   const c = irrig(), p = c.program;
-  if (p && p.running) for (const f of p.faults || []) add('bad', `Valve ${f}`, 'during the running program', '#/irrigation');
-  const sup = irrSupply();
+  // Only what the controller said recently: an hours-old "no signal" or
+  // "no power" must not read as a present problem.
+  const checkedAt = p?.at || c.meta?.lastUpdated || 0;
+  const recent = serverNow() - checkedAt < 60 * 60000;
+  if (irrNowState().running) for (const f of p.faults || []) add('bad', `Valve ${f}`, 'during the running program', '#/irrigation');
+  const sup = recent ? irrSupply() : null;
   if (sup && sup.v.length && !sup.live) add('warn', 'No power at the pump', sup.at ? `as of ${sup.at}` : '', '#/irrigation');
   else if (sup && sup.missing) add('bad', 'A power phase is missing', `${sup.live} of 3 phases live${sup.at ? ` · ${sup.at}` : ''}`, '#/irrigation');
   const since = serverNow() - 864e5;
   // Programs with no valves assigned end at 0m by design; they are not faults.
-  const stopped = irrRuns().filter((r) => !r.finished && r.planned != null && r.valves && (farmMs(r.start) ?? 0) >= since);
+  const stopped = irrRuns().filter((r) => !r.finished && r.planned != null && r.valves && !mayStillRun(r) && (farmMs(r.start) ?? 0) >= since);
   if (stopped.length) add('warn', `${stopped.length} ${plural(stopped.length, 'run', 'runs')} stopped early`, stopped.slice(0, 2).map((r) => `${r.name} ${runAmount(r)}`).join(' · '), '#/irrigation');
   const repErr = c.meta?.lastError;
   if (repErr) add('warn', 'Could not reach the controller', repErr.replace(/^DCON [a-z_]+: /, '').slice(0, 80), '#/irrigation');
@@ -918,7 +847,7 @@ function attentionItems(all, systems) {
   }
   const ws = state.meta?.water || {};
   if (ws.enabled === true) {
-    if (isAdmin && liveskyState().kind !== 'ok') add('warn', 'Livesky sign-in needed', 'the river motor is not being read', '#/water');
+    if (isAdmin && ['none', 'expired'].includes(liveskyState().kind)) add('warn', 'Livesky sign-in needed', 'the river motor is not being read', '#/water');
     else if (ws.livesky?.ok === false && ws.livesky?.error) add('warn', 'River motor not read', ws.livesky.error, '#/water');
     if (ws.niagara?.ok === false && ws.niagara?.error) add('warn', 'Other farm not read', ws.niagara.error, '#/water');
     if (w.pulledAt && serverNow() - w.pulledAt > 30 * 60000) add('warn', 'Water readings are old', `last read ${agoText(w.pulledAt)}`, '#/water');
@@ -930,6 +859,8 @@ function attentionItems(all, systems) {
     if (id === 'security') {
       const s = systemSummary(sys);
       if (s.state === 'bad') add('bad', 'Alarm triggered', '', `#/sys/security`);
+      const panels = sys.ents.filter((e) => e.domain === 'alarm_control_panel');
+      if (panels.length && panels.every(isBad)) add('warn', 'Alarm station offline', 'the alarm state is unknown', '#/sys/security');
       const camsDown = sys.ents.filter((e) => e.domain === 'camera' && isBad(e));
       if (camsDown.length) add('warn', `${camsDown.length === 1 ? camsDown[0].name.replace(/ camera$/i, '') + ' camera' : `${camsDown.length} cameras`} offline`,
         camsDown.length > 1 ? camsDown.map((e) => e.name).join(', ') : areaName(camsDown[0].area), '#/sys/security');
@@ -940,7 +871,7 @@ function attentionItems(all, systems) {
       if (h >= 7 && h < 18 && systemSummary(sys).state === 'offline') add('warn', 'Solar inverter offline', 'during daylight', '#/sys/solar');
       continue;
     }
-    const down = sys.devices.filter(deviceOffline);
+    const down = sys.devices.filter((d) => deviceOffline(d) && !isAppliance(d));
     if (down.length) add('warn', `${down.length === 1 ? down[0].name : `${down.length} switch modules`} offline`,
       down.length === 1 ? areaName(down[0].area) : down.map((d) => d.name).join(', '), '#/sys/switches');
   }
@@ -956,8 +887,12 @@ function attentionPanel(items) {
   const shown = items.slice(0, 5);
   return `<section class="panel attn${bad ? ' is-bad' : ''}" aria-label="Needs a look">
     <div class="attn-head"><span class="attn-n">${items.length}</span><h2 class="panel-title">${plural(items.length, 'Thing needs', 'Things need')} a look</h2></div>
-    ${shown.map((i) => `<a class="attn-row ${i.level}" href="${i.href}"><span class="attn-dot"></span>` +
-      `<span class="attn-main"><strong>${escapeHtml(i.text)}</strong>${i.sub ? `<span>${escapeHtml(i.sub)}</span>` : ''}</span>${arrow('i-chevron', 'attn-chev')}</a>`).join('')}
+    ${shown.map((i) => {
+      const inner = `<span class="attn-dot"></span><span class="attn-main"><strong>${escapeHtml(i.text)}</strong>` +
+        `${i.sub ? `<span>${escapeHtml(i.sub)}</span>` : ''}</span>`;
+      return i.href ? `<a class="attn-row ${i.level}" href="${i.href}">${inner}${arrow('i-chevron', 'attn-chev')}</a>`
+        : `<div class="attn-row ${i.level}">${inner}</div>`;
+    }).join('')}
     ${items.length > shown.length ? `<p class="attn-more">${items.length - shown.length} more</p>` : ''}
   </section>`;
 }
@@ -967,7 +902,7 @@ function securityCard(systems) {
   if (!sys) return '';
   const s = systemSummary(sys);
   const tone = s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : '';
-  return `<a class="panel vcard sec ${tone}" href="#/sys/security" aria-label="Security">
+  return `<a class="panel vcard sec ${tone}" href="#/sys/security">
     <span class="vcard-label">Security</span>
     <div class="vcard-body"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
       <div class="vcard-text"><strong>${escapeHtml(s.line)}</strong>
@@ -981,7 +916,7 @@ function solarCard(systems) {
   if (!sys) return '';
   const s = systemSummary(sys);
   const [v, u] = s.watts > 0 ? fmtPower(s.watts).split(' ') : [s.line, ''];
-  return `<a class="panel vcard solar is-${s.state}" href="#/sys/solar" aria-label="Solar">
+  return `<a class="panel vcard solar is-${s.state}" href="#/sys/solar">
     <span class="vcard-label">Solar</span>
     <div class="vcard-body"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>
       ${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('')}</svg></span>
@@ -1009,7 +944,9 @@ function overviewView(all) {
   const systems = farmSystems(all);
   const busy = irrRefreshing.size > 0;
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="home-refresh"${busy ? ' disabled' : ''}>${busy ? 'Checking…' : 'Refresh'}</button>`;
-  return head('Home', '', refresh) + attentionPanel(attentionItems(all, systems)) + flowHero() +
+  // Nothing is "all clear" until the farm has actually been heard from.
+  const heard = !!(state.meta && (state.meta.bridge || state.meta.updatedAt));
+  return head('Home', '', refresh) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() +
     `<div class="vcards">${irrigationCard()}${solarCard(systems)}${securityCard(systems)}</div>` +
     switchTiles(all) + systemsGrid(systems);
 }
@@ -1037,7 +974,8 @@ function systemView(all, id) {
     ];
     top = `<section class="panel sys-hero solar is-${s.state}"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>` +
       [0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('') + `</svg></span>` +
-      `<div class="mb-facts">${facts.map(([k, v]) => `<div><span>${k}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></section>`;
+      `<div class="sys-hero-body"><h2 class="sys-hero-title">${escapeHtml(s.line)}</h2>${s.sub ? `<p class="sys-hero-sub">${escapeHtml(s.sub)}</p>` : ''}` +
+      `<div class="mb-facts">${facts.map(([k, v]) => `<div><span>${k}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></div></section>`;
   } else if (id === 'security') {
     const cams = sys.ents.filter((e) => e.domain === 'camera');
     top = `<section class="panel sys-hero sec ${s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : ''}"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
@@ -1244,9 +1182,9 @@ function latestReports() {
 const irrNeedsRange = (t) => (IRR_TYPES.find((x) => x.type === t) || {}).needs === 'range';
 
 function irrDefaultDates() {
-  const today = new Date(), past = new Date(Date.now() - 2 * 864e5);
-  const iso = (d) => d.toISOString().slice(0, 10);
-  return { from: iso(past), to: iso(today) };
+  // Farm dates: between 00:00 and 05:30 IST the UTC date is still yesterday.
+  const now = serverNow();
+  return { from: farmDay(now - 2 * 864e5), to: farmDay(now) };
 }
 
 /* Will anything on the NUC act on this?
@@ -1701,9 +1639,6 @@ function irrReportCard(key, rep, open = true) {
 /* The sidebar badge. It counted running motors until the Livesky and Niagara
  * feeds were removed; open valves is the equivalent "something is on right
  * now" number from the one controller that is left. */
-function irrigRunning() {
-  return (irrig().valves || []).filter((v) => v && v.status === 'on').length;
-}
 
 const irrigStatusTag = (s) =>
   s === 'on' ? `<span class="tag tag-on">Running</span>`
@@ -1799,6 +1734,10 @@ function parseRun(r) {
   if (l.includes('backwash') || l.startsWith('started by') || l.startsWith('ended by') || valves === 'no valves') valves = '';
   return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, valves };
 }
+/** A run whose planned end has not passed yet may still be going: the log
+ *  writes an unfinished run as "stopped" (join_runs), so it is not flagged
+ *  as cut short until its time is up. */
+const mayStillRun = (r) => r.planned != null && (farmMs(r.start) ?? 0) + r.planned * 60000 > serverNow();
 const runAmount = (x) => (x.planned == null ? (x.delivered != null ? fmtMin(x.delivered) : '')
   : x.finished ? fmtMin(x.planned) : `${fmtMin(x.delivered || 0)} of ${fmtMin(x.planned)}`);
 const irrRuns = () => (irrig().timerLog || []).map(parseRun).filter(Boolean)
@@ -1815,16 +1754,6 @@ function parsePumpDay(r) {
 }
 
 /** The newest day the logs cover. */
-function irrLatestDay() {
-  const runs = irrRuns();
-  const pumps = (irrig().motorLog || []).map(parsePumpDay).filter(Boolean).sort((a, b) => (a.day < b.day ? 1 : -1));
-  const day = [runs[0]?.day, pumps[0]?.day].filter(Boolean).sort().at(-1);
-  if (!day) return null;
-  const dayRuns = runs.filter((r) => r.day === day);
-  return { day, runs: dayRuns, pump: pumps.find((p) => p.day === day) || null,
-           waterMin: dayRuns.reduce((s, r) => s + (r.delivered || 0), 0),
-           stopped: dayRuns.filter((r) => !r.finished).length };
-}
 
 const triple = (s) => String(s || '').split('/').map((x) => parseFloat(x)).filter(Number.isFinite);
 function irrSupply() {
@@ -2101,16 +2030,24 @@ const CROP_LABELS = {
   coconut: 'Coconut', guava: 'Guava', mango: 'Mango', amla: 'Amla', jamun: 'Jamun', pomegranate: 'Pomegranate',
 };
 let cropDayPick = null;   // 'today' | 'yesterday', once chosen by hand
-const valveNo = (name) => { const m = /^(\d{1,2})\b/.exec(String(name || '').trim()); return m ? Number(m[1]) : null; };
+/** "12 Coco 1" -> 12; also "valve 12", which is what a report writes when
+ *  its name lookup failed. */
+const valveNo = (name) => { const m = /^(?:valve\s+)?(\d{1,2})\b/i.exec(String(name || '').trim()); return m ? Number(m[1]) : null; };
 
 function cropBreakdown(day) {
+  // The controller's own names and types, by number, so a report whose name
+  // lookup failed ("valve 12") still reads as "12 Coco 1" with its picture.
+  const byNo = new Map(valveRows().map((r) => [Number(r.id), r]));
   const runs = irrRuns().filter((r) => r.day === day && r.valves);
   const valves = new Map();
   for (const r of runs) {
-    for (const n of r.valves.split(/,\s*/).filter(Boolean)) {
-      const v = valves.get(n) || { name: n, min: 0, cut: 0, runs: 0 };
-      v.min += r.delivered || 0; v.runs += 1; if (!r.finished) v.cut += 1;
-      valves.set(n, v);
+    const cut = !r.finished && !mayStillRun(r);
+    for (const raw of r.valves.split(/,\s*/).filter(Boolean)) {
+      const no = valveNo(raw);
+      const name = (no != null && byNo.get(no)?.name) || raw;
+      const v = valves.get(name) || { name, no, min: 0, cut: 0, runs: 0 };
+      v.min += r.delivered || 0; v.runs += 1; if (cut) v.cut += 1;
+      valves.set(name, v);
     }
   }
   const crops = new Map();
@@ -2119,21 +2056,28 @@ function cropBreakdown(day) {
     const key = art && art !== 'backwash' ? art : `v:${v.name}`;
     const c = crops.get(key) || { key, art: art && art !== 'backwash' ? art : null,
       label: CROP_LABELS[art] || String(v.name).replace(/^\d+\s*/, '') || v.name, min: 0, cut: 0, valves: [] };
-    // Valves of one crop share their runs: count runs, not valve-runs.
-    c.min = Math.max(c.min, v.min); c.cut = Math.max(c.cut, v.cut); c.valves.push(v.name);
+    // Valves of one crop can run in separate programs (Mango1, Mango2):
+    // the crop shows its longest, and each valve keeps its own minutes.
+    c.min = Math.max(c.min, v.min); c.cut = Math.max(c.cut, v.cut); c.valves.push(v);
     crops.set(key, c);
   }
-  const watered = new Set([...valves.keys()].map(valveNo).filter((n) => n != null));
+  const watered = new Set([...valves.values()].map((v) => v.no).filter((n) => n != null));
   const dry = valveRows().filter((r) => isIrrigationValve(r) && !watered.has(Number(r.id))).map((r) => r.name);
-  return { crops: [...crops.values()].sort((a, b) => b.min - a.min || a.label.localeCompare(b.label)), dry, runs };
+  // The cache holds the newest runs only; if its oldest row is on this day,
+  // earlier runs that day may be missing.
+  const log = irrig().timerLog || [];
+  const oldest = log.reduce((m, r) => (r.at && (!m || r.at < m) ? r.at : m), '');
+  // A truncated log is exactly at a cap: 32 before 2026-09-25, 150 since.
+  const partial = (log.length === 32 || log.length >= 150) && oldest.slice(0, 10) >= day;
+  return { crops: [...crops.values()].sort((a, b) => b.min - a.min || a.label.localeCompare(b.label)), dry, runs, partial };
 }
 
 function irrCropsModule() {
   const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
-  const hasToday = irrRuns().some((r) => r.day === today);
+  const hasToday = irrRuns().some((r) => r.day === today && r.valves);
   const pick = cropDayPick || (hasToday ? 'today' : 'yesterday');
   const day = pick === 'today' ? today : yesterday;
-  const { crops, dry, runs } = cropBreakdown(day);
+  const { crops, dry, runs, partial } = cropBreakdown(day);
   const pumps = (irrig().motorLog || []).map(parsePumpDay).filter(Boolean);
   const pump = pumps.find((p) => p.day === day);
   if (!irrRuns().length && !pumps.length) return '';
@@ -2143,38 +2087,26 @@ function irrCropsModule() {
   const water = runs.reduce((s, r) => s + (r.delivered || 0), 0);
   const fig = (v, label) => `<div class="fig"><span class="fig-v">${v}</span><span class="fig-l">${label}</span></div>`;
   const max = Math.max(1, ...crops.map((c) => c.min));
-  const rows = crops.map((c) => `<div class="crop-row${c.cut ? ' is-cut' : ''}">
+  const rows = crops.map((c) => {
+    const same = c.valves.every((v) => v.min === c.valves[0].min);
+    const valveText = same ? c.valves.map((v) => v.name).join(', ') : c.valves.map((v) => `${v.name} ${fmtMin(v.min)}`).join(', ');
+    return `<div class="crop-row${c.cut ? ' is-cut' : ''}">
       ${c.art ? artImg(c.art, 'crop-art') : `<span class="crop-art crop-ico">${arrow('i-valve')}</span>`}
       <span class="crop-main"><span class="crop-name">${escapeHtml(c.label)}</span>
-        <span class="crop-valves">${escapeHtml(c.valves.join(', '))}${c.cut ? ` · ${c.cut} cut short` : ''}</span>
+        <span class="crop-valves">${escapeHtml(valveText)}${c.cut ? ` · ${c.cut} cut short` : ''}</span>
         <span class="crop-bar"><i style="width:${(c.min / max * 100).toFixed(1)}%"></i></span></span>
-      <span class="crop-min">${escapeHtml(fmtMin(c.min))}</span></div>`).join('');
+      <span class="crop-min">${escapeHtml(fmtMin(c.min))}</span></div>`;
+  }).join('');
   return `<section class="panel irr-mod watered" aria-label="Watered">
-    <div class="panel-head"><h2 class="panel-title">Watered</h2>${seg}</div>
+    <div class="panel-head"><h2 class="panel-title">Watered</h2>${irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}${seg}</div>
     <div class="figs">${fig(runs.length, plural(runs.length, 'Run', 'Runs'))}${fig(fmtMin(water), 'Water')}` +
     (pump ? fig(fmtMin(pump.pumpMin), 'Pump') : '') + (pump?.kwh != null ? fig(`${Math.round(pump.kwh)}<small>kWh</small>`, 'Energy') : '') + `</div>` +
     (crops.length ? `<div class="crop-list">${rows}</div>` : `<p class="more-note crop-empty">Nothing watered ${pick === 'today' ? 'yet today' : 'yesterday'}.</p>`) +
-    (dry.length && crops.length ? `<p class="more-note crop-dry">Not watered: ${escapeHtml(dry.join(', '))}</p>` : '') +
+    (partial ? `<p class="more-note crop-dry">Only the latest runs of this day are here. Refresh for the full day.</p>`
+      : dry.length && crops.length ? `<p class="more-note crop-dry">Not watered: ${escapeHtml(dry.join(', '))}</p>` : '') +
     `</section>`;
 }
 
-function irrDayModule() {
-  const d = irrLatestDay();
-  if (!d) return '';
-  const fig = (v, label) => `<div class="fig"><span class="fig-v">${v}</span><span class="fig-l">${label}</span></div>`;
-  const runs = irrRuns().slice(0, 4);
-  return `<section class="panel irr-mod" aria-label="${escapeHtml(farmDayLabel(d.day))}">` +
-    panelHead(farmDayLabel(d.day)) +
-    `<div class="figs">${fig(d.runs.length, 'Runs')}${fig(fmtMin(d.waterMin), 'Water')}` +
-    (d.pump ? fig(fmtMin(d.pump.pumpMin), 'Pump') : '') +
-    (d.pump?.kwh != null ? fig(`${Math.round(d.pump.kwh)}<small>kWh</small>`, 'Energy') : '') + `</div>` +
-    (runs.length ? `<div class="list">${runs.map((r) => `<div class="row run-row">
-        <span class="run-time">${escapeHtml(r.start.slice(11, 16))}</span>
-        <span class="row-main"><span class="row-name">${escapeHtml(r.name)}</span>
-          ${r.valves ? `<span class="row-meta">${escapeHtml(r.valves)}</span>` : ''}</span>
-        <span class="run-amt${r.finished ? '' : ' warn'}">${escapeHtml(runAmount(r))}</span></div>`).join('')}</div>` : '') +
-    `</section>`;
-}
 
 function irrSupplyModule() {
   const s = irrSupply(), p = irrPressure();

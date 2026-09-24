@@ -52,7 +52,8 @@ struct MainTabs: View {
                     if store.roomsMode == .rooms { AreasView() } else { DevicesView() }
                 }
             }
-            .badge(store.devices.contains(where: \.isOffline) ? Text("") : nil)
+            // Faults only: ACs, TVs and the printer off at the wall are not.
+            .badge(store.faultyDevices.isEmpty ? nil : Text(""))
         }
         .tint(Theme.text)
         .toolbarBackground(.bar, for: .tabBar)

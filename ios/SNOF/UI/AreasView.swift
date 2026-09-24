@@ -42,7 +42,7 @@ struct AreaDetailView: View {
         let devices = Sorting.byDevice(inArea, names: store.deviceNames)
         let index = store.deviceSystems
         let down = devices.filter(\.isOffline)
-        let fault = down.filter { (index[$0.id] ?? .other).offlineIsFault }.count
+        let fault = down.filter { Systems.offlineIsFault($0, system: index[$0.id]) }.count
         Page(title: store.areaName(areaId),
              subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices")"
                 + (fault > 0 ? " · \(fault) offline" : "") + (down.count - fault > 0 ? " · \(down.count - fault) off" : "")) {
