@@ -404,10 +404,12 @@ function toast(kind, message) {
 
 /* ================= router ================= */
 
+const ROUTES = new Set(['overview', 'irrigation', 'water', 'areas', 'devices', 'area', 'admin', 'sys']);
 const route = () => {
   const h = (location.hash || '#/').slice(1);
   const [, head, arg] = h.match(/^\/([^/]*)\/?(.*)$/) || [, '', ''];
-  return { name: head || 'overview', arg: decodeURIComponent(arg || '') };
+  const name = head || 'overview';
+  return ROUTES.has(name) ? { name, arg: decodeURIComponent(arg || '') } : { name: 'overview', arg: '' };
 };
 window.addEventListener('hashchange', () => { render(); el('view').focus(); window.scrollTo(0, 0); closeMenu(); });
 
@@ -949,9 +951,11 @@ function overviewView(all) {
   const systems = farmSystems(all);
   const busy = irrRefreshing.size > 0;
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="home-refresh"${busy ? ' disabled' : ''}>${busy ? 'Checking…' : 'Refresh'}</button>`;
+  const b = bridgeStatus();
+  const pill = `<span id="head-bridge" class="pill pill-head ${b.cls}" role="status"><span class="dot"></span><span id="head-bridge-text">${escapeHtml(b.long)}</span></span>`;
   // Nothing is "all clear" until the farm has actually been heard from.
   const heard = !!(state.meta && (state.meta.bridge || state.meta.updatedAt));
-  return head('Home', '', refresh) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() +
+  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() +
     `<div class="vcards">${irrigationCard()}${solarCard(systems)}${securityCard(systems)}</div>` +
     switchTiles(all) + systemsGrid(systems);
 }
@@ -2194,8 +2198,8 @@ function irrigationView() {
   const account = isAdmin
     ? `<details class="acct-sec"${mb.kind !== 'ok' || mbStep !== 'idle' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
   return head('Irrigation', '', '') +
-    `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}${irrSupplyModule()}</div>` +
-    `<div class="irr-col">${irrCropsModule()}</div></div>` +
+    `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
+    `<div class="irr-col">${irrSupplyModule()}</div></div>` + `<div class="irr-wide">${irrCropsModule()}</div>` +
     irrReportsModule() + account;
 }
 
