@@ -159,6 +159,7 @@ final class FarmStore {
         reportTasks.values.forEach { $0.cancel() }
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []; refreshKeys = []
+        irrigationTask?.cancel(); irrigationPending = nil
         meta = FarmMeta(); areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         firstSnapshot = false; canControl = false; isAdmin = false
@@ -181,6 +182,7 @@ final class FarmStore {
         case .reports(let v):
             reports = Parse.reports(v)
             settleReports()
+        case .irrigationResults(let v): settleIrrigation(v)
         case .controller(let b): canControl = b
         case .admin(let b): isAdmin = b
         case .serverTimeOffset(let s): skewMs = s
@@ -414,6 +416,76 @@ final class FarmStore {
             case "partial": show(.err, "Report partly ready — one part did not come back.")
             default: show(.err, "Report failed: \(rep.error.isEmpty ? "controller error" : rep.error)")
             }
+        }
+    }
+
+    /* ---- irrigation control ---- */
+
+    /// The Run/Stop the NUC has not answered yet.
+    private(set) var irrigationPending: String?
+    private var irrigationTask: Task<Void, Never>?
+
+    var canRunIrrigation: Bool { isAdmin }
+
+    /// Why Run/Stop cannot be pressed right now, or nil.
+    func irrigationRefusal() -> String? {
+        if !isAdmin { return "Only farm admins can open or close valves." }
+        let g = gate(.irrigationControl)
+        if !g.ok { return g.why }
+        if !connected { return BackendError.notConnected.localizedDescription }
+        if irrigationPending != nil { return "Waiting for the farm to answer the last command." }
+        return nil
+    }
+
+    var irrigationMaxMinutes: Int {
+        min(IrrigationCommand.maxMinutes, meta.bridge?.irrigationMaxMinutes ?? IrrigationCommand.maxMinutes)
+    }
+
+    func runValves(_ valves: [Int], minutes: Int) async {
+        guard let cmd = IrrigationCommand.run(valves: valves, minutes: minutes, cap: irrigationMaxMinutes) else {
+            show(.err, "Pick one to five valves and up to \(irrigationMaxMinutes) minutes."); return
+        }
+        await sendIrrigation(cmd)
+    }
+
+    func stopIrrigation() async { await sendIrrigation(.stop) }
+
+    private func sendIrrigation(_ cmd: IrrigationCommand) async {
+        if let why = irrigationRefusal() { show(.err, why); return }
+        guard let uid = user?.uid else { return }
+        do {
+            let key = try await backend.sendIrrigation(cmd, uid: uid)
+            irrigationPending = key
+            irrigationTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(60))
+                guard let self, !Task.isCancelled, self.irrigationPending == key else { return }
+                self.irrigationPending = nil
+                self.show(.err, "No answer from the farm. Nothing was confirmed — check the controller before trying again.")
+            }
+        } catch {
+            show(.err, (error as? BackendError) == .refused
+                 ? "The database refused that — irrigation control is for farm admins."
+                 : "Could not send: \(error.localizedDescription)")
+        }
+    }
+
+    private func settleIrrigation(_ v: Any?) {
+        guard let key = irrigationPending, let node = (v as? [String: Any])?[key] as? [String: Any] else { return }
+        irrigationPending = nil
+        irrigationTask?.cancel()
+        let ok = Parse.bool(node["ok"]) ?? false
+        let message = Parse.string(node["message"]) ?? ""
+        if ok {
+            let action = Parse.string(node["action"]) ?? ""
+            show(.ok, action == "stop" ? "Stop sent to the controller."
+                 : "Sent: \(Parse.string(node["valves"]) ?? "valves") for \(Parse.string(node["minutes"]) ?? "?") min.")
+            // Let the controller act, then ask it what it is doing.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(20))
+                await self?.refreshIrrigation()
+            }
+        } else {
+            show(.err, message.isEmpty ? "The farm refused that." : "Not sent: \(message)")
         }
     }
 

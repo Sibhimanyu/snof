@@ -125,6 +125,8 @@ final class FirebaseBackend: FarmBackend {
         // The last 20 results, as on the web; a new report always lands in them.
         observe(db.reference(withPath: "\(farm)/irrigation_reports").queryLimited(toLast: 20),
                 onDenied: denied) { handler(.reports($0)) }
+        observe(db.reference(withPath: "\(farm)/irrigation_command_results").queryLimited(toLast: 10),
+                onDenied: nil) { handler(.irrigationResults($0)) }
     }
 
     func detach() {
@@ -187,6 +189,13 @@ final class FirebaseBackend: FarmBackend {
         if let from { node["from"] = from }
         if let to { node["to"] = to }
         return try await push("farms/\(Farm.slug)/irrigation_requests", node)
+    }
+
+    func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String {
+        var node = command.payload
+        node["uid"] = uid
+        node["at"] = ServerValue.timestamp()
+        return try await push("farms/\(Farm.slug)/irrigation_commands", node)
     }
 
     func cancelUnsentWrites() {

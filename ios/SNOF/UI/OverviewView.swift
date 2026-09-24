@@ -141,6 +141,7 @@ struct IrrigationGlanceView: View {
                            symbol: "drop", framed: false)
             } else {
                 WaterNow(cache: c, zone: zone, now: now)
+                if store.canRunIrrigation { IrrigationControls(cache: c, zone: zone, now: now) }
                 if let day = Irrigation.latestDay(c) {
                     Hairline()
                     DayFigures(day: day, zone: zone, now: now)
@@ -282,6 +283,138 @@ private struct WaterNow: View {
                        checked: ago(p.at, now: now).map { "checked \($0)" })
         }
         return Say(running: false, title: "No runs logged yet", detail: "", checked: nil)
+    }
+}
+
+/// Admins only: open valves for a while, or end a manual run. Every press
+/// is confirmed, and the NUC reads the controller before it sends anything.
+private struct IrrigationControls: View {
+    @Environment(FarmStore.self) private var store
+    let cache: IrrigationCache
+    let zone: TimeZone
+    let now: Date
+    @State private var picking = false
+    @State private var confirmStop = false
+
+    var body: some View {
+        let refusal = store.irrigationRefusal()
+        let program = cache.program
+        let manual = program.map { $0.running && $0.isManual } ?? false
+        let waiting = store.irrigationPending != nil
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button { picking = true } label: {
+                    Label("Run valves…", systemImage: "drop")
+                        .frame(maxWidth: .infinity, minHeight: Theme.hit)
+                        .foregroundStyle(.white)
+                        .background(Theme.brand, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(refusal != nil)
+                .opacity(refusal != nil ? 0.5 : 1)
+                if manual {
+                    Button { confirmStop = true } label: {
+                        HStack(spacing: 6) {
+                            if waiting { ProgressView().controlSize(.small) }
+                            Label("Stop", systemImage: "stop.fill")
+                        }
+                        .frame(maxWidth: .infinity, minHeight: Theme.hit)
+                        .foregroundStyle(Theme.bad)
+                        .overlay(RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous)
+                            .strokeBorder(Theme.bad.opacity(0.6), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(refusal != nil)
+                }
+            }
+            .font(Theme.font(15, .semibold, relativeTo: .body))
+            if let refusal, !waiting { Note(text: refusal, tone: .warn) }
+            else if waiting { Note(text: "Sent to the farm — waiting for the controller to answer.") }
+        }
+        .padding(.horizontal, 12).padding(.bottom, 12)
+        .sheet(isPresented: $picking) { RunValvesSheet(cache: cache) }
+        .confirmationDialog("Stop the manual run?", isPresented: $confirmStop, titleVisibility: .visible) {
+            Button("Stop watering", role: .destructive) { Task { await store.stopIrrigation() } }
+        } message: {
+            Text([program?.valves, "The controller closes the valves and ends Manual Mode."]
+                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+        }
+    }
+}
+
+/// Pick up to five irrigation valves and a duration, then confirm.
+private struct RunValvesSheet: View {
+    @Environment(FarmStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let cache: IrrigationCache
+    @State private var picked: [Int] = []
+    @State private var minutes = 15
+    @State private var confirm = false
+
+    private static let choices = [5, 10, 15, 20, 30, 45, 60]
+
+    var body: some View {
+        let valves = Irrigation.operableValves(cache)
+        let busy = cache.program.map { $0.running } ?? false
+        let cap = store.irrigationMaxMinutes
+        NavigationStack {
+            List {
+                if busy, let p = cache.program {
+                    Section {
+                        Note(text: "\(p.name) is running. The farm will refuse a manual run until it ends\(p.isManual ? " or is stopped" : "").", tone: .warn)
+                    }
+                }
+                Section {
+                    Picker("Minutes", selection: $minutes) {
+                        ForEach(Self.choices.filter { $0 <= cap }, id: \.self) { Text(Format.minutes($0)).tag($0) }
+                    }
+                } footer: {
+                    Text("The controller stops by itself when the time is up.")
+                }
+                Section {
+                    ForEach(valves) { v in
+                        let on = picked.contains(v.id)
+                        Button {
+                            if on { picked.removeAll { $0 == v.id } }
+                            else if picked.count < IrrigationCommand.maxValves { picked.append(v.id) }
+                        } label: {
+                            HStack {
+                                Text(v.name).foregroundStyle(Theme.text)
+                                Spacer()
+                                if on { Image(systemName: "checkmark").foregroundStyle(Theme.on) }
+                            }
+                        }
+                        .disabled(!on && picked.count >= IrrigationCommand.maxValves)
+                    }
+                } header: {
+                    Text("Valves · up to \(IrrigationCommand.maxValves)")
+                } footer: {
+                    Text("Only irrigation valves are listed — never the tank, booster pump or backwash valve.")
+                }
+            }
+            .navigationTitle("Run valves")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Run") { confirm = true }.disabled(picked.isEmpty || store.irrigationRefusal() != nil)
+                }
+            }
+            .confirmationDialog(summary(valves), isPresented: $confirm, titleVisibility: .visible) {
+                Button("Open the valves") {
+                    let chosen = picked, mins = minutes
+                    dismiss()
+                    Task { await store.runValves(chosen, minutes: mins) }
+                }
+            } message: {
+                Text("Sent to the controller as Manual Mode, from the farm's own connection.")
+            }
+        }
+    }
+
+    private func summary(_ valves: [IrrigationValve]) -> String {
+        let names = picked.compactMap { id in valves.first { $0.id == id }?.name }
+        return "Water \(names.joined(separator: ", ")) for \(Format.minutes(minutes))?"
     }
 }
 

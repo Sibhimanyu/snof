@@ -157,4 +157,32 @@ final class OverviewTests: XCTestCase {
         ]
         XCTAssertEqual(OnNow.entities(ents, areaName: { $0 }).map(\.objectId), ["b"])
     }
+
+    func testIrrigationCommandsAreBounded() {
+        XCTAssertEqual(IrrigationCommand.run(valves: [12, 15], minutes: 20)?.payload["valves"] as? String, "12,15")
+        XCTAssertNil(IrrigationCommand.run(valves: [], minutes: 20))
+        XCTAssertNil(IrrigationCommand.run(valves: [1, 2, 3, 4, 5, 6], minutes: 20))
+        XCTAssertNil(IrrigationCommand.run(valves: [4, 4], minutes: 20))
+        XCTAssertNil(IrrigationCommand.run(valves: [12], minutes: 61))
+        XCTAssertNil(IrrigationCommand.run(valves: [12], minutes: 45, cap: 30), "the bridge's cap wins")
+        XCTAssertEqual(IrrigationCommand.stop.payload.count, 1)
+    }
+
+    func testOnlyIrrigationValvesAreOffered() {
+        var c = IrrigationCache()
+        c.valveNames = [["id": "2", "name": "2 BPump", "type": "Booster Pump"],
+                        ["id": "3", "name": "3 Backwash", "type": "Backwash"],
+                        ["id": "15", "name": "15 Coco 2", "type": "Irrigation"],
+                        ["id": "12", "name": "12 Coco 1", "type": "Irrigation"]]
+        XCTAssertEqual(Irrigation.operableValves(c).map(\.id), [12, 15])
+    }
+
+    func testIrrigationControlNeedsAnExplicitYes() {
+        let now = 1_000_000.0
+        var hb = BridgeMeta(status: "online", lastSeen: now, heartbeatSeconds: 30, control: true)
+        XCTAssertFalse(Gate.evaluate(.irrigationControl, bridge: hb, nowMs: now, skewMs: 0).ok, "nil is off")
+        hb.irrigationControl = true
+        XCTAssertTrue(Gate.evaluate(.irrigationControl, bridge: hb, nowMs: now, skewMs: 0).ok)
+        XCTAssertFalse(Gate.evaluate(.irrigationControl, bridge: hb, nowMs: now + 200_000, skewMs: 0).ok, "stale bridge")
+    }
 }

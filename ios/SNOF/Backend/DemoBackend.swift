@@ -12,6 +12,8 @@ import SNOFCore
  *   -demo-live        production on 2026-09-24: 297 entities on 21 roomed
  *                     devices, with device ids and names (debug builds only)
  *   -demo-viewer      viewer, not controller
+ *   -demo-admin       admin: sees irrigation Run / Stop
+ *   -demo-irrigationoff  bridge publishes irrigationControl: false
  *   -demo-controloff  bridge publishes control: false
  *   -demo-reportsoff  meta/reports.enabled: false (the report kill switch)
  *   -demo-stale       bridge heartbeat 400 s old
@@ -82,6 +84,8 @@ final class DemoBackend: FarmBackend {
         var bridge = meta["bridge"] as? [String: Any] ?? [:]
         bridge["lastSeen"] = now - (flag("stale") ? 400_000 : 5_000)
         bridge["control"] = !flag("controloff")
+        bridge["irrigationControl"] = !flag("controloff") && !flag("irrigationoff")
+        bridge["irrigationControlStatus"] = ["maxMinutes": 60]
         meta["bridge"] = bridge
         if flag("reportsoff") { meta["reports"] = ["enabled": false] }
         tree["meta"] = meta
@@ -141,7 +145,7 @@ final class DemoBackend: FarmBackend {
         handler(.connected(true))
         if flag("denied") { handler(.denied); return }
         handler(.controller(!flag("viewer")))
-        handler(.admin(false))
+        handler(.admin(flag("admin")))
         emitAll()
 
         ticker = Task { [weak self] in
@@ -254,6 +258,43 @@ final class DemoBackend: FarmBackend {
                 self.tree["irrigation"] = irr
                 self.handler?(.irrigation(irr))
             }
+        }
+        return key
+    }
+
+    func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String {
+        if flag("viewer") || flag("controloff") { throw BackendError.refused }
+        let key = "demo_irr_\(UUID().uuidString.prefix(8))"
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let self else { return }
+            var irr = self.tree["irrigation"] as? [String: Any] ?? [:]
+            let names = Parse.rows(irr["valveNames"])
+            let picked = (command.valves ?? "").split(separator: ",").map(String.init)
+            let valveText = picked.map { id in names.first { $0["id"] == id }?["name"] ?? "valve \(id)" }
+                .joined(separator: ", ")
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = FarmTime.zone("+05:30")
+            f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            let now = Date(), at = now.timeIntervalSince1970 * 1000
+            var program = irr["program"] as? [String: Any] ?? [:]
+            if command.action == "run" {
+                program = ["at": at, "name": "Manual Mode", "kind": "Manual", "running": true, "valves": valveText,
+                           "start": f.string(from: now), "lastSeen": f.string(from: now),
+                           "plannedMin": command.minutes ?? 0, "remainingMin": command.minutes ?? 0,
+                           "next": program["next"] ?? NSNull()]
+            } else {
+                program["running"] = false
+                program["at"] = at
+            }
+            irr["program"] = program
+            self.tree["irrigation"] = irr
+            var results = self.tree["irrigation_command_results"] as? [String: Any] ?? [:]
+            results[key] = ["ok": true, "action": command.action, "status": 200, "valves": valveText,
+                            "minutes": command.minutes ?? 0, "message": "Command has been sent successfully", "at": at]
+            self.tree["irrigation_command_results"] = results
+            self.handler?(.irrigation(irr))
+            self.handler?(.irrigationResults(results))
         }
         return key
     }

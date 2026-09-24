@@ -1,5 +1,5 @@
 name: SNOF Firebase Bridge
-version: "0.9.4"
+version: "0.10.0"
 slug: snof_bridge
 description: Mirrors Home Assistant entity states to Firebase Realtime Database, grouped by area, for the SNOF dashboard.
 url: https://github.com/sibhimanyu/snof
@@ -57,6 +57,18 @@ options:
   dcon_serial: ""
   dcon_token_id: ""
   dcon_product: "DCON"
+  # Irrigation control. Leave false and the controller can only be read.
+  # Turning it on lets farm admins start a manual run on irrigation valves
+  # (never the tank, booster or backwash valve) for up to
+  # irrigation_max_minutes, and stop a manual run. The command credential is
+  # the Mobitech app's session authorization ("…@ios"), the device id is the
+  # controller's (dashboard device_id), the slot is the Mobitech user it is
+  # sent as (A8 = sibhi).
+  allow_irrigation_control: false
+  dcon_device_id: ""
+  dcon_command_auth: ""
+  dcon_user_slot: ""
+  irrigation_max_minutes: 60
 schema:
   firebase_db_url: url
   service_account_path: str
@@ -82,3 +94,8 @@ schema:
   dcon_serial: str
   dcon_token_id: password
   dcon_product: str
+  allow_irrigation_control: bool
+  dcon_device_id: str
+  dcon_command_auth: password
+  dcon_user_slot: str
+  irrigation_max_minutes: int(1,180)

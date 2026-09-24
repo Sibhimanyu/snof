@@ -50,6 +50,14 @@ class Config:
     dcon_serial: str = field(default="", repr=False)
     dcon_token_id: str = field(default="", repr=False)
     dcon_product: str = "DCON"
+    # Irrigation control (bridge/irrigation_control.py): start a manual run on
+    # irrigation valves, or stop one. Off unless the options turn it on, and
+    # then only with the command credential, device id and user slot all set.
+    allow_irrigation_control: bool = False
+    dcon_device_id: str = field(default="", repr=False)
+    dcon_command_auth: str = field(default="", repr=False)
+    dcon_user_slot: str = ""
+    irrigation_max_minutes: int = 60
 
     # Resolved at construction, not user-facing.
     ha_ws_url: str = field(default="", repr=False)
@@ -126,6 +134,11 @@ def load() -> Config:
         dcon_serial=(opts.get("dcon_serial") or "").strip(),
         dcon_token_id=(opts.get("dcon_token_id") or "").strip(),
         dcon_product=(opts.get("dcon_product") or "DCON").strip(),
+        allow_irrigation_control=bool(opts.get("allow_irrigation_control", False)),
+        dcon_device_id=str(opts.get("dcon_device_id") or "").strip(),
+        dcon_command_auth=(opts.get("dcon_command_auth") or "").strip(),
+        dcon_user_slot=(opts.get("dcon_user_slot") or "").strip().upper(),
+        irrigation_max_minutes=max(1, min(180, int(opts.get("irrigation_max_minutes", 60)))),
         ha_ws_url=ws_url,
         ha_token=token,
     )
