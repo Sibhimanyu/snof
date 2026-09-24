@@ -23,6 +23,8 @@ SSH_OPTS="${SSH_OPTS:--o ProxyCommand=none -o IdentitiesOnly=yes -i $HOME/.ssh/s
 NUC="${NUC:-sibhiorchards@192.168.68.200}"
 
 TOKEN="$(pbpaste | tr -d '\r\n\t ')"
+# The app sends the header URL-encoded ("…%40ios"); Mobitech takes either form.
+TOKEN="${TOKEN/%%40ios/@ios}"
 if [[ "$TOKEN" != *@ios || ${#TOKEN} -lt 40 ]]; then
   echo "The clipboard does not hold a Mobitech app token (it should end in @ios)." >&2
   exit 1

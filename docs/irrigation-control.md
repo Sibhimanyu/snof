@@ -118,6 +118,13 @@ proves it with a status poll. Both consumers now turn this 400 into "the
 Mobitech app token has expired" instead of "Bad request". Signing in to the
 Mobitech app again ends the session, so expect to repeat this.
 
+**Update, same day (mitmproxy capture, [mobitech-app.md](mobitech-app.md)):**
+the token is the phone's Firebase push token plus `@ios`. Signing out and
+back in on the same phone keeps it, so it changes only when the phone's push
+token rotates. The app itself runs valves with `V…ON HH MM` and stops them
+with `MOFF`, not `FON` / `OFF`, and confirms through `cmd_status`
+(`sent: 2`).
+
 Also seen in the history: Mobitech's own app sends manual runs as
 `V003,000,…(10 slots)ON 00 15!1@A1` and, in the capture,
 `V012,015ON 01 20@A8`; `FON …` appears too. Our `FON` template is taken from
@@ -153,3 +160,45 @@ session now reads "an admin signs in to Mobitech again".
 Unproven until the first sign-in: whether Mobitech keeps one session per
 account (signing in here would then sign the phone's Mobitech app out, and
 the other way round).
+
+## Reconciled with the app capture (2026-09-24)
+
+[mobitech-app.md](mobitech-app.md) is the ground truth for everything that
+talks to Mobitech. Checked against it, harmlessly (fingerprints and shapes
+only, no command sent):
+
+**Corrections to the sections above**
+
+- "The command token expires" is wrong in its cause. The token is the
+  phone's FCM push token + `@ios`; it dies when that token is unregistered
+  (a sign-out in the app) or rotates (reinstall, restore, new phone), not
+  on a timer. Our code's message "the Mobitech session has expired" reads
+  as a timeout; the real meaning is "Mobitech no longer accepts the command
+  token".
+- The add-on's read token `dcon_token_id` has the **same fingerprint as the
+  capture's live command token**, and a dashboard read with it works. Only
+  `dcon_command_auth` holds the dead 2025 Postman token. Commands and
+  `token_id` take the same token, so a working one is already on the NUC.
+  Putting it in place is open decision (a); not done.
+- "Signing in to Mobitech from the app" (PR #18) **is open decision (c)**:
+  a session of SNOF's own, with a client-made token that is not a real FCM
+  token. The capture confirms the protocol but not that Mobitech accepts
+  such a token, nor whether one user may hold two sessions (it might sign
+  the phone out). It is deployed but has never been used:
+  `/private/mobitech` and `mobitech_status` are empty. Pressing it is the
+  owner's call.
+
+**Settled by the capture**
+
+- A manual run during a scheduled program: the controller's
+  `timers.current` switches to *Manual Mode* on the requested valves
+  (`start_control: MM`), displacing the program. So our run confirmation
+  (manual, on those valves) sees it. The "unproven" note above is closed.
+- A stop: after `MOFF` the interrupted program resumes (`start_control:
+  TM`). Our stop confirmation ("no manual run going") is right for it.
+- Timing: changes showed on the dashboard after 40–50 s, well inside our
+  2-minute, 10 s-poll window.
+
+**Still open, owner's call:** (a) the command token; (b) run/stop as
+`V…ON HH MM` / `MOFF` with `cmd_status sent: 2` as an earlier yes (our code
+still sends `FON` / `OFF`); (c) SNOF's own session.

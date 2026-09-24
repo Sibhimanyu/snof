@@ -17,6 +17,7 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | Tests or the preview harness | [docs/testing-and-preview.md](docs/testing-and-preview.md) |
 | `ios/` (native app) | [docs/ios-app.md](docs/ios-app.md) |
 | Anything that calls Mobitech DCON | [docs/dcon-off-the-nuc.md](docs/dcon-off-the-nuc.md) |
+| How the Mobitech app signs in and sends commands | [docs/mobitech-app.md](docs/mobitech-app.md) |
 
 Architecture and data shape are in README.md.
 
