@@ -268,6 +268,9 @@ body[data-route="area"] .searchbar{display:block}
 .panel-body{padding:12px}
 .area-sec + .area-sec{margin-top:16px}
 .stats + .list,.stats + .grid,.list + .list{margin-top:12px}
+.cache-sec{margin-top:12px}
+/* A note after a panel or list is its own line, not a caption glued to it. */
+:is(.panel,.list,.dgroups,.rep-card) + .more-note{margin-top:12px}
 
 .section-head{display:flex;align-items:center;gap:10px;margin:30px 0 12px}
 .section-head:first-child{margin-top:0}

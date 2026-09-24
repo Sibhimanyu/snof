@@ -1412,22 +1412,26 @@ function irrigationView() {
           <span class="stat-value">${escapeHtml(latest(n.electricity))}</span>
           <span class="stat-note">${escapeHtml((n.electricity || []).length ? 'last reading' : 'no pull yet')}</span></div>
       </div>` +
+      // Each list gets a titled panel, as in a room: three unlabelled
+      // stacks of rows read as one list of unrelated things.
       (dcon.device
-        ? `<div class="list">` +
+        ? `<section class="panel cache-sec">` + panelHead('Controller') + `<div class="list">` +
           [['Device', dcon.device], ['Serial', dcon.serial],
            ['Last packet', dcon.lastPacket], ['Controller clock', dcon.serverTime]]
             .filter(([, v]) => v)
             .map(([k, v]) => irrigRow('i-menu', String(v), k, '')).join('') +
-          `</div>` : '') +
+          `</div></section>` : '') +
       (names.length
-        ? `<div class="list${names.length > 8 ? ' cols' : ''}">` +
+        ? `<section class="panel cache-sec">` + panelHead('Valves', null, names.length) +
+          `<div class="list${names.length > 8 ? ' cols' : ''}">` +
           names.map((v) => irrigRow('i-valve', v.name,
-            v.type || `valve ${v.id}`, '', valveArt(v.name, v.type))).join('') + `</div>` : '') +
+            v.type || `valve ${v.id}`, '', valveArt(v.name, v.type))).join('') + `</div></section>` : '') +
       (valves.length
-        ? `<div class="list${valves.length > 8 ? ' cols' : ''}">` +
+        ? `<section class="panel cache-sec">` + panelHead('Last valve run', null, valves.length) +
+          `<div class="list${valves.length > 8 ? ' cols' : ''}">` +
           valves.map((v) => irrigRow('i-valve', v.name || `Valve ${v.id || ''}`,
             [v.runtime, v.id].filter(Boolean).join(' · ') || 'valve',
-            irrigStatusTag(v.status), valveArt(v.name, v.type, v.status))).join('') + `</div>` : '')
+            irrigStatusTag(v.status), valveArt(v.name, v.type, v.status))).join('') + `</div></section>` : '')
     : '';
 
   return head('Irrigation', 'Build a report from the irrigation controller.', '', 'Mobitech DCON') +
