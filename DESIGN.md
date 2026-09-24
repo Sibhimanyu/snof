@@ -80,8 +80,10 @@ communicate state, not decoration.
   Graphite / warm-light palettes are retired.
 - Amber means stale only.
 - Muted red means unavailable or error only.
-- Do not use gradients, glow, glassmorphism, neon, or an accent colour without
-  semantic meaning.
+- Do not use gradients, glow, neon, or an accent colour without semantic
+  meaning. The one exception to "no glass" is the navigation chrome (top bar,
+  tab bar, account menu, toasts), which is frosted like iOS system bars.
+  Cards and panels stay opaque.
 
 Maintain at least 4.5:1 contrast for secondary text in both themes. Status must
 never depend on colour alone: pair it with a label, icon, or readable state.
@@ -96,8 +98,22 @@ never depend on colour alone: pair it with a label, icon, or readable state.
   style, so it still scales.
 - Favour a compact but breathable operations layout: clear page title, one
   primary status band, then grouped panels or rows.
-- Prefer 1px low-contrast borders and flat surfaces over shadows. Corners
-  are 3px on every panel, card and input; only pills and toggles are round.
+- **Soft, iOS-like shape and depth** (owner, 2026-09-24, replacing the
+  earlier 3px sharp corners). Cards (panels, lists, area cards, stats,
+  report cards) are 22px continuous rounds (16px for the compact phone
+  grid), with a near-invisible edge (`--edge` / `Theme.edge`) and a soft
+  two-layer shadow (`--shadow-card` / `Card` modifier). Buttons, fields and
+  inner tiles are 12px; row icons are 8px filled squircles. Fields,
+  search and chips are filled and borderless, like UIKit's. The top nav and
+  every segment are iOS segmented controls (grey track, raised white
+  thumb); toggles are drawn at UISwitch proportions (51×31). List
+  separators are inset to where the text starts. Presses scale slightly
+  (0.96 on controls, 0.985 on cards) instead of nudging down.
+- **Haptics (iOS)** come from the press, never from a live state change:
+  `Haptics.select` for tabs, chips, segments and valve picks;
+  `Haptics.toggle` (firmer on than off); a light tick every 10% of a
+  slider; a rigid `commit` thump when valves are opened; a warning on
+  "Stop watering"; success/error with toasts.
 - **Count devices, not entities.** A switched-off printer is one thing
   offline, not 67 readings. Tiles, area cards, the attention card and the
   All devices list all group by the bridge's `device` id.

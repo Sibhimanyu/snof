@@ -111,11 +111,10 @@ struct TitledPanel<Content: View>: View {
             .frame(minHeight: 56)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
-            Rectangle().fill(Theme.line).frame(height: 1)
+            Rectangle().fill(Theme.line.opacity(0.6)).frame(height: 1)
             content
         }
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        .card()
     }
 }
 
@@ -133,7 +132,8 @@ struct StatePill: View {
             .lineLimit(1)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .foregroundStyle(tone == .on ? Theme.on : tone == .unavailable ? Theme.faint : Theme.muted)
-            .overlay(Capsule().strokeBorder(tone == .on ? Theme.line2 : Theme.line,
+            .background(tone == .unavailable ? Color.clear : Theme.panel2, in: Capsule())
+            .overlay(Capsule().strokeBorder(tone == .unavailable ? Theme.line2 : .clear,
                                             style: StrokeStyle(lineWidth: 1, dash: tone == .unavailable ? [3, 2] : [])))
             .fixedSize()
     }
@@ -188,7 +188,7 @@ struct BridgePill: View {
         }
         .foregroundStyle(status == .unknown ? Theme.muted : color)
         .padding(.horizontal, compact ? 11 : 14).padding(.vertical, compact ? 6 : 8)
-        .background(Theme.panel, in: Capsule())
+        .background(Theme.fill, in: Capsule())
         .overlay(Capsule().strokeBorder(border, lineWidth: 1))
         .fixedSize()
         .onAppear { pulse = true }
@@ -199,7 +199,7 @@ struct BridgePill: View {
         switch status {
         case .stale: return Theme.warn.opacity(0.4)
         case .offline: return Theme.bad.opacity(0.4)
-        default: return Theme.line2
+        default: return .clear
         }
     }
 
@@ -256,13 +256,13 @@ struct EmptyBlock: View {
         VStack(spacing: 8) {
             Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(Theme.faint)
                 .frame(width: 44, height: 44)
-                .overlay(Circle().strokeBorder(Theme.line, lineWidth: 1))
+                .background(Theme.panel2, in: Circle())
             Text(title).font(Theme.font(16, .bold, relativeTo: .headline)).foregroundStyle(Theme.text)
             Text(message).font(Theme.meta).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28).padding(.horizontal, 16)
-        .modifier(Panel(padding: 0, fill: framed ? Theme.panel : .clear, stroke: framed ? Theme.line : .clear))
+        .modifier(Panel(padding: 0, fill: framed ? Theme.panel : .clear, lifted: framed))
     }
 }
 
@@ -289,8 +289,10 @@ struct DeviceIcon: View {
             .font(.system(size: size * 0.42))
             .foregroundStyle(tone == .on ? Theme.on : tone == .unavailable ? Theme.bad : Theme.muted)
             .frame(width: size, height: size)
-            .overlay(RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous)
-                .strokeBorder(tone == .unavailable ? Theme.bad.opacity(0.32) : Theme.line, lineWidth: 1))
+            // A filled squircle, like a Settings icon, but neutral: the
+            // glyph's colour carries state, never the tile's.
+            .background(tone == .unavailable ? Theme.bad.opacity(0.09) : Theme.panel2,
+                        in: RoundedRectangle(cornerRadius: Theme.rIcon, style: .continuous))
     }
 }
 
@@ -327,11 +329,12 @@ struct DeviceCard: View {
                 if store.canControl {
                     HStack(spacing: 6) {
                         if busy { ProgressView().controlSize(.small).accessibilityLabel("Waiting for the farm") }
-                        Toggle(entity.name, isOn: Binding(get: { on }, set: { _ in store.toggle(entity) }))
+                        Toggle(entity.name, isOn: Binding(get: { on }, set: { want in
+                            Haptics.toggle(on: want); store.toggle(entity)
+                        }))
                             .labelsHidden()
                             .tint(Theme.brand)
                             .disabled(!operable)
-                            .sensoryFeedback(.selection, trigger: on)
                     }
                     .frame(minHeight: Theme.hit)
                 } else {
@@ -345,8 +348,12 @@ struct DeviceCard: View {
                         .font(Theme.small).foregroundStyle(Theme.faint).frame(width: 48, alignment: .leading)
                     Slider(value: Binding(get: { draft ?? Double(level) }, set: { draft = $0 }),
                            in: 0...100, step: 1) { editing in
-                        if !editing, let d = draft { commit(Int(d)) }
+                        if !editing, let d = draft { Haptics.tap(); commit(Int(d)) }
                         if editing { draftExpiry?.cancel() }
+                    }
+                    // A detent every 10%, only while a finger is on it.
+                    .onChange(of: draft.map { Int($0) / 10 }) { old, new in
+                        if old != nil, new != nil { Haptics.tick() }
                     }
                     .tint(Theme.brand)
                     .disabled(!operable)
@@ -399,7 +406,9 @@ struct DeviceRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if store.canControl && entity.isControllable && !entity.isBad {
                 if store.pending[entity.key] != nil { ProgressView().controlSize(.small) }
-                Toggle(entity.name, isOn: Binding(get: { store.displayOn(entity) }, set: { _ in store.toggle(entity) }))
+                Toggle(entity.name, isOn: Binding(get: { store.displayOn(entity) }, set: { want in
+                    Haptics.toggle(on: want); store.toggle(entity)
+                }))
                     .labelsHidden().tint(Theme.brand)
                     .disabled(!store.canOperate(entity))
             } else {
@@ -432,7 +441,7 @@ struct RowList<Item: Identifiable, Row: View>: View {
                 row(item).padding(.horizontal, inset)
             }
         }
-        .modifier(Panel(padding: 0, fill: framed ? Theme.panel : .clear, stroke: framed ? Theme.line : .clear))
+        .modifier(Panel(padding: 0, fill: framed ? Theme.panel : .clear, lifted: framed))
     }
 }
 
@@ -446,10 +455,11 @@ struct ToastView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
+        // An iOS banner: frosted, fully rounded, floating on a soft shadow.
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous)
-            .strokeBorder(toast.kind == .ok ? Theme.line2 : Theme.bad.opacity(0.4), lineWidth: 1))
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
+            .strokeBorder(toast.kind == .ok ? Theme.edge : Theme.bad.opacity(0.4), lineWidth: 1))
+        .shadow(color: .black.opacity(0.14), radius: 24, y: 10)
         .padding(.horizontal, 16)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.updatesFrequently)
