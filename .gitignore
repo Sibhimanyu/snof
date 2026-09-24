@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 serviceAccount.json
 *.serviceAccount.json
 __pycache__/
