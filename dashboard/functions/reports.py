@@ -58,6 +58,12 @@ MAX_COLS = 32
 
 SERVER_TIMESTAMP = {".sv": "timestamp"}
 
+# How many runs the irrigation cache keeps. The apps read the last two days
+# from it ("Watered" today / yesterday) and the farm logs 20–31 runs a day;
+# the old cap of 32 kept three of yesterday's (found 2026-09-25).
+CACHE_RUNS = 150
+LONG_CACHE = ("timerLog", "motorLog")
+
 # Type -> "range" (needs from/to) or "live" (no params). Names are the RTDB
 # rule's allow-list and the dashboard's and iOS app's builder values; renaming
 # one is a three-client change.
@@ -591,7 +597,7 @@ def report_timer_log(src, params):
     sections, runs, timeline = timer_sections(segments, "", names, window)
     finished = sum(1 for r in runs if r["finished"])
     return (sections, f"{len(runs)} runs, {finished} finished · {window}",
-            timeline, {"timerLog": timeline[:V.MAX_LIST]})
+            timeline, {"timerLog": timeline[:CACHE_RUNS]})
 
 
 # ---- motor log: power, pump, energy -------------------------------------------------
@@ -650,7 +656,7 @@ def report_motor_log(src, params):
     kwh = round(sum(d["kwh"] for d in days if d["kwh"] is not None), 1)
     pump = sum(d["pumpMin"] or 0 for d in days)
     return (sections, f"{kwh} kWh · pump {V.fmt_minutes(pump)} · {window}",
-            timeline, {"motorLog": timeline[:V.MAX_LIST]})
+            timeline, {"motorLog": timeline[:CACHE_RUNS]})
 
 
 def report_session_log(src, params):
@@ -675,9 +681,9 @@ def report_session_log(src, params):
             f"pump {V.fmt_minutes(pump)}" if days else "", window]
     patch = {}
     if segments is not None:
-        patch["timerLog"] = tline[:V.MAX_LIST]
+        patch["timerLog"] = tline[:CACHE_RUNS]
     if days is not None:
-        patch["motorLog"] = mline[:V.MAX_LIST]
+        patch["motorLog"] = mline[:CACHE_RUNS]
     return sections, " · ".join(b for b in bits if b), merged, patch
 
 
@@ -928,4 +934,27 @@ def build(rtype: str, params: dict, src) -> tuple[dict, dict]:
               "rows": [V.scrub(r) for r in list(rows or [])[:V.MAX_LIST]]}
     if failed:
         report["error"] = "; ".join(reasons)[:200]
-    return report, {k: V.scrub(v) for k, v in patch.items()}
+    # The run logs keep their length (scrub() caps lists at 32); each row is
+    # still scrubbed, so the redaction holds.
+    return report, {k: ([V.scrub(r) for r in v] if k in LONG_CACHE and isinstance(v, list) else V.scrub(v))
+                    for k, v in patch.items()}
+
+
+# ---- retention ------------------------------------------------------------------
+
+# The apps show the newest 20 reports; every Refresh writes three and the
+# apps now refresh by themselves when data is old, so without a bound the
+# node grows forever (83 after one evening, 2026-09-24).
+KEEP_REPORTS = 60
+
+
+def prune_reports(store, root: str, keep: int = KEEP_REPORTS) -> int:
+    """Delete all but the newest `keep` reports. Push ids sort by creation
+    time, so the oldest are the lowest keys. One shallow read, one update."""
+    ref = store.reference(f"{root}/irrigation_reports")
+    keys = ref.get(shallow=True)
+    if not isinstance(keys, dict) or len(keys) <= keep:
+        return 0
+    old = sorted(keys)[:-keep]
+    ref.update({k: None for k in old})
+    return len(old)

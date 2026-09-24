@@ -140,6 +140,10 @@ def _handle(store, root: str, req_id: str, req: Any) -> None:
         report, patch = {**base, "status": "error", "summary": "", "sections": [],
                          "rows": [], "error": str(err)[:200]}, {}
     report_ref.set(report)
+    try:
+        reports.prune_reports(store, root)
+    except Exception:          # noqa: BLE001 — retention must never cost a report
+        _LOG.exception("Could not prune old reports")
     if patch:
         store.reference(f"{root}/irrigation").update(patch)
     store.reference(f"{root}/irrigation/meta").update(
