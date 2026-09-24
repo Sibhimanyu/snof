@@ -6,7 +6,7 @@ Start here. Everything below links to a document that goes deeper.
 
 | Piece | Status |
 |---|---|
-| Dashboard | **Live** at https://snof-live.web.app. Since 2026-09-25: four tabs (Home · Irrigation · Water · Rooms), Irrigation with valve control on web and iOS 0.7.0 |
+| Dashboard | **Live** at https://snof-live.web.app. Since 2026-09-25: four tabs (Home · Irrigation · Water · Rooms); Home leads with *Needs a look* and the farm's systems (Solar, Security, switches, Climate, TVs, 3D printer) with their own pages; Irrigation shows what each crop got. iOS 0.9.0 matches. |
 | RTDB rules | **Live**, including the `/commands` write path |
 | Add-on 0.3.0 | **Running** on the NUC, verified by image tag and container contents |
 | Device control | **Deployed but asleep.** Two independent switches still off |

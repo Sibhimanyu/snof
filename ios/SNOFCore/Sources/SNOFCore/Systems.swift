@@ -153,7 +153,8 @@ public enum Systems {
         case .climate, .media:
             let main = ents.filter { $0.domain == (sys.id == .climate ? "climate" : "media_player") }
             let on = main.filter { !$0.isBad && !["off", "standby", "idle"].contains($0.state ?? "") }
-            let noun = sys.id == .climate ? (main.count == 1 ? "AC" : "ACs") : (main.count == 1 ? "TV" : "TVs")
+            // A set-top box is not a TV: count screens as devices.
+            let noun = sys.id == .climate ? (main.count == 1 ? "AC" : "ACs") : (main.count == 1 ? "device" : "devices")
             return SystemSummary(state: on.isEmpty ? .off : .on, line: on.isEmpty ? "All off" : "\(on.count) on", sub: "\(main.count) \(noun)")
         case .printer:
             if allOffline { return SystemSummary(state: .off, line: "Off", sub: "Switched off") }

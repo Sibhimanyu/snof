@@ -389,12 +389,19 @@ final class FarmStore {
     /// pressure now, and yesterday-and-today's runs. Three ordinary report
     /// requests — each a press, never a poll — so the rules, the kill switch
     /// and the function's own checks all apply unchanged.
-    func refreshIrrigation() async {
-        if !canControl { show(.err, "Your account can view, but not run reports."); return }
+    func refreshIrrigation(quiet: Bool = false) async {
+        if !canControl { if !quiet { show(.err, "Your account can view, but not run reports.") }; return }
         let g = gate(.irrigation)
-        if !g.ok { show(.err, g.why); return }
-        if !connected { show(.err, BackendError.notConnected.localizedDescription); return }
+        if !g.ok { if !quiet { show(.err, g.why) }; return }
+        if !connected { if !quiet { show(.err, BackendError.notConnected.localizedDescription) }; return }
         guard let uid = user?.uid, !refreshingIrrigation else { return }
+        // Three reads through the farm box per press: a second press within
+        // 45 s of the last read adds load and nothing new (27 presses were
+        // seen in one evening, 2026-09-24).
+        if let last = irrigation.program?.at ?? irrigation.lastUpdated, nowMs + skewMs - last < 45_000 {
+            if !quiet { show(.ok, "Just checked.") }
+            return
+        }
         let zone = FarmTime.zone(irrigation.timeZone)
         let today = FarmTime.today(Date(), zone: zone), yesterday = FarmTime.yesterday(Date(), zone: zone)
         var sent = 0
@@ -418,6 +425,18 @@ final class FarmStore {
             }
         }
         if sent > 0 { settleReports() }
+    }
+
+    /// Opening Home or Irrigation with controller data older than 15 minutes
+    /// fetches it again, at most once every 10 minutes, so nobody has to press
+    /// Refresh to trust what they see. Quiet unless it fails.
+    private var autoRefreshedAt = Date.distantPast
+    func autoRefreshIrrigationIfStale() async {
+        guard canControl, connected, !refreshingIrrigation, gate(.irrigation).ok else { return }
+        let last = irrigation.program?.at ?? irrigation.lastUpdated ?? 0
+        guard nowMs + skewMs - last > 15 * 60_000, Date().timeIntervalSince(autoRefreshedAt) > 10 * 60 else { return }
+        autoRefreshedAt = Date()
+        await refreshIrrigation(quiet: true)
     }
 
     /// Swipe down on Overview or Irrigation: the same three requests as the
@@ -463,6 +482,14 @@ final class FarmStore {
     /// Devices sorted into what they are; appliances off at the wall are not faults.
     var systems: [FarmSystemID: FarmSystem] { Systems.build(entities, names: deviceNames) }
 
+    /// Device id -> its system, so any screen can tell a fault from an
+    /// appliance switched off at the wall.
+    var deviceSystems: [String: FarmSystemID] {
+        var out: [String: FarmSystemID] = [:]
+        for (id, sys) in systems { for d in sys.devices { out[d.id] = id } }
+        return out
+    }
+
     /// Everything that deserves a look, worst first (Home's first card).
     var attention: [AttentionItem] {
         var i = Attention.Input()
@@ -484,7 +511,7 @@ final class FarmStore {
     /// reports, and dozens of identical cards buried the one asked for.
     var latestReports: [Report] {
         var seen = Set<String>()
-        return reports.filter { seen.insert("\($0.type)|\($0.from ?? "")|\($0.to ?? "")").inserted }.prefix(8).map { $0 }
+        return reports.filter { seen.insert("\($0.type)|\($0.from ?? "")|\($0.to ?? "")").inserted }.prefix(12).map { $0 }
     }
 
     /* ---- water chain (read-only) ---- */

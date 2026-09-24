@@ -474,6 +474,7 @@ function render() {
 
   reconcilePending(all);
   syncWaterPolling(r.name === 'water' || r.name === 'overview');
+  if (r.name === 'overview' || r.name === 'irrigation') autoRefreshIrrigation();
 
   // Chrome above stays live regardless; only the view body is held back.
   if (interacting) {
@@ -809,6 +810,19 @@ function farmSystems(all) {
   return out;
 }
 
+/** deviceId -> system id, so any page can tell a fault from an appliance at rest. */
+function deviceSystems(all) {
+  const out = new Map();
+  for (const sys of Object.values(farmSystems(all))) for (const d of sys.devices) out.set(d.id, sys.id);
+  return out;
+}
+/** Offline devices split into faults and appliances switched off. */
+function offlineSplit(devices, index) {
+  const down = devices.filter(deviceOffline);
+  const fault = down.filter((d) => (SYSTEMS[index.get(d.id)] || SYSTEMS.other).offline !== 'none');
+  return { fault: fault.length, off: down.length - fault.length };
+}
+
 /** One status line per system: { state: on|rest|off|offline|bad, line, sub }. */
 function systemSummary(sys) {
   const ents = sys.ents;
@@ -1060,16 +1074,20 @@ const roomsSwitch = (on) => `<div class="seg seg-nav" role="navigation" aria-lab
 
 function areasView(all) {
   const areas = groupByArea(all.filter(matches));
+  const index = deviceSystems(all);
   return head('Rooms', '', '') + roomsSwitch('areas') +
-    (areas.length ? `<div class="grid">${areas.map(([id, list]) => areaCard(id, list)).join('')}</div>` : noMatch());
+    (areas.length ? `<div class="grid">${areas.map(([id, list]) => areaCard(id, list, index)).join('')}</div>` : noMatch());
 }
 
-function areaCard(id, list) {
+/* A room: how many devices, and what is wrong. An AC or TV that is off at
+ * the wall is "off", not an alarm; red is kept for real faults. */
+function areaCard(id, list, index = new Map()) {
   const devices = byDevice(list);
-  const bad = devices.filter(deviceOffline).length;
+  const { fault, off } = offlineSplit(devices, index);
   return `<a class="area-card" href="#/area/${encodeURIComponent(id)}">
     <div class="area-top"><span class="area-name">${escapeHtml(areaName(id))}</span>${arrow('i-chevron', 'area-arrow')}</div>
-    <span class="area-count">${devices.length} ${plural(devices.length, 'device', 'devices')}${bad ? ` · <span class="bad">${bad} offline</span>` : ''}</span>
+    <span class="area-count">${devices.length} ${plural(devices.length, 'device', 'devices')}` +
+      `${fault ? ` · <span class="bad">${fault} offline</span>` : ''}${off ? ` · ${off} off` : ''}</span>
   </a>`;
 }
 
@@ -1092,7 +1110,6 @@ function areaView(all, id) {
         emptyBlock('This area is empty', 'Nothing in Home Assistant is assigned to this area yet.');
   }
   const devices = byDevice(inArea);
-  const bad = devices.filter(deviceOffline).length;
   const byDomain = new Map();
   for (const e of list) {
     if (!byDomain.has(e.domain)) byDomain.set(e.domain, []);
@@ -1103,7 +1120,9 @@ function areaView(all, id) {
     const ca = CONTROLLABLE.has(a) ? 0 : 1, cb = CONTROLLABLE.has(b) ? 0 : 1;
     return ca - cb || a.localeCompare(b);
   });
-  const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')}` + (bad ? ` · ${bad} offline` : '');
+  const split = offlineSplit(devices, deviceSystems(all));
+  const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')}` +
+    (split.fault ? ` · ${split.fault} offline` : '') + (split.off ? ` · ${split.off} off` : '');
 
   return head(areaName(id), sub, '', back) +
     (canControl && !bridgeGate('control').ok ? controlNote() : '') +
@@ -1216,7 +1235,7 @@ function latestReports() {
     const p = r.params || {};
     seen.set(`${r.type}|${p.from || ''}|${p.to || ''}`, [k, r]);
   }
-  return [...seen.values()].sort((a, b) => (a[1].at || 0) - (b[1].at || 0)).slice(-8);
+  return [...seen.values()].sort((a, b) => (a[1].at || 0) - (b[1].at || 0)).slice(-12);
 }
 
 const irrNeedsRange = (t) => (IRR_TYPES.find((x) => x.type === t) || {}).needs === 'range';
@@ -1961,6 +1980,10 @@ function refreshIrrigation(quiet = false) {
   const g = reportsGate();
   if (!g.ok) { if (!quiet) toast('err', g.why); return; }
   if (irrRefreshing.size) return;
+  // Three reads through the farm box per press: a second press within 45 s
+  // of the last read adds load and nothing new (2026-09-24: 27 presses).
+  const last = irrig().program?.at || irrig().meta?.lastUpdated || 0;
+  if (serverNow() - last < 45000) { if (!quiet) toast('ok', `Just checked, ${agoText(last)}.`); return; }
   const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
   const db = firebase.database();
   for (const [type, from, to] of [['controller'], ['live_readings'], ['session_log', yesterday, today]]) {
@@ -1983,6 +2006,20 @@ function refreshIrrigation(quiet = false) {
     ref.set(payload, (err) => { if (err) finish(err.code === 'PERMISSION_DENIED' ? 'The database refused that.' : err.message); });
   }
   render();
+}
+
+/* Opening Home or Irrigation with controller data older than 15 minutes
+ * fetches it again, at most once every 10 minutes per device, so nobody has
+ * to press Refresh to trust what they see. Controllers only (viewers cannot
+ * ask for reads); quiet unless it fails. */
+let irrAutoAt = 0;
+function autoRefreshIrrigation() {
+  if (!canControl || !currentUser || document.hidden || irrRefreshing.size || !reportsGate().ok) return;
+  const last = irrig().program?.at || irrig().meta?.lastUpdated || 0;
+  const now = Date.now();
+  if (serverNow() - last < 15 * 60000 || now - irrAutoAt < 10 * 60000) return;
+  irrAutoAt = now;
+  setTimeout(() => refreshIrrigation(true), 0);
 }
 
 /* ---- the modules ---- */

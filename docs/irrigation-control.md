@@ -230,3 +230,22 @@ open: commands still go out as `FON` / `OFF`.
   stays at Mobitech, unused, until the next sign-in replaces it.
 - The screen says what is still unproven: signing SNOF in may sign the
   phone's Mobitech app out if Mobitech allows one session per account.
+
+
+## Open: a Stop refused mid-run (seen 2026-09-24, not changed)
+
+Evidence from the live farm, recorded for a daytime decision:
+
+- 22:26:22 server time: a 5-minute manual run on 12 Coco 1 + 15 Coco 2 was
+  sent, accepted and **verified** (the consumer saw the manual run).
+- 22:27:46 and 22:28:07: Stop was pressed twice and refused with "no manual
+  run to stop": the consumer's dashboard read showed nothing running.
+- The controller's own timer log says Manual Mode started at **22:22:04**
+  (its clock runs about 4 minutes behind the server) and ran its full 5
+  minutes, finishing by itself. So the run was real, and the dashboard's
+  `timers.current` did not show it as a live manual run 80 seconds after it
+  had been verified.
+
+The run ended on time, so nothing was left running. Before any change to the
+stop check, reproduce it with someone at the pump house and compare the
+dashboard payload with the timer log at the moment of the refusal.

@@ -37,6 +37,7 @@ struct OverviewView: View {
         // Home is the first screen: keep the water picture current while it is
         // open (the function spaces pulls 15 s apart whoever asks).
         .task {
+            await store.autoRefreshIrrigationIfStale()
             while !Task.isCancelled {
                 await store.refreshWater()
                 try? await Task.sleep(for: .seconds(30))
@@ -1133,7 +1134,11 @@ struct AreaCard: View {
     var body: some View {
         // Devices, like the tiles: one switched-off printer is one offline.
         let devices = Sorting.byDevice(entities, names: store.deviceNames)
-        let bad = devices.filter(\.isOffline).count
+        // An AC or TV off at the wall is "off", not an alarm; red is for faults.
+        let index = store.deviceSystems
+        let down = devices.filter(\.isOffline)
+        let fault = down.filter { (index[$0.id] ?? .other).offlineIsFault }.count
+        let off = down.count - fault
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
                 Text(name).font(Theme.font(15.5, .bold, relativeTo: .headline)).tracking(-0.4)
@@ -1142,7 +1147,8 @@ struct AreaCard: View {
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
             }
             (Text("\(devices.count) \(devices.count == 1 ? "device" : "devices")")
-                + (bad > 0 ? Text(" · ") + Text("\(bad) offline").foregroundColor(Theme.bad).bold() : Text("")))
+                + (fault > 0 ? Text(" · ") + Text("\(fault) offline").foregroundColor(Theme.bad).bold() : Text(""))
+                + (off > 0 ? Text(" · \(off) off") : Text("")))
                 .font(Theme.meta).foregroundStyle(Theme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
