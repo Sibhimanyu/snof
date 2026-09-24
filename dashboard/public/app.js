@@ -34,6 +34,7 @@ let search = '';
 let domainFilter = null;
 let statusFilter = 'all';   // all | active | offline
 const openDevices = new Set();   // device ids expanded on All devices
+const openDetails = new Map();   // <details> opened or closed by hand
 /* Report cards open one at a time. The newest opens by default (so the one
  * you just generated is visible when it lands); a card you open or close
  * yourself stays that way across the once-a-second rebuilds. */
@@ -241,6 +242,12 @@ function enter(user) {
   // reports list is the last 20 results, newest last from RTDB.
   watch('irrigation', 'irrigation');
   watch('water', 'water');
+  watch('irrigation_lock', 'irrigationLock');
+  {
+    const resRef = db.ref(`farms/${FARM}/irrigation_command_results`).limitToLast(10);
+    const resCb = resRef.on('value', (snap) => { settleIrrigation(snap.val() || {}); render(); }, () => {});
+    refs.push({ ref: resRef, ev: 'value', cb: resCb });
+  }
   {
     const repRef = db.ref(`farms/${FARM}/irrigation_reports`).limitToLast(20);
     const repCb = repRef.on('value',
@@ -463,7 +470,7 @@ function render() {
   const areas = groupByArea(all);
   document.querySelectorAll('.nav-admin').forEach((n) => { n.hidden = !isAdmin; });
   document.querySelectorAll('[data-nav]').forEach((n) =>
-    n.classList.toggle('on', n.dataset.nav === (r.name === 'area' ? 'areas' : r.name)));
+    n.classList.toggle('on', n.dataset.nav === (['area', 'devices'].includes(r.name) ? 'areas' : r.name)));
 
   reconcilePending(all);
   syncWaterPolling(r.name === 'water');
@@ -481,18 +488,15 @@ function render() {
     else if (r.name === 'irrigation') view.innerHTML = irrigationView();
     else if (r.name === 'water') view.innerHTML = waterView();
     else if (r.name === 'admin') view.innerHTML = isAdmin ? adminView()
-      : head('Admin', 'Grant or revoke dashboard access.', '', 'Access') +
+      : head('Admin', '', '') +
         emptyBlock('Admins only', 'Your account does not have admin access.');
-    else view.innerHTML = overviewView(all, areas);
+    else view.innerHTML = overviewView(all);
     wire(all);
     restoreFocus(token);
   }
   // After the view: the overview's own bridge pill is inside it.
   renderBridgeStatus();
 
-  el('stats').textContent = all.length
-    ? `${byDevice(all).length} devices · ${areas.length} areas · ${all.length} readings · updated ${new Date().toLocaleTimeString()}`
-    : 'Waiting for the bridge to publish its first snapshot…';
 
   flashChanged(all);
 }
@@ -538,7 +542,7 @@ const todayLine = () => new Date().toLocaleDateString('en-GB', { weekday: 'long'
   .replace(/^(\w+),?\s/, '$1 · ');
 
 function skeletonView() {
-  return head('Your farm, right now.', 'Connecting to the farm…', '', todayLine()) +
+  return head('Home', '', '') +
     `<div class="sk-grid">${'<div class="sk-card"></div>'.repeat(6)}</div>`;
 }
 
@@ -548,60 +552,6 @@ function troubledAreas(devices) {
   for (const d of devices) if (deviceOffline(d)) tally.set(d.area, (tally.get(d.area) || 0) + 1);
   return [...tally.entries()].sort((a, b) => b[1] - a[1] ||
     areaName(a[0]).localeCompare(areaName(b[0]), undefined, NATURAL)).map(([id]) => id);
-}
-
-/* The farm pulse: one sentence a person would say, then the numbers behind
- * it — a single meter and three figures, each a link into All devices. Honest
- * before reassuring: a bridge gone quiet outranks everything, and "most areas
- * are running normally" is only said when it is true. The sentence names
- * *where*; the figures under it carry the counts, so neither repeats the other. */
-function pulsePanel(devices, areaCount) {
-  // Counted in devices, not entities: one switched-off printer is one thing to
-  // look at, not 67. A device with some entities still answering is reporting.
-  const n = devices.length;
-  const bad = devices.filter(deviceOffline).length;
-  const on = devices.filter(deviceActive).length;
-  const where = listWords(troubledAreas(devices).map(areaName));
-  const b = bridgeStatus();
-  let title, body, quiet = false;
-  if (b.cls === 'pill-stale' || b.cls === 'pill-offline') {
-    quiet = true;
-    title = 'The bridge has gone quiet.';
-    body = b.cls === 'pill-offline'
-      ? 'The farm bridge reported itself offline. What you see is the last state it sent.'
-      : `Nothing has arrived from the farm for ${humanAge(b.ageSec)}. What you see may be out of date.`;
-  } else if (!n) {
-    title = 'Waiting for the first devices.';
-    body = 'Assign devices to rooms in Home Assistant and they will appear here.';
-  } else if (!bad) {
-    title = 'Everything is reporting.';
-    body = `Every device across ${areaCount} ${plural(areaCount, 'area', 'areas')} is answering.`;
-  } else if (bad / n <= 0.25) {
-    title = 'Most areas are running normally.';
-    body = `The few that are not reporting are in ${where}.`;
-  } else if (bad / n <= 0.5) {
-    title = 'A few devices need a look.';
-    body = `The ones not reporting are in ${where}.`;
-  } else {
-    title = 'Much of the farm is quiet.';
-    body = `Most of what is offline is in ${where}.`;
-  }
-  const pct = (k) => (n ? (k / n) * 100 : 0).toFixed(1);
-  const fig = (value, label, status, cls = '', of = '') =>
-    `<a class="pstat ${cls}" href="#/devices" data-act="filter" data-status="${status}">` +
-    `<span class="pstat-value">${value}${of}</span><span class="pstat-label">${label}</span></a>`;
-  const figures = n ? `
-    <div class="pulse-meter" role="img" aria-label="${n - bad} of ${n} devices reporting">
-      <span class="pm-ok" style="width:${pct(n - bad)}%"></span><span class="pm-bad" style="width:${pct(bad)}%"></span></div>
-    <div class="pulse-stats">` +
-      fig(n - bad, 'Reporting', 'active', '', `<span class="pstat-of">/${n}</span>`) +
-      fig(on, 'Active now', 'active') +
-      fig(bad, 'Offline', 'offline', bad ? 'pstat-bad' : '') +
-    `</div>` : '';
-  return `<section class="pulse${quiet ? ' is-quiet' : ''}" aria-label="Farm pulse">
-    <p class="eyebrow">Farm pulse</p><h2 class="pulse-title">${escapeHtml(title)}</h2>
-    <p class="pulse-body">${escapeHtml(body)}</p>${figures}
-  </section>`;
 }
 
 /** Which devices are down, and where — a to-do list, not an entity count. */
@@ -623,8 +573,8 @@ function attentionCard(devices) {
   // Past a handful, a list of identical "Offline" rows says less than where
   // they are: one row per room, worst first, with how much of it is down.
   const byRoom = dead.length > 4;
-  const shown = byRoom ? [] : rows.slice(0, 4);
-  const roomRows = byRoom ? troubledAreas(devices).slice(0, 4).map((id) => {
+  const shown = byRoom ? [] : rows.slice(0, 3);
+  const roomRows = byRoom ? troubledAreas(devices).slice(0, 3).map((id) => {
     const inRoom = devices.filter((d) => d.area === id);
     const down = inRoom.filter(deviceOffline).length;
     return `
@@ -676,55 +626,84 @@ function quickControls(all) {
     controlNote() + body + `</section>`;
 }
 
-function overviewView(all, areas) {
-  const devices = byDevice(all);
-  const b = bridgeStatus();
-  const pill = `<span id="head-bridge" class="pill pill-head ${b.cls}" role="status">` +
-    `<span class="dot"></span><span id="head-bridge-text">${escapeHtml(b.long)}</span></span>`;
-  const cards = areas.slice(0, 6).map(([id, list]) => areaCard(id, list)).join('');
-  const areasPanel = `<section class="panel ov-areas" aria-label="Areas at a glance">` +
-    panelHead('Areas at a glance', ['#/areas', areas.length > 6 ? `View all ${areas.length} areas` : 'View all areas']) +
-    (cards ? `<div class="panel-body"><div class="grid">${cards}</div></div>`
-           : emptyBlock('No areas yet', 'Assign devices to an area in Home Assistant and they will group themselves here.')) +
-    `</section>`;
+/* Home: what needs a look, one line per system, and the switches. Every
+ * number here is a link to the page that has the rest (owner, 2026-09-25:
+ * "basic and simple to navigate"). */
+function solarGlance(all) {
+  const sensors = all.filter((e) => e.domain === 'sensor');
+  const unit = (e) => e.attrs?.unit_of_measurement;
+  const first = (test) => { const hits = sensors.filter((e) => test(String(e.name || '').toLowerCase(), e)); return hits.find((e) => !isBad(e)) || hits[0]; };
+  const now = first((n, e) => (e.attrs?.device_class === 'power' || ['W', 'kW'].includes(unit(e))) && (n.endsWith('pv power') || n.endsWith('solar power')));
+  const today = first((n, e) => n.includes('today') && (n.includes('pv') || n.includes('solar')) && (e.attrs?.device_class === 'energy' || unit(e) === 'kWh'));
+  if (!now && !today) return null;
+  const val = (e) => (e && !isBad(e) ? `${e.state} ${unit(e) || ''}`.trim() : null);
+  return { area: (now || today).area, now: val(now), today: val(today) };
+}
 
-  return head('Your farm, right now.', '', pill, todayLine()) +
+function homeRow(href, title, value, meta, tone = '') {
+  return `<a class="hrow" href="${href}"><span class="hrow-main"><span class="hrow-title">${escapeHtml(title)}</span>` +
+    `<span class="hrow-value${tone ? ' ' + tone : ''}">${escapeHtml(value)}</span>` +
+    (meta ? `<span class="hrow-meta">${escapeHtml(meta)}</span>` : '') + `</span>${arrow('i-chevron', 'hrow-chev')}</a>`;
+}
+
+function systemsPanel(all) {
+  const rows = [];
+  const c = irrig();
+  if (c.program || (c.timerLog || []).length) {
+    const s = irrNowState();
+    rows.push(homeRow('#/irrigation', 'Irrigation', s.running ? `Watering · ${s.title}` : 'Not watering',
+      s.running ? s.detail : s.title.replace(/^Last: /, 'Last: ') + (s.detail ? ` · ${s.detail.split(' · ').at(-1)}` : ''), s.running ? 'on' : ''));
+  } else {
+    rows.push(homeRow('#/irrigation', 'Irrigation', 'No data yet', ''));
+  }
+  const w = state.water || {};
+  if (w.river || w.motors) {
+    const bit = (m, label) => (m ? `${label} ${m.running === true ? 'on' : m.running === false ? 'off' : '?'}` : null);
+    const motors = Object.values(w.motors || {});
+    const any = [w.river, ...motors].some((m) => m && m.running);
+    rows.push(homeRow('#/water', 'Water', any ? 'Motors running' : 'All motors off',
+      [bit(w.river, 'River'), bit(motors.find((m) => m.role === 'main-farm'), '7.5 HP'), bit(motors.find((m) => m.role === 'drip'), 'Drip')]
+        .filter(Boolean).join(' · '), any ? 'on' : ''));
+  }
+  const sol = solarGlance(all);
+  if (sol) rows.push(homeRow(`#/area/${encodeURIComponent(sol.area)}`, 'Solar', sol.now ? `${sol.now} now` : 'No reading', sol.today ? `${sol.today} today` : ''));
+  return `<section class="panel hrows" aria-label="Systems">${rows.join('')}</section>`;
+}
+
+function overviewView(all) {
+  const devices = byDevice(all);
+  return head('Home', '', '') +
     `<div class="ov">
-      <div class="ov-main">${pulsePanel(devices, areas.length)}${areasPanel}</div>
-      <div class="ov-side">${attentionCard(devices)}${quickControls(all)}</div>
+      <div class="ov-main">${systemsPanel(all)}${attentionCard(devices)}</div>
+      <div class="ov-side">${quickControls(all)}</div>
     </div>`;
 }
 
+/* Rooms and All devices are one destination with a switch: a room is
+ * where a device lives, and the list is the same devices without the rooms. */
+const roomsSwitch = (on) => `<div class="seg seg-nav" role="navigation" aria-label="Rooms or devices">` +
+  `<a href="#/areas" aria-current="${on === 'areas' ? 'page' : 'false'}">Rooms</a>` +
+  `<a href="#/devices" aria-current="${on === 'devices' ? 'page' : 'false'}">All devices</a></div>`;
+
 function areasView(all) {
   const areas = groupByArea(all.filter(matches));
-  if (!areas.length) return head('Areas', 'Nothing matches that search.', '', 'Rooms and zones') + noMatch();
-  const devices = byDevice(all);
-  const bad = devices.filter(deviceOffline).length;
-  return head('Areas', `${areas.length} ${plural(areas.length, 'area', 'areas')} · ${devices.length} devices` +
-      (bad ? ` · ${bad} offline` : ''), '', 'Rooms and zones') +
-    `<div class="grid">${areas.map(([id, list]) => areaCard(id, list)).join('')}</div>`;
+  return head('Rooms', '', '') + roomsSwitch('areas') +
+    (areas.length ? `<div class="grid">${areas.map(([id, list]) => areaCard(id, list)).join('')}</div>` : noMatch());
 }
 
 function areaCard(id, list) {
-  // Devices, like the Overview tiles: a room with one switched-off printer has
-  // one thing offline, not 56.
   const devices = byDevice(list);
-  const on = devices.filter(deviceActive).length;
   const bad = devices.filter(deviceOffline).length;
   return `<a class="area-card" href="#/area/${encodeURIComponent(id)}">
-    <div class="area-top"><span class="area-name">${escapeHtml(areaName(id))}</span>${arrow('i-arrow-ne', 'area-arrow')}</div>
-    <span class="area-count">${devices.length} ${plural(devices.length, 'device', 'devices')}</span>
-    <div class="area-meta">
-      ${on ? `<span class="on">${on} active</span>` : `<span class="quiet">Nothing on</span>`}
-      ${bad ? `<span class="bad">${bad} unavailable</span>` : `<span class="on">All reporting</span>`}
-    </div>
+    <div class="area-top"><span class="area-name">${escapeHtml(areaName(id))}</span>${arrow('i-chevron', 'area-arrow')}</div>
+    <span class="area-count">${devices.length} ${plural(devices.length, 'device', 'devices')}${bad ? ` · <span class="bad">${bad} offline</span>` : ''}</span>
   </a>`;
 }
 
 function areaView(all, id) {
   const inArea = all.filter((e) => e.area === id);
   const list = inArea.filter(matches);
-  const back = `<a class="back" href="#/areas">${arrow('i-back')}All areas</a>`;
+  const back = `<a class="back" href="#/areas">${arrow('i-back')}Rooms</a>`;
   // Not a room (an old #/area/unassigned bookmark, or a deleted area): say
   // nothing about what might have been there.
   if (!state.areas?.[id]) {
@@ -740,7 +719,6 @@ function areaView(all, id) {
         emptyBlock('This area is empty', 'Nothing in Home Assistant is assigned to this area yet.');
   }
   const devices = byDevice(inArea);
-  const on = devices.filter(deviceActive).length;
   const bad = devices.filter(deviceOffline).length;
   const byDomain = new Map();
   for (const e of list) {
@@ -752,7 +730,7 @@ function areaView(all, id) {
     const ca = CONTROLLABLE.has(a) ? 0 : 1, cb = CONTROLLABLE.has(b) ? 0 : 1;
     return ca - cb || a.localeCompare(b);
   });
-  const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')} · ${on} active` + (bad ? ` · ${bad} unavailable` : '');
+  const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')}` + (bad ? ` · ${bad} offline` : '');
 
   return head(areaName(id), sub, '', back) +
     (canControl && !bridgeGate('control').ok ? controlNote() : '') +
@@ -775,22 +753,16 @@ function devicesView(all) {
   const byStatus = (e) => statusFilter === 'all' ? true
     : statusFilter === 'active' ? !isBad(e) : isBad(e);
   const scoped = all.filter(byStatus);
-  const domains = [...new Set(scoped.map((e) => e.domain))].sort();
   const list = scoped.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
   const groups = byDevice(list).sort((a, b) => a.name.localeCompare(b.name, undefined, NATURAL));
 
   const counts = { all: byDevice(all).length, active: byDevice(all.filter((e) => !isBad(e))).length,
                    offline: byDevice(all.filter(isBad)).length };
   const seg = `<div class="seg" role="group" aria-label="Filter by status">` +
-    [['all', 'All'], ['active', 'Reporting'], ['offline', 'Not reporting']].map(([k, label]) =>
+    [['all', 'All'], ['offline', 'Not reporting']].map(([k, label]) =>
       `<button data-act="status" data-status="${k}" aria-pressed="${statusFilter === k}">` +
       `${label}<span class="n">${counts[k]}</span></button>`).join('') + `</div>`;
 
-  const chips = domains.length > 1 ? `<div class="chips">` + domains.map((d) => {
-    const n = scoped.filter((e) => e.domain === d).length;
-    return `<button class="chip${domainFilter === d ? ' on' : ''}" aria-pressed="${domainFilter === d}" ` +
-      `data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}<span class="n">${n}</span></button>`;
-  }).join('') + `</div>` : '';
 
   const filtering = !!(search || domainFilter || statusFilter === 'offline');
   const full = new Map(byDevice(all).map((d) => [d.id, d]));
@@ -803,19 +775,18 @@ function devicesView(all) {
     const status = down === 0 ? `<span class="tag tag-on">All reporting</span>`
       : down === whole.ents.length ? `<span class="tag tag-bad">Offline</span>`
       : `<span class="tag tag-warn">${down} of ${whole.ents.length} down</span>`;
-    const shownNote = g.ents.length !== whole.ents.length ? `${g.ents.length} of ${whole.ents.length} readings` : `${whole.ents.length} ${plural(whole.ents.length, 'reading', 'readings')}`;
     return `<section class="dgroup${open ? ' open' : ''}">
       <button class="dgroup-head" data-act="dev-open" data-dev="${escapeHtml(g.id)}" aria-expanded="${open}">
         <span class="dgroup-main"><span class="dgroup-name">${escapeHtml(g.name)}</span>
-          <span class="dgroup-meta">${escapeHtml(areaName(g.area))} · ${shownNote}</span></span>
+          <span class="dgroup-meta">${escapeHtml(areaName(g.area))}</span></span>
         ${status}${arrow('i-chevron', 'dgroup-chev')}
       </button>
       ${open ? `<div class="dgroup-body">${g.ents.map((e) => row(e)).join('')}</div>` : ''}
     </section>`;
   }).join('');
 
-  return head('All devices', `${counts.all} ${plural(counts.all, 'device', 'devices')} · ${all.length} readings`, '', 'Everything in a room') +
-    `<div class="toolbar-row">${seg}</div>` + chips +
+  return head('Rooms', '', '') + roomsSwitch('devices') +
+    `<div class="toolbar-row">${seg}</div>` +
     (groups.length ? `<div class="dgroups">${body}</div>` : noMatch());
 }
 
@@ -944,6 +915,7 @@ function sendReportRequest() {
   const cb = (snap) => {
     const rep = snap.val();
     if (rep) {
+      reportOpen.set(key, true);
       done(true);
       toast(rep.status === 'ok' ? 'ok' : 'err',
         rep.status === 'ok' ? 'Report ready.' : `Report failed: ${rep.error || 'vendor error'}`);
@@ -1364,104 +1336,403 @@ const irrigRow = (icon, name, meta, right, art = null) =>
   `<span class="row-main"><span class="row-name">${escapeHtml(name)}</span>` +
   `<span class="row-meta">${escapeHtml(meta)}</span></span>${right}</div>`;
 
-function irrigationView() {
+/* ---- irrigation: the whole Mobitech DCON side, as modules ----
+ *
+ * One page for everything irrigation (owner, 2026-09-25: "the irrigation
+ * tab should have everything, not just the reports"): what the controller is
+ * doing now with Run / Stop, the valves, the last day's figures, the supply,
+ * and the reports. The helpers are ports of SNOFCore's Irrigation (Overview.
+ * swift) so web and iOS read the same cache the same way. Farm time is the
+ * controller's offset (+05:30), never the browser's zone. */
+
+const fmtMin = (m) => (m >= 60 ? (m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`) : `${m}m`);
+function tzOffsetMin(tz) {
+  const m = /^([+-])(\d{2}):?(\d{2})$/.exec(tz || '');
+  return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 330;
+}
+const farmTz = () => tzOffsetMin(irrig().dcon?.timeZone);
+/** "2026-09-23 20:32[:00]" in farm time -> epoch ms. */
+function farmMs(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(s || '');
+  return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) - farmTz() * 60000 : null;
+}
+const farmDay = (ms) => new Date(ms + farmTz() * 60000).toISOString().slice(0, 10);
+function farmDayLabel(day) {
+  const now = serverNow();
+  if (day === farmDay(now)) return 'Today';
+  if (day === farmDay(now - 864e5)) return 'Yesterday';
+  const d = new Date(`${day}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? day : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+/** "20:32", "20:32 yesterday", "21 Sep 20:32". */
+function farmWhen(s) {
+  if (!s || s.length < 16) return '';
+  const day = s.slice(0, 10), time = s.slice(11, 16), label = farmDayLabel(day);
+  return label === 'Today' ? time : label === 'Yesterday' ? `${time} yesterday` : `${label} ${time}`;
+}
+
+/** One timerLog row -> a program run (reports.py run_row). */
+function parseRun(r) {
+  if (!r || (r.source && r.source !== 'timer') || !r.event || !r.at || r.at.length < 10) return null;
+  const headParts = String(r.event).split(' · ');
+  const kind = headParts.length > 1 ? headParts[0] : 'Program';
+  const name = headParts.length > 1 ? headParts.slice(1).join(' · ') : r.event;
+  const pieces = String(r.detail || '').split(' · ');
+  let delivered = null, planned = null, finished = false;
+  const first = pieces[0] || '';
+  if (/, (finished|stopped)$/.test(first)) {
+    finished = first.endsWith(', finished');
+    const amount = first.split(',')[0];
+    const parts = amount.split(' of ');
+    if (parts.length === 2) { delivered = parseRuntimeMinutes(parts[0]); planned = parseRuntimeMinutes(parts[1]); }
+    else { planned = parseRuntimeMinutes(amount); delivered = finished ? planned : null; }
+    pieces.shift();
+  }
+  let valves = pieces[0] || '';
+  const l = valves.toLowerCase();
+  if (l.includes('backwash') || l.startsWith('started by') || l.startsWith('ended by') || valves === 'no valves') valves = '';
+  return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, valves };
+}
+const runAmount = (x) => (x.planned == null ? (x.delivered != null ? fmtMin(x.delivered) : '')
+  : x.finished ? fmtMin(x.planned) : `${fmtMin(x.delivered || 0)} of ${fmtMin(x.planned)}`);
+const irrRuns = () => (irrig().timerLog || []).map(parseRun).filter(Boolean)
+  .sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
+
+/** "pump 16h 21m of 19h 42m with power · 77.89 kWh". */
+function parsePumpDay(r) {
+  if (!r || (r.source && r.source !== 'motor') || !r.at || !r.detail) return null;
+  const m = /^pump (.+?) of (.+?) with power/.exec(r.detail);
+  if (!m) return null;
+  const kwh = String(r.detail).split(' · ').find((p) => p.endsWith(' kWh'));
+  return { day: r.at.slice(0, 10), pumpMin: parseRuntimeMinutes(m[1]), supplyMin: parseRuntimeMinutes(m[2]),
+           kwh: kwh ? parseFloat(kwh) : null };
+}
+
+/** The newest day the logs cover. */
+function irrLatestDay() {
+  const runs = irrRuns();
+  const pumps = (irrig().motorLog || []).map(parsePumpDay).filter(Boolean).sort((a, b) => (a.day < b.day ? 1 : -1));
+  const day = [runs[0]?.day, pumps[0]?.day].filter(Boolean).sort().at(-1);
+  if (!day) return null;
+  const dayRuns = runs.filter((r) => r.day === day);
+  return { day, runs: dayRuns, pump: pumps.find((p) => p.day === day) || null,
+           waterMin: dayRuns.reduce((s, r) => s + (r.delivered || 0), 0),
+           stopped: dayRuns.filter((r) => !r.finished).length };
+}
+
+const triple = (s) => String(s || '').split('/').map((x) => parseFloat(x)).filter(Number.isFinite);
+function irrSupply() {
+  const rows = irrig().electricity || [];
+  const volts = rows.find((r) => String(r.label || '').toLowerCase().includes('phase voltage'));
+  const amps = rows.find((r) => String(r.label || '').toLowerCase().includes('current'));
+  const v = triple(volts?.value), a = triple(amps?.value);
+  if (!v.length && !a.length) return null;
+  const note = [volts?.note, amps?.note].filter(Boolean).join(' ');
+  const live = v.filter((x) => x >= 120).length;
+  return { v, a, at: (/\d{2}:\d{2}/.exec(note) || [''])[0], live,
+           missing: v.length === 3 && live > 0 && live < 3, drawing: a.length ? a.some((x) => x > 0.5) : null };
+}
+function irrPressure() {
+  const last = (irrig().pressure || []).at(-1);
+  return last && last.value ? { value: [last.value, last.unit].filter(Boolean).join(' '), at: last.at || '' } : null;
+}
+
+/** Valves a manual run may open: Irrigation ones only (the consumer checks
+ *  again against the controller's own registry). */
+function valveRows() {
+  const c = irrig();
+  return (c.valveNames && c.valveNames.length ? c.valveNames : c.valves || [])
+    .filter((r) => r && r.id != null)
+    .sort((a, b) => Number(a.id) - Number(b.id));
+}
+const isIrrigationValve = (r) => String(r.type || '').toLowerCase() === 'irrigation' && /^\d{1,2}$/.test(String(r.id));
+const isManualProgram = (p) => !!p && (p.kind === 'Manual' || p.name === 'Manual Mode');
+
+/** Watering now, or what ran last. Mirrors WaterNow on iOS. */
+function irrNowState() {
+  const c = irrig(), p = c.program;
+  if (p && p.running && p.name) {
+    const asOf = farmMs(p.lastSeen) ?? p.at ?? null;
+    const elapsed = asOf ? Math.max(0, (serverNow() - asOf) / 60000) : 0;
+    const left = p.remainingMin != null ? p.remainingMin - Math.round(elapsed) : null;
+    if (left != null ? left > 0 : elapsed < 60) {
+      const bits = [p.valves].filter(Boolean);
+      if (left != null && p.plannedMin != null) bits.push(`${fmtMin(left)} left of ${fmtMin(p.plannedMin)}`);
+      const since = farmWhen(p.start);
+      if (since) bits.push(`since ${since}`);
+      return { running: true, manual: isManualProgram(p), title: p.name, detail: bits.join(' · '),
+               checked: p.at ? agoText(p.at) : '', valves: p.valves || '' };
+    }
+  }
+  const last = irrRuns()[0];
+  if (last) {
+    const bits = [];
+    const a = runAmount(last);
+    if (a) bits.push(last.finished ? a : `${a}, stopped early`);
+    if (last.valves) bits.push(last.valves);
+    const w = farmWhen(last.start);
+    if (w) bits.push(w);
+    return { running: false, title: `Last: ${last.name}`, detail: bits.join(' · '), checked: p?.at ? agoText(p.at) : '' };
+  }
+  if (p && p.name) return { running: false, title: `Last: ${p.name}`, detail: p.valves || '', checked: p.at ? agoText(p.at) : '' };
+  return { running: false, title: 'No runs logged yet', detail: '', checked: '' };
+}
+
+/* ---- valve control (admins) ----
+ * The same path as the iOS app: append to irrigation_commands; the consumer
+ * validates, takes irrigation_lock, sends, and re-reads the controller until
+ * it shows the change. No second change until the first is confirmed
+ * (owner, 2026-09-24): the rules refuse while the lock is live, and so does
+ * this page. */
+const IRR_MAX_VALVES = 5;
+let irrPending = null, irrConfirming = false, irrPendingTimer = null;
+let runOpen = false, runPick = [], runMinutes = 15;
+
+function irrControlGate() {
+  if (state.meta?.irrigationControl?.enabled === true) return { ok: true, why: '' };
+  const hb = state.meta?.bridge;
+  if (!hb || !hb.lastSeen) return { ok: false, why: 'Valve control has not checked in yet.' };
+  const ageSec = (serverNow() - hb.lastSeen) / 1000;
+  if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
+    return { ok: false, why: 'Valve control is not answering right now.' };
+  }
+  if (hb.irrigationControl !== true) return { ok: false, why: 'Valve control is switched off.' };
+  return { ok: true, why: '' };
+}
+const irrLocked = () => (state.irrigationLock?.until || 0) > serverNow();
+function irrRefusal() {
+  if (!isAdmin) return 'Only farm admins can open or close valves.';
+  const g = irrControlGate();
+  if (!g.ok) return g.why;
+  if (irrPending) return irrConfirming ? 'Confirming with the controller…' : 'Waiting for the farm…';
+  if (irrLocked()) return 'The last change is still being confirmed.';
+  return null;
+}
+function irrMaxMinutes() {
+  const m = state.meta || {};
+  const cap = m.irrigationControl?.enabled === true ? m.irrigationControl.maxMinutes
+    : m.bridge?.irrigationControlStatus?.maxMinutes;
+  return Math.min(60, Number(cap) || 60);
+}
+
+function sendIrrigation(cmd) {
+  const why = irrRefusal();
+  if (why) { toast('err', why); render(); return; }
+  const ref = firebase.database().ref(`farms/${FARM}/irrigation_commands`).push();
+  irrPending = ref.key; irrConfirming = false;
+  clearTimeout(irrPendingTimer);
+  // Sending plus the farm's 2-minute confirmation; the lock expires at 3.
+  irrPendingTimer = setTimeout(() => {
+    if (irrPending !== ref.key) return;
+    irrPending = null; irrConfirming = false;
+    toast('err', 'No answer from the farm. Check the controller before trying again.');
+    render();
+  }, 200000);
+  ref.set({ ...cmd, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP }, (err) => {
+    if (!err) return;
+    irrPending = null; clearTimeout(irrPendingTimer);
+    toast('err', err.code === 'PERMISSION_DENIED' ? 'The database refused that.' : `Could not send: ${err.message}`);
+    render();
+  });
+  render();
+}
+
+function settleIrrigation(results) {
+  const node = irrPending && results ? results[irrPending] : null;
+  if (!node) return;
+  if (node.ok && node.confirming === true) { irrConfirming = true; return; }
+  irrPending = null; irrConfirming = false; clearTimeout(irrPendingTimer);
+  if (node.ok) {
+    const what = node.action === 'stop' ? 'Stopped' : `Valves ${node.valves || ''} for ${node.minutes || '?'} min`;
+    if (node.verified === false) toast('err', 'Sent, but not confirmed after 2 minutes. Check the controller.');
+    else toast('ok', node.verified === true ? `Confirmed: ${what}.` : `Sent: ${what}.`);
+    setTimeout(() => refreshIrrigation(true), 20000);
+  } else {
+    toast('err', node.message ? `Not sent: ${node.message}` : 'The farm refused that.');
+  }
+}
+
+function runValves() {
+  const ids = runPick.slice(0, IRR_MAX_VALVES);
+  const mins = Math.min(irrMaxMinutes(), Math.max(1, runMinutes));
+  if (!ids.length) { toast('err', 'Pick at least one valve.'); return; }
+  const names = ids.map((id) => valveRows().find((r) => Number(r.id) === id)?.name || `Valve ${id}`);
+  if (!window.confirm(`Water ${names.join(', ')} for ${fmtMin(mins)}?`)) return;
+  runOpen = false; runPick = [];
+  sendIrrigation({ action: 'run', valves: ids.join(','), minutes: mins });
+}
+function stopIrrigation() {
+  if (!window.confirm('Stop the manual run? The controller closes the valves.')) return;
+  sendIrrigation({ action: 'stop' });
+}
+
+/* ---- Refresh: three ordinary report requests ----
+ * What the controller is doing now, power and pressure now, and yesterday-
+ * and-today's runs. Each is a press, never a poll, so the rules, the kill
+ * switch and the function's own checks apply unchanged. */
+const irrRefreshing = new Set();
+function refreshIrrigation(quiet = false) {
+  if (!canControl) { if (!quiet) toast('err', 'Your account can view, but not refresh.'); return; }
+  const g = reportsGate();
+  if (!g.ok) { if (!quiet) toast('err', g.why); return; }
+  if (irrRefreshing.size) return;
+  const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
+  const db = firebase.database();
+  for (const [type, from, to] of [['controller'], ['live_readings'], ['session_log', yesterday, today]]) {
+    const ref = db.ref(`farms/${FARM}/irrigation_requests`).push();
+    const key = ref.key;
+    irrRefreshing.add(key);
+    const child = db.ref(`farms/${FARM}/irrigation_reports/${key}`);
+    const finish = (err) => {
+      if (!irrRefreshing.delete(key)) return;
+      child.off('value', cb); clearTimeout(timer);
+      if (err && !quiet) toast('err', err);
+      if (!irrRefreshing.size && !quiet && !err) toast('ok', 'Irrigation updated.');
+      render();
+    };
+    const cb = (snap) => { const rep = snap.val(); if (rep) finish(rep.status === 'error' ? `${rep.label || type} failed: ${rep.error || 'controller error'}` : null); };
+    const timer = setTimeout(() => finish(null), IRR_TIMEOUT_MS);
+    child.on('value', cb);
+    const payload = { type, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP };
+    if (from) { payload.from = from; payload.to = to; }
+    ref.set(payload, (err) => { if (err) finish(err.code === 'PERMISSION_DENIED' ? 'The database refused that.' : err.message); });
+  }
+  render();
+}
+
+/* ---- the modules ---- */
+
+function irrNowModule() {
+  const c = irrig();
+  const s = irrNowState();
+  const refusal = irrRefusal();
+  const busy = irrRefreshing.size > 0;
+  const refresh = canControl
+    ? `<button class="btn btn-ghost btn-sm" data-act="irr-refresh"${busy || !reportsGate().ok ? ' disabled' : ''}>${busy ? 'Checking…' : 'Refresh'}</button>` : '';
+  const empty = !c.program && !(c.timerLog || []).length;
+  const faults = s.running ? (c.program?.faults || []) : [];
+  const next = c.program?.next;
+  const controls = isAdmin ? `<div class="now-actions">
+      <button class="btn btn-primary" data-act="run-open"${refusal || runOpen || (s.running && s.manual) ? ' disabled' : ''}>Run valves</button>
+      ${s.running && s.manual ? `<button class="btn btn-danger" data-act="irr-stop"${refusal ? ' disabled' : ''}>Stop</button>` : ''}
+    </div>
+    ${irrPending ? `<p class="more-note">${irrConfirming ? 'Confirming with the controller…' : 'Sent. Waiting for the farm…'}</p>`
+      : refusal && refusal !== 'Only farm admins can open or close valves.' ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
+      : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>` : ''}` : '';
+  return `<section class="panel now${s.running ? ' is-on' : ''}" aria-label="Now">
+    <div class="now-top">
+      <p class="now-label"><span class="dot"></span>${s.running ? 'Watering now' : 'Not watering'}</p>
+      ${s.checked ? `<span class="now-checked">checked ${escapeHtml(s.checked)}</span>` : ''}${refresh}
+    </div>
+    ${empty ? `<h2 class="now-title">No data yet</h2><p class="now-detail">${canControl ? 'Press Refresh to ask the controller.' : 'Nothing has been pulled yet.'}</p>`
+      : `<h2 class="now-title">${escapeHtml(s.title)}</h2>${s.detail ? `<p class="now-detail">${escapeHtml(s.detail)}</p>` : ''}`}
+    ${faults.map((f) => `<span class="tag tag-bad">${escapeHtml(f)}</span>`).join('')}
+    ${next && next.name ? `<p class="now-next"><span>Next</span>${escapeHtml([next.name, next.plannedMin != null ? fmtMin(next.plannedMin) : ''].filter(Boolean).join(' · '))}</p>` : ''}
+    ${controls}
+  </section>`;
+}
+
+function irrValvesModule() {
+  const rows = valveRows();
+  if (!rows.length) return '';
+  const now = irrNowState();
+  const openNames = new Set(now.running ? String(now.valves).split(/,\s*/).map((v) => v.trim().toLowerCase()) : []);
+  const picking = isAdmin && runOpen;
+  const cells = rows.map((r) => {
+    const name = r.name || `Valve ${r.id}`;
+    const art = valveArt(name, r.type, openNames.has(name.toLowerCase()) ? 'on' : 'off');
+    const on = openNames.has(name.toLowerCase());
+    const can = picking && isIrrigationValve(r);
+    const picked = runPick.includes(Number(r.id));
+    const inner = `${art ? artImg(art, 'vchip-art') : `<span class="vchip-art vchip-ico">${arrow('i-valve')}</span>`}` +
+      `<span class="vchip-name">${escapeHtml(name)}</span>${on ? '<span class="vchip-dot" title="Open"></span>' : ''}`;
+    return can
+      ? `<button class="vchip is-pick${picked ? ' picked' : ''}" data-act="run-pick" data-valve="${escapeHtml(String(r.id))}" aria-pressed="${picked}"` +
+        `${!picked && runPick.length >= IRR_MAX_VALVES ? ' disabled' : ''}>${inner}</button>`
+      : `<span class="vchip${picking ? ' is-off' : ''}${on ? ' is-on' : ''}">${inner}</span>`;
+  }).join('');
+  const cap = irrMaxMinutes();
+  const bar = picking ? `<div class="run-bar">
+      <label class="rep-field"><span>For</span><select data-act="run-min">${[5, 10, 15, 20, 30, 45, 60].filter((m) => m <= cap)
+        .map((m) => `<option value="${m}"${m === runMinutes ? ' selected' : ''}>${fmtMin(m)}</option>`).join('')}</select></label>
+      <button class="btn btn-primary" data-act="run-go"${runPick.length ? '' : ' disabled'}>${runPick.length ? `Water ${runPick.length} ${plural(runPick.length, 'valve', 'valves')}` : 'Pick valves'}</button>
+      <button class="btn btn-ghost" data-act="run-cancel">Cancel</button>
+    </div>` : '';
+  return `<section class="panel irr-mod" aria-label="Valves">` +
+    panelHead(picking ? `Pick up to ${IRR_MAX_VALVES} valves` : 'Valves', null, rows.length) +
+    `<div class="valve-grid">${cells}</div>${bar}</section>`;
+}
+
+function irrDayModule() {
+  const d = irrLatestDay();
+  if (!d) return '';
+  const fig = (v, label) => `<div class="fig"><span class="fig-v">${v}</span><span class="fig-l">${label}</span></div>`;
+  const runs = irrRuns().slice(0, 4);
+  return `<section class="panel irr-mod" aria-label="${escapeHtml(farmDayLabel(d.day))}">` +
+    panelHead(farmDayLabel(d.day)) +
+    `<div class="figs">${fig(d.runs.length, 'Runs')}${fig(fmtMin(d.waterMin), 'Water')}` +
+    (d.pump ? fig(fmtMin(d.pump.pumpMin), 'Pump') : '') +
+    (d.pump?.kwh != null ? fig(`${Math.round(d.pump.kwh)}<small>kWh</small>`, 'Energy') : '') + `</div>` +
+    (runs.length ? `<div class="list">${runs.map((r) => `<div class="row run-row">
+        <span class="run-time">${escapeHtml(r.start.slice(11, 16))}</span>
+        <span class="row-main"><span class="row-name">${escapeHtml(r.name)}</span>
+          ${r.valves ? `<span class="row-meta">${escapeHtml(r.valves)}</span>` : ''}</span>
+        <span class="run-amt${r.finished ? '' : ' warn'}">${escapeHtml(runAmount(r))}</span></div>`).join('')}</div>` : '') +
+    `</section>`;
+}
+
+function irrSupplyModule() {
+  const s = irrSupply(), p = irrPressure();
+  if (!s && !p) return '';
+  const fig = (v, label) => `<div class="fig"><span class="fig-v">${v}</span><span class="fig-l">${label}</span></div>`;
+  const tags = [];
+  if (s && s.v.length) tags.push(s.missing ? `<span class="tag tag-bad">Phase missing</span>` : s.live ? `<span class="tag tag-on">All phases</span>` : `<span class="tag tag-bad">No power</span>`);
+  if (s && s.drawing != null) tags.push(`<span class="tag${s.drawing ? ' tag-on' : ''}">${s.drawing ? 'Pump running' : 'Pump off'}</span>`);
+  return `<section class="panel irr-mod" aria-label="Supply">` + panelHead('Supply', null) +
+    `<div class="figs">${s && s.v.length ? fig(`${s.v.map(Math.round).join(' · ')}<small>V</small>`, s.at ? `at ${s.at}` : 'Voltage') : ''}` +
+    `${p ? fig(escapeHtml(p.value), p.at ? `Pressure · ${escapeHtml(farmWhen(p.at))}` : 'Pressure') : ''}</div>` +
+    (tags.length ? `<div class="tags">${tags.join('')}</div>` : '') + `</section>`;
+}
+
+function irrReportsModule() {
+  const reports = irrReports();
+  const reachable = reportsGate();
+  const pending = irrWaiters.size;
+  const groups = [...new Set(IRR_TYPES.map((t) => t.group))];
+  const options = groups.map((g) => `<optgroup label="${escapeHtml(g)}">` + IRR_TYPES.filter((t) => t.group === g)
+    .map((t) => `<option value="${t.type}"${irrType === t.type ? ' selected' : ''}>${escapeHtml(t.label)}</option>`).join('') + `</optgroup>`).join('');
   const def = irrDefaultDates();
   if (!irrFrom) irrFrom = def.from;
   if (!irrTo) irrTo = def.to;
-
-  const groups = [...new Set(IRR_TYPES.map((t) => t.group))];
-  const options = groups.map((g) =>
-    `<optgroup label="${escapeHtml(g)}">` + IRR_TYPES.filter((t) => t.group === g).map((t) =>
-      `<option value="${t.type}"${irrType === t.type ? ' selected' : ''}>${escapeHtml(t.label)}</option>`
-    ).join('') + `</optgroup>`).join('');
-  const showRange = irrNeedsRange(irrType);
-  const pending = irrWaiters.size;
-  const reachable = reportsGate();
-  const blocked = !reachable.ok;
-  const builder = canControl
-    ? `<div class="rep-builder">
-        <label class="rep-field"><span>Report</span>
-          <select id="irr-type" data-act="irr-type">${options}</select></label>
-        <label class="rep-field"${showRange ? '' : ' hidden'}><span>From</span>
-          <input id="irr-from" type="date" value="${escapeHtml(irrFrom)}" data-act="irr-from" max="${escapeHtml(def.to)}"></label>
-        <label class="rep-field"${showRange ? '' : ' hidden'}><span>To</span>
-          <input id="irr-to" type="date" value="${escapeHtml(irrTo)}" data-act="irr-to" max="${escapeHtml(def.to)}"></label>
-        <button class="btn btn-primary" data-act="irr-gen"${pending || blocked ? ' disabled' : ''}>` +
-          `${pending ? 'Working…' : 'Generate report'}</button>
-      </div>
-      ${blocked ? `<p class="more-note note-off">${escapeHtml(reachable.why)}</p>` : ''}
-      ${pending ? `<p class="more-note">Pulling from the vendor — the result lands below, usually within a minute.</p>` : ''}`
-    : `<p class="more-note">Report generation is limited to controllers — ` +
-      `your account can view results below, but not run new pulls.</p>`;
-
-  const reports = irrReports();
-  const repsSec = sectionHead('i-menu', 'Reports') +
+  const range = irrNeedsRange(irrType);
+  const builder = canControl && irrBuilderOpen ? `<div class="rep-builder">
+      <label class="rep-field"><span>Report</span><select id="irr-type" data-act="irr-type">${options}</select></label>
+      <label class="rep-field"${range ? '' : ' hidden'}><span>From</span><input id="irr-from" type="date" value="${escapeHtml(irrFrom)}" data-act="irr-from" max="${escapeHtml(def.to)}"></label>
+      <label class="rep-field"${range ? '' : ' hidden'}><span>To</span><input id="irr-to" type="date" value="${escapeHtml(irrTo)}" data-act="irr-to" max="${escapeHtml(def.to)}"></label>
+      <button class="btn btn-primary" data-act="irr-gen"${pending || !reachable.ok ? ' disabled' : ''}>${pending ? 'Working…' : 'Generate'}</button>
+    </div>${reachable.ok ? '' : `<p class="more-note note-off">${escapeHtml(reachable.why)}</p>`}` : '';
+  const toggle = canControl ? ['#', irrBuilderOpen ? 'Close' : 'New report', 'data-act="irr-builder"'] : null;
+  return `<section class="irr-reports" aria-label="Reports">` +
+    `<div class="panel-head bare"><h2 class="panel-title">Reports<span class="n">${reports.length || ''}</span></h2>` +
+    (toggle ? `<a class="panel-link" href="#" ${toggle[2]}>${escapeHtml(toggle[1])}</a>` : '') + `</div>` +
+    builder +
     (reports.length
-      ? reports.slice().reverse().map(([k, r], i) => irrReportCard(k, r, reportOpen.has(k) ? reportOpen.get(k) : i === 0)).join('')
-      : emptyBlock('No reports yet',
-          !canControl ? 'No reports have been run yet.'
-          : blocked ? reachable.why
-          : 'Build one above — pick a report and press Generate.'));
+      ? reports.slice().reverse().map(([k, r]) => irrReportCard(k, r, reportOpen.get(k) === true)).join('')
+      : `<p class="more-note">No reports yet.</p>`) +
+    `</section>`;
+}
+let irrBuilderOpen = false;
 
-  const n = irrig();
-  const valves = n.valves || [];
-  const dcon = n.dcon || {};
-  const readings = [...(n.electricity || []), ...(n.pressure || [])];
-  const names = n.valveNames || [];
-  const lastNote = n.meta?.lastUpdated
-    ? `<p class="more-note">Last results from ` +
-      `${escapeHtml(n.meta.lastType || 'a report')} · ` +
-      `${escapeHtml(new Date(n.meta.lastUpdated).toLocaleString())}.` +
-      `${n.meta.lastError ? ` Last error: ${escapeHtml(n.meta.lastError)}.` : ''}</p>`
-    : '';
-
-  const valvesOpen = valves.filter((v) => v.status === 'on').length;
-  const latest = (rows) => {
-    const last = (rows || [])[(rows || []).length - 1];
-    return last ? [last.value, last.unit].filter(Boolean).join(' ') : '—';
-  };
-  const cacheSec = (valves.length || dcon.device || readings.length || names.length)
-    ? sectionHead('i-water_heater', 'Last results') + lastNote +
-      `<div class="stats">
-        <div class="stat stat-on"><span class="stat-label">Valves open</span>
-          <span class="stat-value">${valvesOpen}</span>
-          <span class="stat-note">of ${valves.length} last seen</span></div>
-        <div class="stat"><span class="stat-label">Pressure</span>
-          <span class="stat-value">${escapeHtml(latest(n.pressure))}</span>
-          <span class="stat-note">${escapeHtml((n.pressure || []).length ? 'last reading' : 'no pull yet')}</span></div>
-        <div class="stat"><span class="stat-label">Electricity</span>
-          <span class="stat-value">${escapeHtml(latest(n.electricity))}</span>
-          <span class="stat-note">${escapeHtml((n.electricity || []).length ? 'last reading' : 'no pull yet')}</span></div>
-      </div>` +
-      // Each list gets a titled panel, as in a room: three unlabelled
-      // stacks of rows read as one list of unrelated things.
-      (dcon.device
-        ? `<section class="panel cache-sec">` + panelHead('Controller') + `<div class="list">` +
-          [['Device', dcon.device], ['Serial', dcon.serial],
-           ['Last packet', dcon.lastPacket], ['Controller clock', dcon.serverTime]]
-            .filter(([, v]) => v)
-            .map(([k, v]) => irrigRow('i-menu', String(v), k, '')).join('') +
-          `</div></section>` : '') +
-      (names.length
-        ? `<section class="panel cache-sec">` + panelHead('Valves', null, names.length) +
-          `<div class="list${names.length > 8 ? ' cols' : ''}">` +
-          names.map((v) => irrigRow('i-valve', v.name,
-            v.type || `valve ${v.id}`, '', valveArt(v.name, v.type))).join('') + `</div></section>` : '') +
-      (valves.length
-        ? `<section class="panel cache-sec">` + panelHead('Last valve run', null, valves.length) +
-          `<div class="list${valves.length > 8 ? ' cols' : ''}">` +
-          valves.map((v) => irrigRow('i-valve', v.name || `Valve ${v.id || ''}`,
-            [v.runtime, v.id].filter(Boolean).join(' · ') || 'valve',
-            irrigStatusTag(v.status), valveArt(v.name, v.type, v.status))).join('') + `</div></section>` : '')
-    : '';
-
-  // Admins see, where it matters, when valve control has no Mobitech session.
+function irrigationView() {
+  // Admins find the Mobitech account where it matters: folded away unless
+  // it needs them, or they are part-way through signing in.
   const mb = isAdmin ? mobitechState() : { kind: 'ok' };
-  const mbNote = mb.kind === 'ok' ? ''
-    : `<p class="more-note note-off">${escapeHtml(mb.text)} <a href="#/admin">Sign in to Mobitech</a></p>`;
-  return head('Irrigation', 'Build a report from the irrigation controller.', '', 'Mobitech DCON') + mbNote +
-    sectionHead('n-irrigation', 'Generate report') + builder + repsSec + cacheSec +
-    `<p class="more-note">Read-only pulls — this page cannot operate pumps or valves.</p>`;
+  const account = isAdmin
+    ? `<details class="acct-sec"${mb.kind !== 'ok' || mbStep !== 'idle' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
+  return head('Irrigation', '', '') +
+    `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
+    `<div class="irr-col">${irrDayModule()}${irrSupplyModule()}</div></div>` +
+    irrReportsModule() + account;
 }
 
 /* ---- water: river -> other farm -> main farm ----
@@ -1562,6 +1833,10 @@ function waterMotorCard(m, vendorErr) {
   facts.push(['Power', m.power ? (m.supply ? m.supply.toLowerCase().replace('phase', 'phase present') : 'present') : 'none reported']);
   if (m.autoStart != null) facts.push(['Auto-start on power return', m.autoStart ? 'on' : 'off']);
   if (m.vendor === 'livesky' && m.connected === false) facts.push(['Starter link', 'not connected']);
+  // The headline is state and how long; the electrics fold away.
+  const mainKeys = new Set(['Running for', 'Off for', 'Program', 'Zone time left']);
+  const headline = facts.filter(([k]) => mainKeys.has(k));
+  const details = facts.filter(([k]) => !mainKeys.has(k));
 
   const when = m.liveAt || m.reportedAt;
   const notes = [];
@@ -1569,9 +1844,6 @@ function waterMotorCard(m, vendorErr) {
   if (pend) notes.push(`<p class="more-note note-off">${escapeHtml(pend)}</p>`);
   if ((m.trips || []).length) notes.push(`<p class="more-note note-bad">Tripped: ${escapeHtml(m.trips.join(', '))}.</p>`);
   if (m.skippedZone != null) notes.push(`<p class="more-note note-bad">Zone ${m.skippedZone} was skipped: no valve feedback.</p>`);
-  if (m.event && m.eventCode && !['001', '020'].includes(m.eventCode) && m.skippedZone == null) {
-    notes.push(`<p class="more-note">Last event: ${escapeHtml(cap(m.event.toLowerCase()))}.</p>`);
-  }
   if (vendorErr) notes.push(`<p class="more-note note-off">${escapeHtml(vendorErr)}</p>`);
   const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
   return `<article class="panel wmotor${m.running ? ' is-on' : ''}">
@@ -1580,15 +1852,16 @@ function waterMotorCard(m, vendorErr) {
       <div class="wmotor-title"><h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p></div>
       ${motorStateTag(m)}
     </div>
-    <div class="mb-facts">${facts.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div>
+    ${headline.length ? `<div class="mb-facts">${headline.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div>` : ''}
     ${notes.join('')}
-    <p class="wmotor-when">${when ? `Controller report ${escapeHtml(agoText(when))}` : 'No report time'}</p>
+    <details class="wdetails"><summary>${when ? `Reported ${escapeHtml(agoText(when))}` : 'Details'}</summary>
+      <div class="mb-facts">${details.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></details>
   </article>`;
 }
 
-const waterStage = (n, title, lead, body) =>
+const waterStage = (n, title, _lead, body) =>
   `<section class="wstage"><div class="wstage-head"><span class="wstage-n">${n}</span>` +
-  `<div><h2 class="wstage-title">${escapeHtml(title)}</h2><p class="wstage-lead">${escapeHtml(lead)}</p></div></div>` +
+  `<div><h2 class="wstage-title">${escapeHtml(title)}</h2></div></div>` +
   `<div class="wstage-body">${body}</div></section>`;
 const waterFlow = (text) => `<div class="wflow" aria-hidden="true"><span></span><em>${escapeHtml(text)}</em></div>`;
 
@@ -1601,15 +1874,14 @@ function waterView() {
   const others = motors.filter((m) => m.role !== 'main-farm');
   const liveskyErr = st.livesky && st.livesky.ok === false ? st.livesky.error : '';
   const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
-  const refresh = `<button class="btn btn-ghost" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
-  const pulled = w.pulledAt ? `Read from the controllers ${agoText(w.pulledAt)}.` : 'Not read yet.';
+  const refresh = `<button class="btn btn-ghost btn-sm" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
 
   const riverBody = w.river
     ? waterMotorCard(w.river, liveskyErr ? `${liveskyErr} Showing the last reading.` : '')
     : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
   const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
   const riverNote = livesky.kind === 'ok' ? ''
-    : `<p class="more-note note-off">${escapeHtml(livesky.text)} <a href="#/admin">Sign in to Livesky</a></p>`;
+    : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`;
 
   const otherBody = motors.length
     ? `<div class="wmotors">${[...supply, ...others].map((m) => waterMotorCard(m)).join('')}</div>` +
@@ -1620,18 +1892,19 @@ function waterView() {
   const mainBody = `<a class="panel wmain" href="#/irrigation">
       <img class="wmotor-art" src="/art/kulam.png" alt="" width="44" height="44">
       <div class="wmotor-title"><h3>${escapeHtml(dcon.device || 'Mobitech DCON')}</h3>
-        <p>Valves, programs and reports are on the Irrigation page.</p></div>${arrow()}</a>`;
+        <p>Mobitech DCON · valves and reports</p></div>${arrow()}</a>`;
 
-  return head('Water', 'From the river to the main farm’s drip lines.', refresh, 'Water chain') +
+  const account = isAdmin
+    ? `<details class="acct-sec"${livesky.kind !== 'ok' || lsStep !== 'idle' ? ' open' : ''}><summary>Livesky account</summary>${liveskyPanel()}</details>` : '';
+  return head('Water', '', refresh) +
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
-    `<p class="more-note">${escapeHtml(pulled)} Read-only: this page cannot switch a motor.</p>` +
     `<div class="wchain">` +
     waterStage('1', 'River', 'The river motor pumps to the other farm.', riverNote + riverBody) +
     waterFlow('to the other farm') +
     waterStage('2', 'Other farm', 'Two motors on Niagara controllers.', otherBody) +
     waterFlow('7.5 HP motor to the main farm') +
-    waterStage('3', 'Main farm', 'The Mobitech DCON controller runs the valves.', mainBody) +
-    `</div>`;
+    waterStage('3', 'Main farm', '', mainBody) +
+    `</div>` + account;
 }
 
 /* ---- Livesky sign-in (admins) ----
@@ -1740,9 +2013,7 @@ function liveskyPanel() {
         ${signedIn ? `<button class="btn btn-ghost" data-act="ls-signout"${lsBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
       </div>`;
   }
-  return sectionHead('n-admin', 'Livesky account (river motor)') +
-    `<section class="panel mb-panel">
-      <p class="mb-lead">The river motor is read with a Livesky session that lasts 24 hours. Signing SNOF in does not sign the phone out. The number and the SMS code are never stored.</p>
+  return `<section class="panel mb-panel">
       ${facts}${status}${form}
       ${lsInfo ? `<p class="more-note">${escapeHtml(lsInfo)}</p>` : ''}
       ${lsError ? `<p class="more-note note-off">${escapeHtml(lsError)}</p>` : ''}
@@ -2017,7 +2288,7 @@ function mobitechPanel() {
         <button class="btn btn-primary" data-act="mb-send"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Sending…' : 'Send code'}</button>
         <button class="btn btn-ghost" data-act="mb-cancel"${mbBusy ? ' disabled' : ''}>Cancel</button>
       </div>
-      <p class="more-note">Signing SNOF in may sign the Mobitech app on the phone out, if Mobitech allows one session per account.</p>`;
+`;
   } else if (mbStep === 'code') {
     form = `<div class="rep-builder" data-key="mobitech">
         <label class="rep-field"><span>Code from the SMS</span>
@@ -2032,9 +2303,7 @@ function mobitechPanel() {
         ${st.at ? `<button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
       </div>`;
   }
-  return sectionHead('n-admin', 'Mobitech account') +
-    `<section class="panel mb-panel">
-      <p class="mb-lead">SNOF signs in to Mobitech with its own session, so a sign-out on the phone does not stop valve control. The number and the SMS code are never stored.</p>
+  return `<section class="panel mb-panel">
       ${facts}${status}${form}
       ${mbInfo ? `<p class="more-note">${escapeHtml(mbInfo)}</p>` : ''}
       ${mbError ? `<p class="more-note note-off">${escapeHtml(mbError)}</p>` : ''}
@@ -2072,7 +2341,7 @@ function adminView() {
       <select id="admin-add-tier"><option value="view">View</option><option value="control">View + control</option></select></label>
     <button class="btn btn-primary" data-act="admin-invite">Add person</button>
   </div>
-  <p class="more-note">They get that access automatically the moment they sign in with that Google account — no command line, no service account.</p>`;
+  <p class="more-note">Access starts when they sign in with that Google account.</p>`;
 
   const rows = [
     ...inviteRows.map(([key, inv]) => inviteRow(key, inv)),
@@ -2082,13 +2351,10 @@ function adminView() {
     ? `<div class="list">${rows.join('')}</div>`
     : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
 
-  return head('Admin', 'Add people and grant or revoke dashboard access.', '', 'Access') +
-    mobitechPanel() + liveskyPanel() +
+  return head('Admin', '', '') +
     sectionHead('n-admin', 'Add a person') + addForm +
     sectionHead('n-admin', 'People') + list +
-    `<p class="more-note">Admin status is granted from the command line ` +
-    `(<code>npm run grant -- someone@example.com --admin</code>), not from here — ` +
-    `the one tier this page cannot hand out.</p>`;
+    `<p class="more-note">Admins are added from the command line: <code>npm run grant -- email --admin</code>.</p>`;
 }
 
 /* ---- pieces ---- */
@@ -2273,6 +2539,32 @@ function wire(all) {
   });
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
 
+  view.querySelectorAll('[data-act="irr-refresh"]').forEach((btn) => { btn.onclick = () => refreshIrrigation(); });
+  view.querySelectorAll('[data-act="irr-builder"]').forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); irrBuilderOpen = !irrBuilderOpen; render(); };
+  });
+  view.querySelectorAll('[data-act="run-open"]').forEach((btn) => {
+    btn.onclick = () => { runOpen = true; runPick = []; render(); };
+  });
+  view.querySelectorAll('[data-act="run-cancel"]').forEach((btn) => {
+    btn.onclick = () => { runOpen = false; runPick = []; render(); };
+  });
+  view.querySelectorAll('[data-act="run-pick"]').forEach((btn) => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.valve);
+      runPick = runPick.includes(id) ? runPick.filter((x) => x !== id) : runPick.concat(id).slice(0, IRR_MAX_VALVES);
+      render();
+    };
+  });
+  view.querySelectorAll('[data-act="run-min"]').forEach((sel) => { sel.onchange = () => { runMinutes = Number(sel.value); }; });
+  view.querySelectorAll('[data-act="run-go"]').forEach((btn) => { btn.onclick = () => runValves(); });
+  view.querySelectorAll('[data-act="irr-stop"]').forEach((btn) => { btn.onclick = () => stopIrrigation(); });
+  // A <details> is opened by hand; keep it open across the live rebuilds.
+  view.querySelectorAll('details.acct-sec, details.wdetails').forEach((d, i) => {
+    const key = `${d.className}:${i}`;
+    if (openDetails.has(key)) d.open = openDetails.get(key);
+    d.ontoggle = () => openDetails.set(key, d.open);
+  });
   view.querySelectorAll('[data-act="water-refresh"]').forEach((btn) => {
     btn.onclick = () => { requestWater(true); toast('ok', 'Asked the controllers for fresh readings.'); };
   });

@@ -18,43 +18,64 @@ struct IrrigationView: View {
     /// Set by Generate: the next report to land opens by itself.
     @State private var awaitingNew = false
 
-    var body: some View {
-        Page(eyebrow: "Mobitech DCON", title: "Irrigation",
-             subtitle: "Build a report from the irrigation controller.",
-             refresh: store.irrigationPull) {
-            SectionHead(symbol: "drop", title: "Generate report")
-            if store.canControl { builder } else {
-                Note(text: "Report generation is limited to controllers — your account can view results below, but not run new pulls.")
-            }
+    @State private var building = false
+    @State private var account = false
 
+    /// Everything irrigation, as modules (owner, 2026-09-25): what the
+    /// controller is doing with Run / Stop, the valves, the last day, the
+    /// supply, and the reports. Mirrors irrigationView() in app.js.
+    var body: some View {
+        Page(title: "Irrigation", refresh: store.irrigationPull) {
+            IrrigationNowCard()
+            IrrigationValvesCard()
+            IrrigationDayCard()
+            IrrigationSupplyCard()
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Reports").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                if !store.reports.isEmpty { Text("\(store.reports.count)").font(Theme.small).foregroundStyle(Theme.faint) }
+                Spacer()
+                if store.canControl { LinkButton(label: "New report", run: { building = true }) }
+            }
+            .padding(.top, 14)
             if store.reports.isEmpty {
-                SectionHead(symbol: "doc.text", title: "Reports")
-                let gate = store.gate(.irrigation)
-                EmptyBlock(title: "No reports yet",
-                           message: !store.canControl ? "No reports have been run yet."
-                               : !gate.ok ? gate.why : "Pick a report above and press Generate.",
-                           symbol: "doc.text")
+                Note(text: "No reports yet.")
             } else {
-                // One line per report; each opens on its own. A handful of
-                // full-length reports stacked here made the tab a scroll
-                // through charts to find the one you wanted.
-                TitledPanel(title: "Reports", count: store.reports.count) {
+                VStack(spacing: 0) {
                     ForEach(Array(store.reports.enumerated()), id: \.element.id) { i, r in
                         if i > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
                         Button { opened = OpenReport(id: r.key) } label: { ReportListRow(report: r, now: store.now) }
                             .buttonStyle(.plain)
                     }
                 }
+                .modifier(Panel(padding: 0))
             }
-
-            if !store.irrigation.isEmpty { LastResults(cache: store.irrigation) }
-
-            Note(text: "Read-only pulls — this screen cannot operate pumps or valves.")
-                .padding(.top, 8)
+            if store.isAdmin {
+                AccountRow(title: "Mobitech account", problem: store.mobitechProblem) { account = true }
+                    .padding(.top, 10)
+            }
         }
         .navigationTitle("Irrigation")
         .sheet(item: $opened) { open in
             ReportSheet(reportKey: open.id)
+        }
+        .sheet(isPresented: $building) {
+            NavigationStack {
+                ScrollView { builder.padding(16) }
+                    .background(Theme.bg)
+                    .navigationTitle("New report").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { building = false } } }
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $account) {
+            NavigationStack {
+                Form { Section { MobitechSignIn() } footer: {
+                    Text("The number and the SMS code are never stored; the session is kept where no app can read it.")
+                } }
+                .navigationTitle("Mobitech account").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { account = false } } }
+            }
         }
         #if DEBUG
         .task {
@@ -102,6 +123,7 @@ struct IrrigationView: View {
                 Haptics.tap()
                 sending = true
                 awaitingNew = true
+                building = false
                 Task {
                     await store.requestReport(type: type, from: from, to: to)
                     sending = false
@@ -790,41 +812,6 @@ private struct LegacyBody: View {
 
 /* ---- the cache the last reports left behind ---- */
 
-private struct LastResults: View {
-    let cache: IrrigationCache
-
-    var body: some View {
-        SectionHead(symbol: "spigot", title: "Last results")
-        if let at = cache.lastUpdated {
-            Note(text: "From \(cache.lastType ?? "a report") · \(Date(timeIntervalSince1970: at / 1000).formatted(date: .abbreviated, time: .shortened))."
-                 + (cache.lastError.map { " Last error: \($0)." } ?? ""))
-        }
-        let open = cache.valves.filter { $0["status"] == "on" }.count
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-            ReadingTile(label: "Valves open", value: "\(open)", note: "of \(cache.valves.count) last seen", on: open > 0)
-            ReadingTile(label: "Pressure", value: latest(cache.pressure), note: cache.pressure.isEmpty ? "no pull yet" : "last reading")
-            ReadingTile(label: "Electricity", value: latest(cache.electricity), note: cache.electricity.isEmpty ? "no pull yet" : "last reading")
-        }
-        let facts: [ReportRow] = [("Device", cache.device), ("Serial", cache.serial),
-                                  ("Last packet", cache.lastPacket), ("Controller clock", cache.serverTime)]
-            .compactMap { k, v in v.map { ["label": k, "value": $0] } }
-        if !facts.isEmpty { Facts(rows: facts).panel(padding: 12) }
-        if !cache.valves.isEmpty {
-            SimpleRows(rows: cache.valves, art: valveArt) { v in
-                (v["name"] ?? "Valve \(v["id"] ?? "")", [v["runtime"], v["id"]].compactMap { $0 }.joined(separator: " · "), v["status"] ?? "unknown")
-            }
-            .panel(padding: 12)
-        } else if !cache.valveNames.isEmpty {
-            SimpleRows(rows: cache.valveNames, art: valveArt) { v in (v["name"] ?? "Valve", v["type"] ?? "valve \(v["id"] ?? "")", nil) }
-                .panel(padding: 12)
-        }
-    }
-
-    private func latest(_ rows: [ReportRow]) -> String {
-        guard let last = rows.last else { return "—" }
-        return [last["value"], last["unit"]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-    }
-}
 
 private struct ReadingTile: View {
     let label: String
@@ -840,5 +827,31 @@ private struct ReadingTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
+    }
+}
+
+/// One tappable line that opens an account sheet; says so when it needs you.
+struct AccountRow: View {
+    let title: String
+    let problem: String?
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                Image(systemName: problem == nil ? "person.crop.circle.badge.checkmark" : "exclamationmark.triangle")
+                    .foregroundStyle(problem == nil ? Theme.faint : Theme.warn).frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.font(14.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
+                    if let problem { Text(problem).font(Theme.meta).foregroundStyle(Theme.warn).lineLimit(2) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .modifier(Panel(padding: 0))
     }
 }

@@ -379,7 +379,7 @@ a.att-sub:hover{color:var(--text)}
 
 /* ---------- area cards ---------- */
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
-.area-card{position:relative;display:flex;flex-direction:column;min-height:122px;padding:20px 18px 16px;
+.area-card{position:relative;display:flex;flex-direction:column;gap:4px;min-height:0;padding:16px 18px;
   background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-xl);box-shadow:var(--shadow-card)}
 .area-card:hover{box-shadow:var(--shadow-card-hover);transform:translateY(-1px)}
 .area-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -387,7 +387,8 @@ a.att-sub:hover{color:var(--text)}
 .area-arrow{width:21px;height:21px;margin:-1px -1px 0 0;color:var(--muted);stroke-width:1.5;
   transition:transform .16s var(--ease),color .16s}
 .area-card:hover .area-arrow{color:var(--text);transform:translate(2px,-2px)}
-.area-count{margin-top:3px;font-size:12.5px;color:var(--muted)}
+.area-count{font-size:12.5px;color:var(--muted)}
+.area-count .bad{color:var(--bad);font-weight:650}
 .area-meta{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;margin-top:auto;padding-top:22px;
   font-size:12.5px;font-weight:700}
 .area-meta .on{color:var(--accent)}
@@ -779,6 +780,103 @@ input[type=range][disabled]{opacity:.42}
   :root:not([data-theme]) .ico-moon{display:none}
 }
 
+/* ---------- modules (2026-09-25 simplification) ----------
+   Home rows, the irrigation modules and folded account sections. Built from
+   the same tokens as everything else; nothing new in colour. */
+.btn-sm{min-height:36px;padding:0 14px;font-size:13px}
+.btn-danger{background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad-line)}
+.seg-nav{margin:0 0 18px}
+.seg-nav a{padding:7px 16px;border-radius:8px;font-size:13.5px;font-weight:650;color:var(--muted)}
+.seg-nav a[aria-current="page"]{background:var(--seg-thumb);color:var(--text);box-shadow:var(--seg-shadow)}
+
+.hrows{display:flex;flex-direction:column}
+.hrow{display:flex;align-items:center;gap:12px;min-height:64px;padding:12px 22px;border-bottom:1px solid var(--line-soft);color:inherit}
+.hrow:last-child{border-bottom:0}
+.hrow:hover{background:var(--panel-2)}
+.hrow-main{display:grid;grid-template-columns:110px minmax(0,1fr);column-gap:14px;row-gap:2px;flex:1;min-width:0}
+.hrow-title{grid-row:1 / span 2;align-self:center;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.hrow-value{font-size:15.5px;font-weight:700;color:var(--text)}
+.hrow-value.on{color:var(--accent)}
+.hrow-meta{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hrow-chev{width:16px;height:16px;color:var(--faint);flex:none}
+.ov-main > * + *{margin-top:14px}
+
+.irr-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;align-items:start}
+.irr-col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.now{display:flex;flex-direction:column;gap:8px;padding:20px 22px;background:var(--tint);border-color:var(--tint-line);box-shadow:none}
+.now-top{display:flex;align-items:center;gap:10px}
+.now-label{white-space:nowrap;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.now-label .dot{width:8px;height:8px;border-radius:50%;background:var(--line-2)}
+.now.is-on .now-label{color:var(--accent)}
+.now.is-on .now-label .dot{background:var(--brand)}
+.now-checked{margin-left:auto;font-size:12.5px;color:var(--faint);white-space:nowrap}
+.now-top .btn{margin-left:auto}
+.now-checked + .btn{margin-left:4px}
+.now-title{font-size:clamp(22px,2vw,27px);font-weight:750;letter-spacing:-.035em;color:var(--text)}
+.now-detail{font-size:14px;color:var(--muted)}
+.now-next{font-size:13.5px;color:var(--text);padding-top:8px;border-top:1px solid var(--tint-line)}
+.now-next span{margin-right:8px;font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.now-actions{display:flex;gap:10px;margin-top:6px}
+.now-actions .btn{flex:1}
+.now .more-note{margin:0;padding:0;border:0}
+
+.irr-mod .panel-head{border-bottom:0;padding-bottom:4px}
+.valve-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px;padding:6px 16px 16px}
+.vchip{position:relative;display:flex;align-items:center;gap:9px;min-height:48px;padding:6px 10px;border-radius:var(--r);
+  background:var(--panel-2);border:1px solid transparent;color:var(--text);text-align:left;font:inherit}
+.vchip-art{width:28px;height:28px;flex:none;object-fit:contain}
+.vchip-ico{display:grid;place-items:center;color:var(--faint)}
+.vchip-ico .ico{width:18px;height:18px}
+.vchip-name{font-size:13px;font-weight:650;line-height:1.2;overflow:hidden;text-overflow:ellipsis}
+.vchip-dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--brand)}
+.vchip.is-on{border-color:var(--accent-line)}
+.vchip.is-off{opacity:.4}
+.vchip.is-pick{cursor:pointer}
+.vchip.is-pick:hover{border-color:var(--line-2)}
+.vchip.picked{background:var(--panel);border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset}
+.vchip:disabled{opacity:.4;cursor:not-allowed}
+.run-bar{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;padding:14px 16px 16px;border-top:1px solid var(--line-soft)}
+.run-bar .rep-field{flex:0 0 96px}
+.run-bar .btn{white-space:nowrap}
+.run-bar .btn-primary{flex:1}
+
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:12px;padding:8px 22px 16px}
+.fig{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fig-v{font-size:24px;font-weight:750;letter-spacing:-.04em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fig-v small{margin-left:3px;font-size:12px;font-weight:650;letter-spacing:0;color:var(--faint)}
+.fig-l{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.tags{display:flex;gap:14px;flex-wrap:wrap;padding:0 22px 16px}
+.run-row{gap:14px}
+.run-time{flex:none;width:44px;font-size:13px;font-weight:650;color:var(--faint);font-variant-numeric:tabular-nums}
+.run-amt{flex:none;font-size:13px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.run-amt.warn{color:var(--warn)}
+
+.irr-reports{margin-top:28px}
+.panel-head.bare{padding:0 0 12px;border:0}
+.irr-reports .rep-builder{margin-bottom:14px}
+
+details.acct-sec{margin-top:28px}
+details.acct-sec > summary,.wdetails > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
+  font-size:13px;font-weight:700;color:var(--muted);min-height:44px}
+details.acct-sec > summary{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+details.acct-sec > summary::-webkit-details-marker,.wdetails > summary::-webkit-details-marker{display:none}
+details.acct-sec > summary::after,.wdetails > summary::after{content:"";width:7px;height:7px;margin-left:2px;
+  border-right:1.8px solid currentColor;border-bottom:1.8px solid currentColor;rotate:45deg;translate:0 -2px;transition:rotate .2s var(--ease)}
+details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:225deg;translate:0 2px}
+.wdetails{border-top:1px solid var(--line-soft);margin-top:-4px}
+.wdetails > summary{min-height:40px;font-weight:600;color:var(--faint)}
+.wdetails .mb-facts{padding:4px 0 6px}
+
+@media (max-width:900px){
+  .irr-grid{grid-template-columns:minmax(0,1fr)}
+  .hrow{padding:12px 16px}
+  .hrow-main{grid-template-columns:minmax(0,1fr)}
+  .hrow-title{grid-row:auto}
+  .figs{padding:6px 16px 14px}
+  .fig-v{font-size:19px}
+  .run-bar .btn-ghost{padding:0 12px}
+}
+
 /* ---------- water chain ----------
    Three numbered stages joined by a thin vertical flow line, so the page
    reads top to bottom the way the water goes: river, other farm, main farm.
@@ -894,7 +992,7 @@ input[type=range][disabled]{opacity:.42}
   .dev-card{padding:8px 18px;--sep-inset:18px}
   .row{padding:9px 16px;--sep-inset:59px}
   .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-  .area-card{min-height:112px;padding:16px 14px 14px;border-radius:var(--r-lg)}
+  .area-card{padding:14px;border-radius:var(--r-lg)}
   .stat{border-radius:var(--r-lg)}
   .area-name{font-size:15px}
   .area-meta{padding-top:18px;gap:4px 10px;font-size:12px}

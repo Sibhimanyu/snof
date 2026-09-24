@@ -72,6 +72,7 @@
     const req=new XMLHttpRequest(); req.open('GET',params.get('live')?'farm-live.json':'farm-real.json',false); req.send(null);
     const f=JSON.parse(req.responseText);
     data.areas=f.areas; data.entities=f.entities; data.devices=f.devices||{};
+    if(f.irrigation) data.irrigation=f.irrigation;
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
   // The water chain (water functions): river motor on Livesky, the other
@@ -94,6 +95,19 @@
         'well-motor':{name:'Well motor',group:'GROUP ONE',role:'drip',vendor:'niagara',model:5,running:true,requested:true,
           power:true,supply:'3 PHASE',event:'Zone changed',eventCode:'044',reportedAt:iso(now-70000),liveAt:iso(now-30000),
           volts:[231,232,235],amps:[8.6,8.4],pressureOut:21.9,program:'P1',zone:3,zoneRun:'00:00:32',zoneLeft:'01:04:28'}}};
+  }
+  // Valve control as the NUC advertises it (?irroff=1: switched off), and
+  // what the controller is doing (?watering=1: a manual run in progress).
+  data.meta.bridge.irrigationControl=!params.get('irroff');
+  data.meta.bridge.irrigationControlStatus={maxMinutes:60};
+  if(data.irrigation){
+    const farm=(ms)=>new Date(ms+330*60000).toISOString().slice(0,19).replace('T',' ');
+    data.irrigation.program=params.get('watering')
+      ? {name:'Manual Mode',kind:'Manual',running:true,valves:'4 Veg, 6 Kulam',start:farm(now-6*60000),
+         plannedMin:20,remainingMin:14,lastSeen:farm(now-60000),at:now-60000,next:{name:'Coconut',valves:'12 Coco 1',plannedMin:60}}
+      : {name:'Coconut',kind:'Program',running:false,valves:'12 Coco 1, 15 Coco 2',start:farm(now-5*3600000),
+         at:now-1800000,next:{name:'Coconut',valves:'12 Coco 1, 15 Coco 2',plannedMin:60}};
+    data.irrigation.dcon=Object.assign({timeZone:'+05:30'},data.irrigation.dcon||{});
   }
   if(params.get('noirrig')) delete data.irrigation;
   // ?mobitech=ok|rejected seeds SNOF's Mobitech status line (never a token).

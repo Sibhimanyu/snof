@@ -92,7 +92,7 @@
 </div>
 
 <!-- ---------- app shell ----------
-     One top bar on every width: wordmark, the six destinations, and the
+     One top bar on every width: wordmark, the four destinations, and the
      account. Below 900px the destinations move to the bottom tab bar and the
      bridge state takes their place up top, because on a phone "is this live?"
      is the first question. Both navs carry data-nav; render() marks both. -->
@@ -106,12 +106,10 @@
       </a>
 
       <nav class="topnav" aria-label="Main">
-        <a class="topnav-item" href="#/" data-nav="overview">Overview</a>
-        <a class="topnav-item" href="#/areas" data-nav="areas">Areas</a>
-        <a class="topnav-item" href="#/devices" data-nav="devices">All devices</a>
+        <a class="topnav-item" href="#/" data-nav="overview">Home</a>
         <a class="topnav-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
         <a class="topnav-item" href="#/water" data-nav="water">Water</a>
-        <a class="topnav-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
+        <a class="topnav-item" href="#/areas" data-nav="areas">Rooms</a>
       </nav>
 
       <div class="topbar-right">
@@ -135,6 +133,7 @@
               <svg viewBox="0 0 24 24" class="ico ico-sm ico-moon"><use href="#i-moon"/></svg>
               <span id="theme-menu-text">Switch theme</span>
             </button>
+            <a class="acct-item nav-admin" href="#/admin" role="menuitem" hidden>Admin: people and access</a>
             <button id="signout-menu" class="acct-item" role="menuitem">Sign out</button>
           </div>
         </div>
@@ -150,16 +149,13 @@
       <input id="search" type="search" aria-label="Search devices and areas" placeholder="Search devices, rooms, states…" autocomplete="off" spellcheck="false">
     </div>
     <main id="view" class="view" tabindex="-1"></main>
-    <footer class="foot"><span id="stats" role="status">Connecting…</span></footer>
   </div>
 
   <nav class="tabbar" aria-label="Main">
-    <a class="tab-item" href="#/" data-nav="overview">Overview</a>
-    <a class="tab-item" href="#/areas" data-nav="areas">Areas</a>
-    <a class="tab-item" href="#/devices" data-nav="devices">Devices</a>
+    <a class="tab-item" href="#/" data-nav="overview">Home</a>
     <a class="tab-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
     <a class="tab-item" href="#/water" data-nav="water">Water</a>
-    <a class="tab-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
+    <a class="tab-item" href="#/areas" data-nav="areas">Rooms</a>
   </nav>
 </div>
 
@@ -240,6 +236,7 @@
     const req=new XMLHttpRequest(); req.open('GET',params.get('live')?'farm-live.json':'farm-real.json',false); req.send(null);
     const f=JSON.parse(req.responseText);
     data.areas=f.areas; data.entities=f.entities; data.devices=f.devices||{};
+    if(f.irrigation) data.irrigation=f.irrigation;
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
   // The water chain (water functions): river motor on Livesky, the other
@@ -262,6 +259,19 @@
         'well-motor':{name:'Well motor',group:'GROUP ONE',role:'drip',vendor:'niagara',model:5,running:true,requested:true,
           power:true,supply:'3 PHASE',event:'Zone changed',eventCode:'044',reportedAt:iso(now-70000),liveAt:iso(now-30000),
           volts:[231,232,235],amps:[8.6,8.4],pressureOut:21.9,program:'P1',zone:3,zoneRun:'00:00:32',zoneLeft:'01:04:28'}}};
+  }
+  // Valve control as the NUC advertises it (?irroff=1: switched off), and
+  // what the controller is doing (?watering=1: a manual run in progress).
+  data.meta.bridge.irrigationControl=!params.get('irroff');
+  data.meta.bridge.irrigationControlStatus={maxMinutes:60};
+  if(data.irrigation){
+    const farm=(ms)=>new Date(ms+330*60000).toISOString().slice(0,19).replace('T',' ');
+    data.irrigation.program=params.get('watering')
+      ? {name:'Manual Mode',kind:'Manual',running:true,valves:'4 Veg, 6 Kulam',start:farm(now-6*60000),
+         plannedMin:20,remainingMin:14,lastSeen:farm(now-60000),at:now-60000,next:{name:'Coconut',valves:'12 Coco 1',plannedMin:60}}
+      : {name:'Coconut',kind:'Program',running:false,valves:'12 Coco 1, 15 Coco 2',start:farm(now-5*3600000),
+         at:now-1800000,next:{name:'Coconut',valves:'12 Coco 1, 15 Coco 2',plannedMin:60}};
+    data.irrigation.dcon=Object.assign({timeZone:'+05:30'},data.irrigation.dcon||{});
   }
   if(params.get('noirrig')) delete data.irrigation;
   // ?mobitech=ok|rejected seeds SNOF's Mobitech status line (never a token).
