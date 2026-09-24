@@ -1,104 +1,166 @@
-"""The Mobitech DCON HTTP API: the eight read calls reports use, and no others.
+"""The Mobitech DCON read API: the eight calls reports use, and no others.
 
-Every call goes to <base>/v1/http/. The command endpoint (/v1/command/, which
-opens and closes valves) is not reachable from this class: there is no method
-for it and no way to pass a path. Keep it that way — see reports.py.
+Two ways to make them:
 
-Endpoints surveyed against the live controller on 2026-09-23. Besides these,
-logs?method=valve_log answers (it is get_all_valve under another name) and
-logs?method=flow_log answers with an empty list (no flow meter). Every other
-report type tried — flow, energy, power, voltage, current, level, moisture… —
-comes back "Invalid request parameter", and other log/node method names come
-back empty. The data below is all there is.
+* **Relay** (the default). Mobitech answers every Google Cloud address with
+  HTTP 403 — tested from asia-southeast1 and asia-south1 on 2026-09-24 — so
+  the Function cannot call it directly. It writes a *named* read to
+  /relay/jobs, the bridge on the NUC makes it from the farm's own connection
+  (addon/snof_bridge/bridge/relay.py), and the compressed answer comes back
+  through /relay/results. /relay is outside /farms, so the RTDB rules'
+  default deny keeps it away from every client. The job carries a call name
+  and dates, never a URL, a serial or a token.
+* **Direct**, kept for the day Mobitech stops refusing cloud addresses, or a
+  proxy it accepts sits in between. Same eight calls, same spelling.
+
+Either way the only endpoint is <base>/v1/http/. The vendor's write endpoint
+is not reachable from this module: there is no method for it and no way to
+pass a path. Keep it that way — see reports.py.
+
+Besides these eight, the survey found logs?method=valve_log (get_all_valve
+under another name) and logs?method=flow_log (always empty: no flow meter).
+Every other report type tried comes back "Invalid request parameter".
 """
 from __future__ import annotations
 
+import base64
+import gzip
+import json
+import time
 from typing import Any
 
-import requests
-
 TIMEOUT_SECONDS = 30
+# How long the Function waits for the NUC to answer one relayed read. Most
+# come back in 1–3 s; a month of electricity packets takes longer.
+RELAY_WAIT_SECONDS = 50.0
+RELAY_POLL_SECONDS = 0.5
 
 
 class DconError(RuntimeError):
     pass
 
 
-class Dcon:
+def _answer(what: str, status: int, text: str) -> Any:
+    if status >= 400:
+        raise DconError(f"DCON {what}: HTTP {status}")
+    try:
+        body = json.loads(text)
+    except ValueError:
+        raise DconError(f"DCON {what}: not JSON") from None
+    if isinstance(body, dict) and body.get("status") == "failed":
+        raise DconError(f"DCON {what}: {str(body.get('reason') or 'refused')[:80]}")
+    return body
+
+
+class DirectTransport:
+    """Calls the controller API from wherever this code runs."""
+
     def __init__(self, base: str, serial: str, token_id: str,
-                 product: str = "DCON", session: requests.Session | None = None):
+                 product: str = "DCON", session=None):
         if not (serial and token_id):
             raise DconError("DCON is not configured")
+        import requests
+
         self._url = base.rstrip("/") + "/v1/http/"
-        self._serial = serial
-        self._token = token_id
-        self._product = product or "DCON"
+        self._serial, self._token, self._product = serial, token_id, product or "DCON"
         self._http = session or requests.Session()
 
-    def _answer(self, what: str, resp: requests.Response) -> Any:
-        if resp.status_code >= 400:
-            raise DconError(f"DCON {what}: HTTP {resp.status_code}")
-        try:
-            body = resp.json()
-        except ValueError:
-            raise DconError(f"DCON {what}: not JSON") from None
-        if isinstance(body, dict) and body.get("status") == "failed":
-            raise DconError(f"DCON {what}: {str(body.get('reason') or 'refused')[:80]}")
-        return body
+    def _fields(self, call: str, args: dict) -> tuple[str, dict]:
+        s, p = self._serial, self._product
+        if call == "dashboard":
+            return "POST", {"action": "dashboard", "p": "app", "token_id": self._token, "product": p}
+        if call == "nodes":
+            return "POST", {"action": "dcon_node", "method": "get_node", "serial_no": s}
+        if call == "valves":
+            return "POST", {"action": "dcon_node", "method": "get_all_valve",
+                            "from": args["from"], "to": args["to"], "serial_no": s}
+        if call in ("timer_log", "motor_log"):
+            return "POST", {"action": "logs", "method": call, "serial_no": s,
+                            "from": args["from"], "to": args["to"]}
+        if call in ("electricity", "pressure_now"):
+            return "GET", {"action": "reports",
+                           "type": "electricity" if call == "electricity" else "pressure_cond",
+                           "serial_no": s, "dt": args["since"], "product": p}
+        if call == "pressure_range":
+            return "GET", {"action": "reports", "type": "pressure_timer", "serial_no": s,
+                           "from": f"{args['from']} 00:00:00", "to": f"{args['to']} 23:59:59",
+                           "product": p}
+        raise DconError(f"unknown call {call}")
 
-    def _post(self, what: str, form: dict) -> Any:
+    def call(self, call: str, args: dict) -> Any:
+        import requests
+
+        method, fields = self._fields(call, args)
         try:
-            resp = self._http.post(self._url, data=form, timeout=TIMEOUT_SECONDS)
+            if method == "POST":
+                resp = self._http.post(self._url, data=fields, timeout=TIMEOUT_SECONDS)
+            else:
+                resp = self._http.get(self._url, params=fields, timeout=TIMEOUT_SECONDS)
         except requests.RequestException as err:
-            raise DconError(f"DCON {what}: {type(err).__name__}") from None
-        return self._answer(what, resp)
+            raise DconError(f"DCON {call}: {type(err).__name__}") from None
+        return _answer(call, resp.status_code, resp.text)
 
-    def _get(self, what: str, params: dict) -> Any:
+
+class RelayTransport:
+    """Asks the bridge on the NUC to make the call. `store` is firebase_admin's
+    db module (or anything with .reference(path) -> push/get/delete)."""
+
+    def __init__(self, store, wait: float = RELAY_WAIT_SECONDS,
+                 poll: float = RELAY_POLL_SECONDS, clock=time.monotonic, sleep=time.sleep):
+        self._store, self._wait, self._poll = store, wait, poll
+        self._clock, self._sleep = clock, sleep
+
+    def call(self, call: str, args: dict) -> Any:
+        job = self._store.reference("relay/jobs").push(
+            {"call": call, "args": args, "at": {".sv": "timestamp"}})
+        result_ref = self._store.reference(f"relay/results/{job.key}")
+        deadline = self._clock() + self._wait
         try:
-            resp = self._http.get(self._url, params={**params, "serial_no": self._serial,
-                                                     "product": self._product},
-                                  timeout=TIMEOUT_SECONDS)
-        except requests.RequestException as err:
-            raise DconError(f"DCON {what}: {type(err).__name__}") from None
-        return self._answer(what, resp)
+            while self._clock() < deadline:
+                result = result_ref.get()
+                if result:
+                    if not result.get("ok"):
+                        raise DconError(f"DCON {call}: {result.get('error') or 'failed'}")
+                    text = gzip.decompress(base64.b64decode(result.get("gz") or "")).decode("utf-8")
+                    return _answer(call, int(result.get("status") or 200), text)
+                self._sleep(self._poll)
+            raise DconError(f"DCON {call}: the farm's bridge did not answer — "
+                            "is the NUC online?")
+        finally:
+            # Whatever happened, neither node stays behind.
+            for ref in (result_ref, self._store.reference(f"relay/jobs/{job.key}")):
+                try:
+                    ref.delete()
+                except Exception:          # noqa: BLE001 — cleanup is best-effort
+                    pass
 
-    # ---- the calls ------------------------------------------------------
+
+class Dcon:
+    """The eight reads, as the report builders call them."""
+
+    def __init__(self, transport):
+        self._t = transport
 
     def dashboard(self) -> Any:
-        return self._post("dashboard", {"action": "dashboard", "p": "app",
-                                        "token_id": self._token,
-                                        "product": self._product})
+        return self._t.call("dashboard", {})
 
     def nodes(self) -> Any:
-        return self._post("get_node", {"action": "dcon_node", "method": "get_node",
-                                       "serial_no": self._serial})
+        return self._t.call("nodes", {})
 
     def valves(self, start: str, end: str) -> Any:
-        return self._post("get_all_valve", {"action": "dcon_node",
-                                            "method": "get_all_valve",
-                                            "from": start, "to": end,
-                                            "serial_no": self._serial})
+        return self._t.call("valves", {"from": start, "to": end})
 
     def timer_log(self, start: str, end: str) -> Any:
-        return self._post("timer_log", {"action": "logs", "method": "timer_log",
-                                        "serial_no": self._serial,
-                                        "from": start, "to": end})
+        return self._t.call("timer_log", {"from": start, "to": end})
 
     def motor_log(self, start: str, end: str) -> Any:
-        return self._post("motor_log", {"action": "logs", "method": "motor_log",
-                                        "serial_no": self._serial,
-                                        "from": start, "to": end})
+        return self._t.call("motor_log", {"from": start, "to": end})
 
     def electricity(self, since: str) -> Any:
-        return self._get("electricity", {"action": "reports", "type": "electricity",
-                                         "dt": since})
+        return self._t.call("electricity", {"since": since})
 
     def pressure_now(self, since: str) -> Any:
-        return self._get("pressure", {"action": "reports", "type": "pressure_cond",
-                                      "dt": since})
+        return self._t.call("pressure_now", {"since": since})
 
     def pressure_range(self, start: str, end: str) -> Any:
-        return self._get("pressure range", {"action": "reports",
-                                            "type": "pressure_timer",
-                                            "from": f"{start} 00:00:00",
-                                            "to": f"{end} 23:59:59"})
+        return self._t.call("pressure_range", {"from": start, "to": end})

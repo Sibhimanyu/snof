@@ -151,11 +151,19 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   the DCON token and serial are Secret Manager secrets `DCON_TOKEN_ID` /
   `DCON_SERIAL`. Add-on 0.8.0 removes `irrigation.py`, `vendors.py` and every
   `irrigation_enabled`/`dcon_*` option. Its heartbeat nulls
-  `meta/bridge.irrigation`. **Deploy order matters:** the running 0.7.4 still
-  consumes the queue, so update the add-on to 0.8.0 before (or together
-  with) the first function deploy, or each press runs twice. Kill switch:
-  `meta/reports/enabled: false`, service account only. Tests:
+  `meta/bridge.irrigation`. Kill switch: `meta/reports/enabled: false`,
+  service account only. Tests:
   `cd dashboard/functions && python3 tests/test_reports.py`.
+- **Deployed 2026-09-24:** the Function, rules and hosting, plus add-on 0.9.1
+  on the NUC (image tag verified). **Mobitech 403s every Google Cloud
+  address**, so the Function cannot call it directly. Add-on 0.9.1 relays the
+  eight named reads through `/relay/jobs` → `/relay/results` (`bridge/relay.py`,
+  option `dcon_relay: true`, set by merging into the Supervisor options).
+  Parsing and report building stay in the Function. Reports therefore need
+  the NUC up again. Proven end to end: session_log and power_range both came
+  back Ready from the live controller, and `/relay` refuses unauthenticated
+  access. `DCON_TRANSPORT=direct` in `dashboard/functions/.env` (per machine,
+  gitignored) switches back to direct calls.
 - **The first live pull leaked.** `normalize_dcon_dashboard()` used to mirror a
   scrubbed dump of the whole node; the DCON dashboard payload carries the
   farm's phone book and the modem IMEI, and eleven numbers reached Firebase

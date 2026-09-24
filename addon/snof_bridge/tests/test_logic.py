@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logging.disable(logging.CRITICAL)
 
 from bridge.commands import CommandConsumer  # noqa: E402
+from bridge import relay  # noqa: E402  (pure validation, aiohttp imported lazily)
 from bridge.mapper import StateMapper, filter_attributes  # noqa: E402
 from bridge.registry import Registry  # noqa: E402
 
@@ -306,7 +307,7 @@ def test_every_runtime_use_of_aiohttp_has_a_local_import():
         tree = ast.parse(path.read_text())
         # Module-scope import is fine for modules the pure suite never imports;
         # this one it does import, so it must keep aiohttp out of scope.
-        if path.name != "commands.py":
+        if path.name not in ("commands.py", "relay.py"):
             continue
         assert not any(
             isinstance(n, ast.Import) and any(a.name == "aiohttp" for a in n.names)
@@ -329,6 +330,61 @@ def test_every_runtime_use_of_aiohttp_has_a_local_import():
             if not has_import:
                 offenders.append(f"{path.name}::{fn.name}")
     assert not offenders, f"aiohttp used without a local import in: {offenders}"
+
+
+# ------------------------------------------------------------- DCON relay
+
+def _job(**over):
+    base = {"call": "valves", "args": {"from": "2026-09-20", "to": "2026-09-22"},
+            "at": time.time() * 1000}
+    base.update(over)
+    return base
+
+
+def test_relay_runs_only_named_reads_with_strict_args():
+    assert relay.validate(_job()) == ("valves", {"from": "2026-09-20", "to": "2026-09-22"})
+    assert relay.validate(_job(call="dashboard", args={})) == ("dashboard", {})
+    assert relay.validate(_job(call="electricity", args={"since": "2026-09-24 08:00:00"}))
+    bad = {
+        "unknown call": _job(call="valve_on"),
+        "a url": _job(call="https://dcon.mobitechwireless.com/v1/http/"),
+        "extra arg": _job(args={"from": "2026-09-20", "to": "2026-09-22", "action": "x"}),
+        "missing arg": _job(args={"from": "2026-09-20"}),
+        "bad date": _job(args={"from": "20-09-2026", "to": "2026-09-22"}),
+        "injected field": _job(args={"from": "2026-09-20&serial_no=X", "to": "2026-09-22"}),
+        "stale": _job(at=(time.time() - 600) * 1000),
+        "no timestamp": _job(at=None),
+        "not a dict": "valves",
+    }
+    for why, job in bad.items():
+        assert relay.validate(job) is None, why
+
+
+def test_relay_uses_its_own_credentials_and_one_endpoint():
+    form = relay.form_for("valves", {"from": "2026-09-20", "to": "2026-09-22"},
+                          serial="MCONOWN", token="TOKENOWN")
+    assert form["serial_no"] == "MCONOWN"
+    assert relay.form_for("dashboard", {}, "MCONOWN", "TOKENOWN")["token_id"] == "TOKENOWN"
+    src = (Path(__file__).resolve().parent.parent / "bridge" / "relay.py").read_text()
+    assert src.count("/v1/http/") >= 1 and "/v1/command" not in src
+
+
+def test_relay_strips_the_phone_book_before_anything_leaves():
+    raw = {"MCONTEST": {"server_time": "t", "time_zone": "+05:30", "timers": {"current": None},
+                        "sim": "vi-9876543210", "users": {"A1": {"mobile": "919876543210"}},
+                        "device_id": "12043",
+                        "packets": {"live": "##,DCON-MCONTEST,0-0-0!x,V68,SibhiSump",
+                                    "4": "##,DCON,919876543210", "5": "##,IMEI,490154203237518"}}}
+    out = json.dumps(relay.trim_dashboard(raw))
+    assert "9876543210" not in out and "490154203237518" not in out and "12043" not in out
+    assert "SibhiSump" in out and "server_time" in out
+
+
+def test_relay_packs_round_trip():
+    import base64, gzip
+    text = json.dumps({"data": [{"dt": "x"}] * 1000})
+    assert gzip.decompress(base64.b64decode(relay.pack(text))).decode() == text
+    assert len(relay.pack(text)) < len(text) / 5
 
 
 if __name__ == "__main__":

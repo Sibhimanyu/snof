@@ -19,6 +19,7 @@ from aiohttp import web
 
 from . import config
 from .commands import CommandConsumer
+from .relay import DconRelay
 from .ha_client import REGISTRY_EVENTS, HAClient
 from .mapper import StateMapper
 from .registry import Registry
@@ -44,6 +45,7 @@ class Bridge:
         # ever reach an entity a user could have seen: one in a room.
         self.commands = CommandConsumer(cfg, self.rtdb, lambda: self.ha if self.connected else None, session,
                                         is_visible=self.mapper.should_publish)
+        self.relay = DconRelay(cfg, self.rtdb, session)
         self.connected = False
         # entity_id -> digest of the last node we published, so an event that
         # changes nothing visible costs no write at all.
@@ -204,6 +206,7 @@ class Bridge:
                     # (dashboard/functions). null clears the old status so
                     # nothing reads a stale "enabled" off this heartbeat.
                     "irrigation": None,
+                    "relay": self.relay.status(),
                 })
             except Exception:
                 _LOGGER.exception("Heartbeat write failed")
@@ -317,6 +320,7 @@ async def amain() -> None:
             asyncio.create_task(bridge._heartbeat_loop(), name="heartbeat"),
             asyncio.create_task(bridge._registry_loop(), name="registry"),
             asyncio.create_task(bridge.commands.run(), name="commands"),
+            asyncio.create_task(bridge.relay.run(), name="relay"),
         ]
 
         stop = asyncio.Event()

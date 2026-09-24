@@ -3,12 +3,20 @@
 The farm's valves and timers are driven by a Mobitech DCON (MCON) controller,
 not Home Assistant. Reports read it and nothing else.
 
-Since **2026-09-23** reports run in a **Cloud Function**
-(`dashboard/functions/`), not on the NUC. The NUC add-on no longer calls a
-vendor API, holds no vendor credential, and has no irrigation options (0.8.0
-removed them). Reports keep working when the farm's internet, the NUC or the
-bridge is down, and changing one is a `firebase deploy`, not an add-on
-release.
+Since **2026-09-23** reports are built in a **Cloud Function**
+(`dashboard/functions/`), so changing one is a `firebase deploy`, not an
+add-on release.
+
+**The vendor calls still go out from the farm.** Mobitech's server answers
+every Google Cloud address with `nginx 403 Forbidden`. It was tested on
+2026-09-24 from asia-southeast1 and from a throwaway asia-south1 probe
+(egress 34.96.40.153), while the same request from a home connection gets
+200. So the Function hands each read to the NUC through a private relay
+(add-on 0.9.1, `bridge/relay.py`, option `dcon_relay`), and the NUC makes it
+from the farm's own connection. The NUC fetches and nothing else: parsing and
+report building stay in the Function. Reports therefore need the NUC and the
+farm's internet to be up. When they are not, the card says "the farm's
+bridge did not answer — is the NUC online?".
 
 Livesky (river motor), Niagara (well motors) and OpenWeather were wired here
 too until 2026-09-23, when the owner confirmed the farm does not use them.
@@ -28,7 +36,9 @@ dashboard / iOS                     Cloud Function                 Mobitech DCON
                               (controllers only)
                                    │ onValueCreated
                                    ▼
-                             validate ──1–3 read calls──────────▶  /v1/http/
+                             validate ──1–3 named reads──▶ /relay/jobs
+                                   │                            │ NUC (bridge/relay.py)
+                                   │   /relay/results ◀─gzip────┴──────────▶  /v1/http/
                                    │
   render ◀──────────── /farms/snof/irrigation_reports/<id>   (no client writes)
                         /farms/snof/irrigation               (last-results cache)
@@ -61,11 +71,39 @@ Files:
 `cd dashboard/functions && python3 tests/test_reports.py` runs with nothing
 installed.
 
+### The relay
+
+- **A job names a call; it never carries a URL or a credential.** It is
+  `{call, args, at}`, where `call` is one of the eight reads (`dashboard`,
+  `nodes`, `valves`, `timer_log`, `motor_log`, `electricity`,
+  `pressure_now`, `pressure_range`) and `args` are strict dates or timestamps.
+  The NUC spells the request itself, using its own serial and token from the
+  add-on options, and the only endpoint is `/v1/http/`. Both sides have a test
+  that fails if the vendor's write endpoint appears.
+- **`/relay` sits outside `/farms`,** so the RTDB rules' default deny covers
+  it. An unauthenticated read or write answers "Permission denied" (checked
+  after deploy); only the two service accounts touch it.
+- **The phone book never leaves the NUC.** For the dashboard call, the relay
+  keeps only `server_time`, `time_zone`, `timers` and the `live` packet, and
+  drops `users`, `sim`, `device_id` and packets 1–8 before upload.
+- **Answers are gzip + base64.** A month of electricity packets is ~11 MB of
+  JSON, over RTDB's 10 MB string limit; compressed it is about a tenth.
+- **Nothing stays behind.** The NUC deletes each job whether it ran or not.
+  The Function deletes the job and its result whatever happened, waits up to
+  50 s per read, and turns a missing answer into a plain error.
+- **Direct mode is kept.** `DCON_TRANSPORT=direct` in `functions/.env` makes
+  the Function call Mobitech itself with the Secret Manager credentials, for
+  the day it stops refusing cloud addresses or a proxy it accepts sits in
+  between.
+
 ### Credentials, switches, cost
 
-- `DCON_TOKEN_ID` and `DCON_SERIAL` are **Secret Manager secrets**, bound
-  only to this function. They never reach RTDB or a client. The token is an
-  FCM-style app registration string ending in `@ios`.
+- In relay mode the serial and token the calls use are the NUC's, in the
+  add-on options (`dcon_serial`, `dcon_token_id`, the latter a `password`
+  field). `DCON_TOKEN_ID` and `DCON_SERIAL` are also **Secret Manager
+  secrets**, bound only to this function, for direct mode. Neither copy ever
+  reaches RTDB or a client. The token is an FCM-style app registration string
+  ending in `@ios`.
 - **Kill switch:** set `/farms/snof/meta/reports/enabled` to `false`, using
   the service account (clients cannot write `meta`). Every request then gets
   a plain "switched off" report and no vendor call. The dashboard and the iOS

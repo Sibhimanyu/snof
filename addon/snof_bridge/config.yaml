@@ -1,5 +1,5 @@
 name: SNOF Firebase Bridge
-version: "0.9.0"
+version: "0.9.1"
 slug: snof_bridge
 description: Mirrors Home Assistant entity states to Firebase Realtime Database, grouped by area, for the SNOF dashboard.
 url: https://github.com/sibhimanyu/snof
@@ -48,6 +48,15 @@ options:
     - input_boolean
   control_max_age_seconds: 120
   log_level: info
+  # DCON relay. Irrigation reports are built by a Cloud Function, but
+  # Mobitech refuses Google Cloud addresses, so the Function asks the bridge
+  # to make its read calls from the farm's connection. Eight named reads,
+  # nothing else; the serial and token never leave this box.
+  dcon_relay: false
+  dcon_base: "https://dcon.mobitechwireless.com"
+  dcon_serial: ""
+  dcon_token_id: ""
+  dcon_product: "DCON"
 schema:
   firebase_db_url: url
   service_account_path: str
@@ -68,3 +77,8 @@ schema:
     - list(switch|light|fan|input_boolean)
   control_max_age_seconds: float(5,3600)
   log_level: list(trace|debug|info|warning|error)
+  dcon_relay: bool
+  dcon_base: url
+  dcon_serial: str
+  dcon_token_id: password
+  dcon_product: str

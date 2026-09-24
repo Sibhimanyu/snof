@@ -511,6 +511,95 @@ def test_motor_days_are_a_stack_of_power_and_pump():
                                                         "part": 14.4}, stack["rows"][0]
 
 
+# ---- the relay transport -------------------------------------------------------
+
+class _Ref:
+    def __init__(self, store, path):
+        self.store, self.path = store, path
+        self.key = path.rsplit("/", 1)[-1]
+
+    def push(self, value):
+        key = f"-job{len(self.store.data)}"
+        self.store.data[f"{self.path}/{key}"] = value
+        return _Ref(self.store, f"{self.path}/{key}")
+
+    def get(self):
+        self.store.polls += 1
+        if self.store.answer_after is not None and self.store.polls >= self.store.answer_after:
+            return self.store.answer
+        return self.store.data.get(self.path)
+
+    def delete(self):
+        self.store.deleted.append(self.path)
+        self.store.data.pop(self.path, None)
+
+
+class _Store:
+    def __init__(self, answer=None, answer_after=None):
+        self.data, self.deleted, self.polls = {}, [], 0
+        self.answer, self.answer_after = answer, answer_after
+
+    def reference(self, path):
+        return _Ref(self, path)
+
+
+def _packed(text):
+    import base64, gzip
+    return base64.b64encode(gzip.compress(text.encode())).decode()
+
+
+def _relay(store):
+    import dcon
+    clock = iter(range(0, 10_000))
+    return dcon.RelayTransport(store, wait=5, poll=0, clock=lambda: next(clock),
+                               sleep=lambda s: None)
+
+
+def test_relay_job_names_a_call_and_never_carries_a_secret():
+    import dcon
+    store = _Store(answer={"ok": True, "status": 200, "gz": _packed('{"status":"success","data":[]}')},
+                   answer_after=2)
+    body = dcon.Dcon(_relay(store)).valves("2026-09-20", "2026-09-22")
+    assert body == {"status": "success", "data": []}
+    # Both the job and its answer are gone once the call returns.
+    assert any(p.startswith("relay/jobs/") for p in store.deleted)
+    assert any(p.startswith("relay/results/") for p in store.deleted)
+
+
+def test_relay_job_shape_is_call_and_dates_only():
+    import dcon
+    pushed = {}
+
+    class Capture(_Store):
+        def reference(self, path):
+            ref = _Ref(self, path)
+            if path == "relay/jobs":
+                orig = ref.push
+                def push(value):
+                    pushed.update(value)
+                    return orig(value)
+                ref.push = push
+            return ref
+    store = Capture(answer={"ok": True, "status": 200, "gz": _packed("{}")}, answer_after=1)
+    dcon.Dcon(_relay(store)).pressure_range("2026-09-22", "2026-09-22")
+    assert set(pushed) == {"call", "args", "at"}, pushed
+    assert pushed["call"] == "pressure_range"
+    assert pushed["args"] == {"from": "2026-09-22", "to": "2026-09-22"}
+
+
+def test_relay_failure_and_silence_are_plain_errors():
+    import dcon
+    for store, words in ((_Store(answer={"ok": False, "status": 403, "error": "HTTP 403"},
+                                 answer_after=1), "403"),
+                         (_Store(), "did not answer")):
+        try:
+            dcon.Dcon(_relay(store)).nodes()
+            raise AssertionError("expected DconError")
+        except dcon.DconError as err:
+            assert words in str(err), err
+        assert any(p.startswith("relay/jobs/") for p in store.deleted), "job left behind"
+
+
 def test_dcon_client_cannot_reach_the_command_endpoint():
     """Reports are read-only. The client has one URL, and it is not /command."""
     src = (HERE / "dcon.py").read_text()

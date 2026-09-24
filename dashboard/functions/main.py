@@ -4,7 +4,8 @@
       append ──▶ /farms/snof/irrigation_requests/<id>
                         │ onValueCreated
                         ▼
-                  validate ─▶ 1–3 read calls ───────────────────▶  /v1/http/
+                  validate ─▶ 1–3 named reads ─▶ /relay/jobs ─▶ NUC ─▶ /v1/http/
+                        │      (answers come back through /relay/results)
                         │
       render ◀── /farms/snof/irrigation_reports/<id>   (+ /irrigation cache)
                   delete the request, whatever happened
@@ -40,6 +41,9 @@ DCON_BASE = StringParam("DCON_BASE", default="https://dcon.mobitechwireless.com"
 # The one farm this project serves. A controller can append under any
 # /farms/<slug>, so the slug is checked rather than trusted.
 FARM_SLUG = StringParam("FARM_SLUG", default="snof")
+# "relay": the NUC makes the vendor calls (Mobitech refuses Google Cloud
+# addresses — see dcon.py). "direct": this Function makes them itself.
+DCON_TRANSPORT = StringParam("DCON_TRANSPORT", default="relay")
 
 _LOG = logging.getLogger("irrigation")
 _app = None
@@ -58,7 +62,8 @@ def _db():
     region="asia-southeast1",
     secrets=[DCON_TOKEN_ID, DCON_SERIAL],
     memory=options.MemoryOption.MB_512,
-    timeout_sec=120,
+    # Up to three relayed reads, each allowed RELAY_WAIT_SECONDS.
+    timeout_sec=180,
     # Requests arrive one press at a time. Two instances is headroom for two
     # people pressing at once, and a hard ceiling on what a runaway client
     # could cost.
@@ -103,8 +108,12 @@ def _handle(store, root: str, req_id: str, req: Any) -> None:
 
     started = time.monotonic()
     try:
-        src = dcon.Dcon(DCON_BASE.value, DCON_SERIAL.value.strip(),
-                        DCON_TOKEN_ID.value.strip())
+        if DCON_TRANSPORT.value == "direct":
+            transport = dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(),
+                                             DCON_TOKEN_ID.value.strip())
+        else:
+            transport = dcon.RelayTransport(store)
+        src = dcon.Dcon(transport)
         report, patch = reports.build(rtype, params, src)
     except dcon.DconError as err:
         report, patch = {**base, "status": "error", "summary": "", "sections": [],
