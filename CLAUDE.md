@@ -19,6 +19,7 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | Anything that calls Mobitech DCON | [docs/dcon-off-the-nuc.md](docs/dcon-off-the-nuc.md) |
 | How the Mobitech app signs in and sends commands | [docs/mobitech-app.md](docs/mobitech-app.md) |
 | The Livesky river-motor app (not wired into SNOF) | [docs/livesky-app.md](docs/livesky-app.md) |
+| The Niagara app for the other farm's two motors (not wired in) | [docs/niagara-app.md](docs/niagara-app.md) |
 
 Architecture and data shape are in README.md.
 
