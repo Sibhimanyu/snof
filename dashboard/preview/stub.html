@@ -176,6 +176,18 @@
   const user=params.get('gate')?null:{uid:'u1',email:'sibhi@example.com',displayName:'Sibhi Govindasamy'};
   const denied=params.get('denied');
   const controller=params.get('viewer')?false:true;
+  // ?replay=1: the whole farm tree exactly as production had it, from a local
+  // snapshot (replay.local.json, gitignored, never committed): every screen
+  // checked against real data rather than fixtures. ?fresh=1 moves the
+  // bridge heartbeat to now.
+  if(params.get('replay')){
+    const req=new XMLHttpRequest(); req.open('GET','replay.local.json',false); req.send(null);
+    const f=JSON.parse(req.responseText);
+    for(const k of Object.keys(data)) delete data[k];
+    Object.assign(data,f);
+    data.irrigation_reports=data.irrigation_reports||{};
+    if(params.get('fresh')&&data.meta&&data.meta.bridge) data.meta.bridge.lastSeen=Date.now()-5000;
+  }
   const isAdmin=params.get('admin')==='0'?false:!params.get('viewer');
   const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0};
   // A couple of other accounts, so the Admin page has something to list.
@@ -277,7 +289,11 @@
       signInWithPopup:()=>Promise.resolve(), signOut:()=>Promise.resolve()
     }),{GoogleAuthProvider:function(){this.setCustomParameters=()=>{}}}),
     database:Object.assign(()=>({ref:(path)=>({
-      push:()=>{ const k='req_'+Math.random().toString(36).slice(2,9);
+      // push(value) writes at once and is thenable, like the real SDK's
+      // ThenableReference; push() hands back a ref to set() later.
+      push:(v)=>{ const k='req_'+Math.random().toString(36).slice(2,9);
+        if(v!==undefined){ console.log('COMMAND',JSON.stringify(v)); const pr=Promise.resolve();
+          return {key:k, then:pr.then.bind(pr), catch:pr.catch.bind(pr)}; }
         return {key:k, set:(v,done)=>{console.log('COMMAND',JSON.stringify(v));
           if(path.endsWith('/irrigation_requests')&&data.irrigation_reports){
             setTimeout(()=>{ const rep=irrCanned(v.type,v.from,v.to);

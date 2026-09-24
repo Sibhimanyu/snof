@@ -967,6 +967,101 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   .tiles{grid-template-columns:1fr 1fr}
 }
 
+/* ---------- Home v3: needs a look, systems (2026-09-25 night) ---------- */
+.attn{margin-bottom:14px;padding:6px 0}
+.attn-head{display:flex;align-items:center;gap:12px;padding:12px 22px 8px}
+.attn-n{display:grid;place-items:center;min-width:30px;height:30px;padding:0 8px;border-radius:999px;background:var(--warn-soft);color:var(--warn);font-weight:750;font-variant-numeric:tabular-nums}
+.attn.is-bad .attn-n{background:var(--bad-soft);color:var(--bad)}
+.attn-row{display:flex;align-items:center;gap:12px;min-height:56px;padding:9px 22px;border-top:1px solid var(--line-soft);color:inherit}
+.attn-row:hover{background:var(--panel-2)}
+.attn-dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--warn)}
+.attn-row.bad .attn-dot{background:var(--bad)}
+.attn-main{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.attn-main strong{font-size:14.5px;font-weight:700;color:var(--text)}
+.attn-row.bad .attn-main strong{color:var(--bad)}
+.attn-main span{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attn-chev{width:15px;height:15px;color:var(--faint);flex:none}
+.attn-more{padding:8px 22px 6px;font-size:12.5px;color:var(--faint)}
+.attn.is-clear{display:flex;align-items:center;gap:14px;padding:14px 22px}
+.attn.is-clear > span:last-child{display:flex;flex-direction:column}
+.attn.is-clear strong{font-size:15px;color:var(--text)}
+.attn.is-clear span span{font-size:13px;color:var(--muted)}
+.attn-ok{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--brand);color:var(--on-brand)}
+.attn-ok .ico{width:18px;height:18px;stroke-width:2.4}
+
+.shield{flex:none;display:grid;place-items:center;width:92px;height:92px;border-radius:50%;background:var(--panel-2);color:var(--faint)}
+.shield .ico{width:44px;height:44px}
+.sec.is-on .shield{background:var(--accent-glow);color:var(--accent)}
+.sec.is-bad .shield{background:var(--bad-soft);color:var(--bad)}
+.cam-dots{display:flex;gap:5px;margin-top:6px}
+.cam-dots i{width:9px;height:9px;border-radius:50%;background:var(--brand)}
+.cam-dots i.off{background:var(--bad)}
+.solar.is-rest .sun,.solar.is-offline .sun{background:var(--panel-2)}
+.solar.is-rest .sun circle,.solar.is-offline .sun circle{fill:var(--faint)}
+.solar.is-rest .sun line,.solar.is-offline .sun line{stroke:var(--faint)}
+
+.sys-sec{margin-top:28px}
+.sys-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.sys-tile{display:flex;flex-direction:column;gap:3px;min-height:112px;padding:14px;border-radius:var(--r-lg);background:var(--panel);
+  border:1px solid var(--edge);box-shadow:var(--shadow-card);color:inherit}
+.sys-tile:hover{box-shadow:var(--shadow-card-hover)}
+.sys-ico{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--panel-2);color:var(--muted);margin-bottom:auto}
+.sys-ico .ico{width:19px;height:19px}
+.sys-ico.big{width:64px;height:64px;margin:0}
+.sys-ico.big .ico{width:30px;height:30px}
+.sys-tile.is-on .sys-ico,.sys-hero.is-on .sys-ico{background:var(--accent-glow);color:var(--accent)}
+.sys-name{font-size:14px;font-weight:700;color:var(--text)}
+.sys-line{font-size:13px;font-weight:650;color:var(--muted)}
+.sys-tile.is-on .sys-line{color:var(--accent)}
+.sys-tile.is-offline .sys-line,.sys-tile.is-warn .sys-line{color:var(--warn)}
+.sys-sub{font-size:12px;color:var(--faint)}
+.sys-hero{display:flex;align-items:center;gap:20px;padding:20px 22px;margin-bottom:14px}
+.sys-hero .mb-facts{flex:1;border:0;padding:0}
+.sys-hero-title{font-size:24px;font-weight:750;letter-spacing:-.035em;color:var(--text)}
+.sys-hero.is-on .sys-hero-title{color:var(--accent)}
+.sys-hero.is-bad .sys-hero-title{color:var(--bad)}
+.sys-hero-sub{font-size:14px;color:var(--muted)}
+@media (max-width:620px){
+  .attn-head,.attn-row{padding-left:16px;padding-right:16px}
+  .sys-grid{grid-template-columns:1fr 1fr}
+  .sys-hero{flex-direction:column;align-items:flex-start}
+  .shield{width:76px;height:76px}
+  .shield .ico{width:36px;height:36px}
+}
+
+/* ---------- Irrigation v3: watered by crop, pump & power ---------- */
+.seg-sm{margin-left:auto}
+.seg-sm button{padding:5px 11px;font-size:12.5px}
+.watered .figs{padding-top:4px}
+.crop-list{display:flex;flex-direction:column;border-top:1px solid var(--line-soft)}
+.crop-row{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line-soft)}
+.crop-row:last-child{border-bottom:0}
+.crop-art{flex:none;width:34px;height:34px;object-fit:contain}
+.crop-ico{display:grid;place-items:center;border-radius:50%;background:var(--panel-2);color:var(--faint)}
+.crop-ico .ico{width:18px;height:18px}
+.crop-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.crop-name{font-size:14.5px;font-weight:700;color:var(--text)}
+.crop-valves{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crop-row.is-cut .crop-valves{color:var(--warn)}
+.crop-bar{display:block;height:5px;border-radius:3px;background:var(--panel-3);overflow:hidden}
+.crop-bar i{display:block;height:100%;border-radius:3px;background:var(--brand)}
+.crop-row.is-cut .crop-bar i{background:var(--warn)}
+.crop-min{flex:none;min-width:58px;text-align:right;font-size:14px;font-weight:750;color:var(--ink);font-variant-numeric:tabular-nums}
+.crop-dry,.crop-empty{padding:12px 22px 16px!important;margin:0!important;border:0!important}
+.supply{display:flex;align-items:flex-end;gap:26px;padding:6px 22px 14px}
+.phases{display:flex;gap:14px}
+.phase{display:flex;flex-direction:column;align-items:center;gap:4px}
+.phase-bar{display:flex;align-items:flex-end;width:22px;height:72px;border-radius:6px;background:var(--panel-3);overflow:hidden}
+.phase-bar i{display:block;width:100%;background:var(--brand);border-radius:6px 6px 0 0}
+.phase.warn .phase-bar i{background:var(--warn)}
+.phase.dead .phase-bar i{background:var(--bad)}
+.phase strong{font-size:14px;font-weight:750;color:var(--ink);font-variant-numeric:tabular-nums}
+.phase.warn strong{color:var(--warn)}
+.phase small{font-size:10.5px;font-weight:700;color:var(--faint)}
+.pressure{display:flex;flex-direction:column;gap:3px;padding-bottom:4px}
+.pressure-out{font-size:12.5px;color:var(--muted)}
+@media (max-width:620px){ .crop-row{padding:10px 16px} .supply{padding:6px 16px 14px;gap:20px} }
+
 /* ---------- water chain ----------
    Three numbered stages joined by a thin vertical flow line, so the page
    reads top to bottom the way the water goes: river, other farm, main farm.
