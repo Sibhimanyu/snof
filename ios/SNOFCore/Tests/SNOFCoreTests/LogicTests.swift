@@ -158,6 +158,19 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(meta.cloudIrrigationMaxMinutes, 45)
     }
 
+    func testValveControlNeverBlamesTheBridge() {
+        let now = 1_800_000_000_000.0
+        let none = Gate.evaluate(.irrigationControl, bridge: nil, nowMs: now, skewMs: 0)
+        XCTAssertFalse(none.ok)
+        XCTAssertFalse(none.why.lowercased().contains("bridge"), none.why)
+        let stale = BridgeMeta(status: "online", lastSeen: now - 600_000, heartbeatSeconds: 30)
+        let silent = Gate.evaluate(.irrigationControl, bridge: stale, nowMs: now, skewMs: 0)
+        XCTAssertFalse(silent.ok)
+        XCTAssertFalse(silent.why.lowercased().contains("bridge"), silent.why)
+        // Device control is the Home Assistant bridge, and still says so.
+        XCTAssertTrue(Gate.evaluate(.control, bridge: nil, nowMs: now, skewMs: 0).why.contains("bridge"))
+    }
+
     func testAreasInNaturalOrder() {
         let all = [ent("sensor", "b", "1", area: "z10"), ent("sensor", "c", "1", area: "z2")]
         let g = Sorting.groupByArea(all) { $0 == "z10" ? "Zone 10" : $0 == "z2" ? "Zone 2" : $0 }

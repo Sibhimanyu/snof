@@ -326,7 +326,7 @@ private struct IrrigationControls: View {
                 }
             }
             .font(Theme.font(15, .semibold, relativeTo: .body))
-            if let refusal, !waiting { Note(text: refusal, tone: .warn) }
+            if let refusal, !refusal.isEmpty, !waiting { Note(text: refusal, tone: .warn) }
             else if waiting {
                 Note(text: store.irrigationConfirming
                      ? "Sent — confirming with the controller. Run and Stop unlock when it shows the change."
