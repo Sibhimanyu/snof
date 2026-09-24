@@ -58,11 +58,11 @@ public enum Parse {
                 lastSeen: double(b["lastSeen"]),
                 heartbeatSeconds: double(b["heartbeatSeconds"]),
                 control: bool(b["control"]),
-                irrigationEnabled: bool((b["irrigation"] as? [String: Any])?["enabled"]),
                 commandsRun: double(b["commandsRun"]).map { Int($0) },
                 commandsRefused: double(b["commandsRefused"]).map { Int($0) })
         }
-        return FarmMeta(name: string(d["name"]), bridge: bridge)
+        return FarmMeta(name: string(d["name"]), bridge: bridge,
+                        reportsEnabled: bool((d["reports"] as? [String: Any])?["enabled"]))
     }
 
     public static func areas(_ v: Any?) -> [String: Area] {
@@ -131,7 +131,8 @@ public enum Parse {
                              status: string(d["status"]) ?? "ok",
                              error: string(d["error"]) ?? "",
                              unit: string(d["unit"]) ?? "",
-                             rows: rows(d["rows"]))
+                             rows: rows(d["rows"]),
+                             legend: rows(d["legend"]).filter { !($0["key"] ?? "").isEmpty })
     }
 
     public static func report(key: String, _ v: Any?) -> Report? {

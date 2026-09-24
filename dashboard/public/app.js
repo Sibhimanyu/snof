@@ -239,19 +239,24 @@ const setRole = () => {
 
 /* ================= data helpers ================= */
 
+/* Only entities in a real room exist here. The bridge already refuses to
+ * publish anything without an area; this is the second net, so a stale node
+ * left over from an older bridge, or one whose room was just deleted, never
+ * surfaces as an "Unassigned" pile or becomes pressable. */
 function flatEntities() {
   const out = [];
+  const areas = state.areas || {};
   for (const [domain, objs] of Object.entries(state.entities || {})) {
     for (const [objectId, node] of Object.entries(objs || {})) {
-      if (node && typeof node === 'object') {
-        out.push({ ...node, domain, objectId, key: `${domain}.${objectId}`, area: node.area || 'unassigned' });
+      if (node && typeof node === 'object' && node.area && node.area !== 'unassigned' && areas[node.area]) {
+        out.push({ ...node, domain, objectId, key: `${domain}.${objectId}` });
       }
     }
   }
   return out;
 }
 
-const areaName = (id) => (id === 'unassigned' ? 'Unassigned' : state.areas?.[id]?.name || id);
+const areaName = (id) => state.areas?.[id]?.name || id;
 const isOn = (e) => ON_STATES.has(e.state);
 const isBad = (e) => e.state == null || e.state === '' || BAD_STATES.has(e.state);
 
@@ -266,11 +271,7 @@ function groupByArea(ents) {
     if (!map.has(e.area)) map.set(e.area, []);
     map.get(e.area).push(e);
   }
-  return [...map.entries()].sort((a, b) => {
-    if (a[0] === 'unassigned') return 1;
-    if (b[0] === 'unassigned') return -1;
-    return areaName(a[0]).localeCompare(areaName(b[0]), undefined, NATURAL);
-  });
+  return [...map.entries()].sort((a, b) => areaName(a[0]).localeCompare(areaName(b[0]), undefined, NATURAL));
 }
 
 const byName = (a, b) => (a.name || a.key).localeCompare(b.name || b.key, undefined, NATURAL);
@@ -581,6 +582,12 @@ function areaView(all, id) {
   const inArea = all.filter((e) => e.area === id);
   const list = inArea.filter(matches);
   const back = `<a class="back" href="#/areas"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-back"/></svg>All areas</a>`;
+  // Not a room (an old #/area/unassigned bookmark, or a deleted area): say
+  // nothing about what might have been there.
+  if (!state.areas?.[id]) {
+    return head('Area not found', '', back) +
+      emptyBlock('No such area', 'It may have been removed or renamed in Home Assistant.');
+  }
   if (!list.length) {
     // An area that is empty and an area whose contents the search hid are
     // different problems, and only one of them is the user's to fix.
@@ -644,9 +651,11 @@ function devicesView(all) {
 
 /* Nothing on this page is polled. Each report below answers a user pressing
  * Generate: the dashboard appends a request to
- * /farms/<farm>/irrigation_requests, the bridge on the NUC executes that
- * one vendor call with its stored credentials, and writes the sanitized
- * result to /farms/<farm>/irrigation_reports. This page renders requests
+ * /farms/<farm>/irrigation_requests, a Cloud Function
+ * (dashboard/functions) makes the one to three controller calls with
+ * credentials held in Secret Manager, and writes the finished report to
+ * /farms/<farm>/irrigation_reports. The NUC is not involved: reports work
+ * while the bridge is offline. This page renders requests
  * and results and nothing else: it never sees a vendor credential and
  * cannot operate a pump. Valve/pump control is deliberately not built —
  * that is a security decision of the same order as cover/lock, not a config
@@ -667,6 +676,8 @@ const IRR_TYPES = [
   { type: 'timer_log', label: 'Timer log', needs: 'range', group: 'Single endpoint' },
   { type: 'motor_log', label: 'Motor log', needs: 'range', group: 'Single endpoint' },
   { type: 'pressure_range', label: 'Pressure range', needs: 'range', group: 'Single endpoint' },
+  { type: 'pressure_hour', label: 'Pressure, last hour', needs: 'live', group: 'Single endpoint' },
+  { type: 'power_range', label: 'Power over time', needs: 'range', group: 'Single endpoint' },
 ];
 const IRR_TIMEOUT_MS = 60000;
 // Builder selections survive re-renders (a sensor update mid-form must not
@@ -689,9 +700,8 @@ function irrDefaultDates() {
 
 /* Will anything on the NUC act on this?
  *
- * Two gates live on the bridge and are published on every heartbeat:
- * meta/bridge.control (allow_control) and meta/bridge.irrigation.enabled. The
- * page used to ignore both, so a switched-off capability looked exactly like a
+ * Device control is gated on the bridge and published on every heartbeat as
+ * meta/bridge.control (allow_control). The page used to ignore it, so a switched-off capability looked exactly like a
  * broken one: a light toggle flipped, wrote a command nothing was watching,
  * then snapped back 12 seconds later saying the farm had not responded. Three
  * turn_on commands for switch.car_shed_light_1 were found sitting unexecuted
@@ -711,15 +721,23 @@ function bridgeGate(feature) {
   if (feature === 'control' && hb.control === false) {
     return { ok: false, why: 'Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.' };
   }
-  if (feature === 'irrigation' && hb.irrigation && hb.irrigation.enabled === false) {
-    return { ok: false, why: 'Vendor reports are switched off on the bridge. Turn on irrigation_enabled in the add-on options, and fill in the vendor credentials, before running one.' };
+  return { ok: true, why: '' };
+}
+
+/* Reports do not go through the NUC (see above), so the bridge's heartbeat
+ * says nothing about them. The only gate is the kill switch the function
+ * itself reads, meta/reports.enabled, which only the service account can
+ * set. Undefined is open, same as bridgeGate. */
+function reportsGate() {
+  if (state.meta?.reports?.enabled === false) {
+    return { ok: false, why: 'Irrigation reports are switched off for now.' };
   }
   return { ok: true, why: '' };
 }
 
 function sendReportRequest() {
   if (!canControl) { toast('err', 'Your account can view, but not run reports.'); return; }
-  const reachable = bridgeGate('irrigation');
+  const reachable = reportsGate();
   if (!reachable.ok) { toast('err', reachable.why); render(); return; }
   const range = irrNeedsRange(irrType);
   const from = irrFrom.trim(), to = irrTo.trim();
@@ -938,9 +956,118 @@ function irrTimeline(rows) {
     moreNote(rows.length, IRR_ROW_CAP, 'entries') : '';
 }
 
+/* ---- multi-value kinds: lines, stack, grid, matrix ----
+ * Rows stay flat {key: value}; the section's `legend` says which keys to
+ * draw and what to call them. A key missing from a row is a gap — a supply
+ * cut, a pump that was off — and the line breaks there instead of joining
+ * across it. Series are told apart by weight and dash, not by a rainbow:
+ * the first is the accent, the others are the page's own greys. */
+
+const irrLegend = (sec) => (Array.isArray(sec.legend) ? sec.legend : [])
+  .filter((l) => l && l.key);
+const num = (v) => (typeof v === 'number' ? v : parseReading(v));
+const fmtNum = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10);
+const legendChips = (legend, cls) => `<div class="chart-legend">` + legend.map((l, i) =>
+  `<span class="lg"><i class="${cls}-${i}"></i>${escapeHtml(l.label || l.key)}</span>`).join('') + `</div>`;
+
+function irrLines(rows, sec) {
+  const legend = irrLegend(sec).slice(0, 4);
+  const unit = sec.unit || '';
+  const vals = rows.flatMap((r) => legend.map((l) => num(r[l.key]))).filter((v) => v != null);
+  if (rows.length < 2 || !vals.length) return '';
+  const W = 600, H = 150, L = 34, R = 6, T = 6, B = 20;
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.08 || 1;
+  lo = Math.max(0, lo - pad); hi += pad;
+  const x = (i) => L + (i / (rows.length - 1)) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const step = (W - L - R) / (rows.length - 1);
+  const shade = rows.map((r, i) => (r.on == 1 || r.on === true)
+    ? `<rect x="${(x(i) - step / 2).toFixed(1)}" y="${T}" width="${step.toFixed(1)}" height="${H - T - B}" class="ln-on"/>` : '').join('');
+  const paths = legend.map((l, k) => {
+    let d = '', open = false;
+    rows.forEach((r, i) => {
+      const v = num(r[l.key]);
+      if (v == null) { open = false; return; }
+      d += `${open ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      open = true;
+    });
+    return `<path d="${d}" class="ln ln-${k}"/>`;
+  }).join('');
+  // Labels are HTML placed by percentage, not SVG text: the SVG stretches to
+  // the card, and text inside it would shrink to nothing on a phone.
+  const pct = (v, of) => (v / of * 100).toFixed(2);
+  const ticks = [lo, (lo + hi) / 2, hi].map((v) =>
+    `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="ln-grid"/>`).join('');
+  const yLabels = [lo, (lo + hi) / 2, hi].map((v) =>
+    `<span class="ln-ax ln-ay" style="top:${(y(v) / H * 150).toFixed(1)}px">${fmtNum(v)}</span>`).join('');
+  const when = (r) => String(r.at || '').slice(rows[0].at?.slice(0, 10) === rows[rows.length - 1].at?.slice(0, 10) ? 11 : 5, 16);
+  const xs = [0, Math.floor((rows.length - 1) / 2), rows.length - 1].map((i, j) =>
+    `<span class="ln-ax ln-ax-${['s', 'm', 'e'][j]}" style="left:${pct(x(i), W)}%">${escapeHtml(when(rows[i]))}</span>`).join('');
+  // One invisible column per point carries the hover: every series at that time.
+  const hover = rows.map((r, i) => `<rect x="${(x(i) - step / 2).toFixed(1)}" y="${T}" width="${step.toFixed(1)}" height="${H - T - B}" class="ln-hit">` +
+    `<title>${escapeHtml([r.at, ...legend.map((l) => num(r[l.key]) == null ? `${l.label}: —` : `${l.label}: ${fmtNum(num(r[l.key]))}${unit ? ' ' + unit : ''}`)].join('\n'))}</title></rect>`).join('');
+  return `<div class="chart">
+    <div class="chart-plot">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="chart-svg" role="img" aria-label="${escapeHtml(sec.title || 'chart')}">
+        ${shade}${ticks}${paths}${hover}
+      </svg>${yLabels}<div class="ln-xs">${xs}</div>
+    </div>
+    ${legendChips(legend, 'ln').replace('</div>', unit ? `<span class="lg lg-note">in ${escapeHtml(unit)}</span></div>` : '</div>')}
+  </div>`;
+}
+
+function irrStack(rows, sec) {
+  const [whole, part] = irrLegend(sec);
+  if (!whole || !part || !rows.length) return '';
+  const unit = sec.unit || '';
+  const max = Math.max(...rows.map((r) => num(r[whole.key]) || 0), 1);
+  const cols = rows.map((r) => {
+    const t = num(r[whole.key]) || 0, p = Math.min(num(r[part.key]) || 0, t || Infinity);
+    const tip = `${r.at}: ${part.label} ${fmtNum(p)} ${unit} of ${fmtNum(t)} ${unit} ${whole.label.toLowerCase()}`;
+    return `<div class="stk-col" title="${escapeHtml(tip)}">
+      <span class="stk-whole" style="height:${(t / max * 100).toFixed(1)}%">
+        <span class="stk-part" style="height:${t ? (p / t * 100).toFixed(1) : 0}%"></span></span>
+      <span class="stk-at">${escapeHtml(String(r.at || '').slice(8, 10))}</span>
+    </div>`;
+  }).join('');
+  return `<div class="chart"><div class="stk" role="img" aria-label="${escapeHtml(sec.title || '')}">${cols}</div>` +
+    `<div class="chart-legend"><span class="lg"><i class="stk-k-whole"></i>${escapeHtml(whole.label)}</span>` +
+    `<span class="lg"><i class="stk-k-part"></i>${escapeHtml(part.label)}</span>` +
+    `<span class="lg lg-note">max ${fmtNum(max)} ${escapeHtml(unit)}</span></div></div>`;
+}
+
+function irrGrid(rows) {
+  const cells = rows.map((r) => {
+    const m = Number(r.value) || 0, art = valveArt(r.name, r.type, m ? 'on' : 'off');
+    return `<div class="vg${m ? '' : ' vg-idle'}">
+      ${art ? artImg(art, 'vg-art') : '<span class="vg-art"></span>'}
+      <span class="vg-name">${escapeHtml(r.name || 'Valve')}</span>
+      <span class="vg-val">${m ? escapeHtml(fmtMinutes(m)) : 'none'}</span>
+    </div>`;
+  }).join('');
+  return cells ? `<div class="vgrid">${cells}</div>` : '';
+}
+
+function irrMatrix(rows, sec) {
+  const cols = irrLegend(sec);
+  if (!cols.length || !rows.length) return '';
+  const max = Math.max(1, ...rows.flatMap((r) => cols.map((c) => Number(r[c.key]) || 0)));
+  const head = `<tr><th class="mx-name">Valve</th>` +
+    cols.map((c) => `<th>${escapeHtml(c.label)}</th>`).join('') + `<th class="mx-total">Total</th></tr>`;
+  const body = rows.map((r) => `<tr><th class="mx-name">${escapeHtml(r.name || '')}</th>` +
+    cols.map((c) => {
+      const m = Number(r[c.key]) || 0;
+      return m ? `<td style="--heat:${(0.10 + 0.55 * m / max).toFixed(2)}" title="${escapeHtml(`${r.name} · ${c.label}: ${fmtMinutes(m)}`)}">${escapeHtml(fmtMinutes(m))}</td>`
+        : `<td class="mx-zero">–</td>`;
+    }).join('') + `<td class="mx-total">${escapeHtml(fmtMinutes(Number(r.total) || 0))}</td></tr>`).join('');
+  return `<div class="mx-wrap"><table class="mx">${head}${body}</table></div>`;
+}
+
 const IRR_SECTION_DRAW = {
   metrics: irrMetrics, status: irrStatusRows, series: irrSeries,
   bars: irrBars, timeline: irrTimeline, facts: irrFacts,
+  lines: irrLines, stack: irrStack, grid: irrGrid, matrix: irrMatrix,
 };
 
 function irrSection(sec, withTitle) {
@@ -1064,7 +1191,7 @@ function irrigationView() {
     ).join('') + `</optgroup>`).join('');
   const showRange = irrNeedsRange(irrType);
   const pending = irrWaiters.size;
-  const reachable = bridgeGate('irrigation');
+  const reachable = reportsGate();
   const blocked = !reachable.ok;
   const builder = canControl
     ? `<div class="rep-builder">

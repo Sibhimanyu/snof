@@ -190,8 +190,14 @@ cd dashboard && firebase deploy --only hosting,database
 always legal — there is a test pinning this.
 
 Rooms are resolved the way HA itself does: the entity's own `area_id` wins,
-otherwise it inherits its device's, otherwise `unassigned`. The dashboard groups
-client-side, so there is no second index to keep consistent.
+otherwise it inherits its device's, otherwise `unassigned`. **Unassigned
+entities are not published at all** (since add-on 0.9.0): users see rooms and
+what is in them, and nothing else exists for them. An entity that loses its
+room is deleted from the mirror on the next registry resync; one that gains a
+room appears. `unassigned` is never written to `areas`. The dashboard and the
+iOS app also drop anything whose area is not a current room, and both the RTDB
+rules and the bridge refuse a command for an entity that is not published. The
+dashboard groups client-side, so there is no second index to keep consistent.
 
 ## What is deliberately not exported
 

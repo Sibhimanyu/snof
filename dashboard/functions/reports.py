@@ -1,70 +1,66 @@
-"""Irrigation reports: vendor APIs -> normalized results, on demand.
+"""Irrigation reports: validated request in, drawable report out.
 
-The farm's valves and timers are driven by a Mobitech DCON (MCON) controller
-whose API needs a token id and a serial (see the "Mobitech Hack" Postman
-collection). Livesky, Niagara and OpenWeather were wired here until
-2026-09-23 and were removed at the owner's request; the farm does not use
-them. Those credentials live in the add-on options and never leave
-the NUC: the dashboard appends a *report request* to
-/farms/<slug>/irrigation_requests, this runner executes that one vendor
-call server-side, normalizes with vendors.py, and writes the result to
-/farms/<slug>/irrigation_reports/<request-id>. The dashboard renders
-results and never sees a credential.
+A controller on the dashboard (or the iOS app) appends a request to
+/farms/<slug>/irrigation_requests. main.py hands it here; this module checks
+it, makes the one to three controller calls that report needs through a
+`source` (dcon.py in production, a fake in tests), and returns the report
+plus the patch for the /irrigation last-results cache.
 
-Nothing here is polled. Every vendor call answers a user pressing Generate;
-an idle farm costs zero vendor traffic. Request validation mirrors
-commands.py — allow-listed report types, strict date shapes, a 31-day range
-cap, and a staleness drop so a queue that piles up while the bridge is down
-does not fire all at once when it comes back.
+Pure apart from the source: no Firebase, no network, no credentials. That is
+what lets tests/test_reports.py exercise every report with nothing installed.
 
-Deliberately read-only. The collection also captures command endpoints
-(DCON /v1/command/, valve ON/OFF) — this runner never calls them. Operating
-a pump from a browser tab is the same class of decision as cover/lock, and
-would go through the /commands queue with its own allow-list, not as a
-direct vendor call from here. Nothing in this module performs an action.
+Until 2026-09-23 this ran on the NUC inside the Home Assistant add-on. It
+moved to a Cloud Function so reports no longer depend on the farm's
+internet, the NUC being up, or an add-on deploy to change — and so the DCON
+token no longer sits in add-on options on a box in a shed.
+
+Deliberately read-only. The DCON API has command endpoints (/v1/command/,
+valve ON/OFF); dcon.py has no way to reach them and validate() refuses any
+type not listed here. Operating a pump from a browser is a separate security
+decision, the same class as cover/lock.
+
+How a report is drawn is the section contract in docs/irrigation.md: each
+section declares a kind — metrics, status, series, bars, timeline, facts —
+and the dashboard draws by kind and never sniffs shapes.
 """
 from __future__ import annotations
 
-import asyncio
 import datetime as _dt
-import json
-import logging
 import re
 import time
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable
 
-if TYPE_CHECKING:          # aiohttp is imported where it is used, so the pure
-    import aiohttp         # validation logic stays testable with no deps installed.
-
-from . import vendors
-
-_LOGGER = logging.getLogger(__name__)
-
-REQUEST_TIMEOUT_SECONDS = 30
+import vendors as V
 
 # A request left in the queue longer than this is dropped, not run.
 REQUEST_MAX_AGE_SECONDS = 300.0
 
-# DCON log/report ranges are user-chosen; cap them so a typo cannot ask for
-# a decade.
+# Ranges are user-chosen; cap them so a typo cannot ask for a decade. A
+# month of pressure is ~32,000 samples, ~2 MB, about two seconds.
 MAX_RANGE_DAYS = 31
 
-# Ids of requests already handled, so a re-delivered snapshot cannot run one
-# twice. Same bound rationale as commands.SEEN_LIMIT.
-SEEN_LIMIT = 512
+# The controller's clock. Cloud Functions run in UTC; every DCON stamp, and
+# every date a person picks on the dashboard, is farm time.
+FARM_TZ = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+
+# The controller answers a snapshot query with the samples at or after `dt`,
+# one every ~11 s, so asking for the current second returns nothing. Ask for
+# the last few minutes and take the newest.
+SNAPSHOT_LOOKBACK = _dt.timedelta(minutes=5)
+
+# Rows a section may carry. The dashboard shows eight and says how many more.
+MAX_ROWS = 32
+# A line chart is points, not rows a person reads one by one: a day at
+# 15-minute resolution is 96 of them.
+MAX_POINTS = 96
+# Columns of a matrix section: one per day of the longest allowed range.
+MAX_COLS = 32
 
 SERVER_TIMESTAMP = {".sv": "timestamp"}
 
-_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
-
-# Report type -> needs. "range" means from/to dates, "live" means no params:
-# point-in-time pulls, and the energy/pressure snapshots, which the bridge
-# stamps with its own clock.
-#
-# Every one of these reads the same controller. The first three are
-# *composites*: one press, two calls, one report, because the questions the
-# farm actually asks span two endpoints — did the line hold while the valves
-# were open, did the motor stop mid-timer. The rest pull exactly one endpoint.
+# Type -> "range" (needs from/to) or "live" (no params). Names are the RTDB
+# rule's allow-list and the dashboard's and iOS app's builder values; renaming
+# one is a three-client change.
 REPORT_TYPES = {
     "live_readings": "live",
     "session_log": "range",
@@ -76,6 +72,8 @@ REPORT_TYPES = {
     "timer_log": "range",
     "motor_log": "range",
     "pressure_range": "range",
+    "power_range": "range",
+    "pressure_hour": "live",
 }
 
 REPORT_LABELS = {
@@ -89,7 +87,25 @@ REPORT_LABELS = {
     "timer_log": "Timer log",
     "motor_log": "Motor log",
     "pressure_range": "Pressure range",
+    "power_range": "Power over time",
+    "pressure_hour": "Pressure, last hour",
 }
+
+# Valve types that deliver water to a crop. Backwash, the master valve, the
+# fertiliser tank and the booster pump are plumbing, and counting their
+# minutes as irrigation would double every total.
+IRRIGATION_TYPES = {"irrigation"}
+
+_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+
+
+class Refused(ValueError):
+    """A request not worth running. The message is shown to nobody but the
+    log; the request is deleted either way."""
+
+
+def farm_now() -> _dt.datetime:
+    return _dt.datetime.now(FARM_TZ).replace(tzinfo=None)
 
 
 def _parse_date(value: Any) -> _dt.date | None:
@@ -100,653 +116,775 @@ def _parse_date(value: Any) -> _dt.date | None:
     if not match:
         return None
     try:
-        return _dt.date(int(match.group(1)), int(match.group(2)),
-                        int(match.group(3)))
+        return _dt.date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
     except ValueError:
         return None
 
 
-def _now_stamp() -> str:
-    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def validate(req: Any, now_s: float | None = None) -> tuple[str, dict]:
+    """Return (report_type, params) or raise Refused. Mirrors the RTDB rule,
+    which is the first gate; this is the second, and the one that also knows
+    the clock and the range cap."""
+    if not isinstance(req, dict):
+        raise Refused("not an object")
+    rtype = req.get("type")
+    if not isinstance(rtype, str) or rtype not in REPORT_TYPES:
+        raise Refused(f"unknown report type {rtype!r}")
+    at = req.get("at")
+    if not isinstance(at, (int, float)) or isinstance(at, bool):
+        raise Refused("no timestamp")
+    age = (time.time() if now_s is None else now_s) - at / 1000.0
+    if age > REQUEST_MAX_AGE_SECONDS or age < -60:
+        raise Refused(f"stale by {age:.0f}s")
+    params: dict[str, str] = {}
+    if REPORT_TYPES[rtype] == "range":
+        start, end = _parse_date(req.get("from")), _parse_date(req.get("to"))
+        if start is None or end is None:
+            raise Refused("from/to must be YYYY-MM-DD dates")
+        if end < start:
+            raise Refused("to is before from")
+        if (end - start).days > MAX_RANGE_DAYS:
+            raise Refused(f"range over {MAX_RANGE_DAYS} days")
+        # The electricity call returns everything from `from` up to *now*,
+        # whatever `to` says, so an old start costs a month of packets.
+        if rtype == "power_range" and (farm_now().date() - start).days > MAX_RANGE_DAYS:
+            raise Refused(f"power_range starts over {MAX_RANGE_DAYS} days ago")
+        params = {"from": start.isoformat(), "to": end.isoformat()}
+    return rtype, params
 
 
-# The controller answers a snapshot query with the samples at or after `dt`,
-# and it stores one every ~11 seconds. Asking for the current second therefore
-# returns nothing at all — the first live pull came back empty for exactly this
-# reason. Ask for the last few minutes instead and take the newest row.
-SNAPSHOT_LOOKBACK = _dt.timedelta(minutes=5)
+# ---- building blocks -----------------------------------------------------------
+
+def section(kind: str, title: str, rows: Any = None, note: str = "",
+            source: str = "dcon", error: str = "", unit: str = "",
+            legend: list[dict] | None = None) -> dict:
+    """One drawable block. An errored section carries a plain-word reason and
+    no rows, so a half-failed composite still renders the half that worked.
+
+    `legend` names the keys a multi-value row carries: the lines of a `lines`
+    chart, the two parts of a `stack`, the columns of a `matrix`. Rows stay
+    flat {key: value} maps so every client can read them the same way."""
+    cap = MAX_POINTS if kind == "lines" else MAX_ROWS
+    out = {
+        "kind": kind,
+        "title": V._text(title),
+        "note": V._text(note),
+        "source": V._text(source),
+        "status": "error" if error else "ok",
+        "error": V._text(error),
+        "unit": V._text(unit),
+        "rows": [V.scrub(row) for row in list(rows or [])[-cap:]
+                 if isinstance(row, dict)] if kind == "lines" else
+                [V.scrub(row) for row in list(rows or [])[:cap]],
+    }
+    if legend:
+        out["legend"] = [{"key": V._text(l["key"]), "label": V._text(l["label"])}
+                         for l in legend[:MAX_COLS]]
+    return out
+
+
+def _clock(at: str, multi_day: bool) -> str:
+    """ "2026-09-22 13:57:04" -> "13:57", or "09-22 13:57" across days."""
+    return at[5:16] if multi_day else at[11:16]
+
+
+def _spread(points: list[dict], field: str, unit: str, multi_day: bool) -> str:
+    lo, hi = V.extreme(points, field, min), V.extreme(points, field, max)
+    if not lo:
+        return ""
+    return (f"low {lo[field]:g} at {_clock(lo['at'], multi_day)}, "
+            f"high {hi[field]:g} at {_clock(hi['at'], multi_day)}")
+
+
+def metric(label: str, value: Any, unit: str = "", note: str = "") -> dict:
+    return {"label": label, "value": value, "unit": unit, "note": note}
+
+
+def leg(call: Callable[[], Any]) -> tuple[Any, str]:
+    """Run one controller call of a composite. A call that fails hands back
+    its plain-word reason instead of sinking the whole report."""
+    try:
+        return call(), ""
+    except Exception as err:          # noqa: BLE001 — every failure is a section
+        return None, (str(err)[:200] or type(err).__name__)
+
+
+def _window(params: dict) -> str:
+    start, end = params.get("from", ""), params.get("to", "")
+    return start if start == end else f"{start} → {end}"
+
+
+def _days(params: dict) -> int:
+    start, end = _parse_date(params["from"]), _parse_date(params["to"])
+    return (end - start).days + 1
+
+
+def _names(valves: list[dict] | None) -> dict[str, str]:
+    return {v["id"]: v["name"] for v in (valves or [])}
+
+
+def _valve_list(ids: list[str], names: dict[str, str]) -> str:
+    return ", ".join(names.get(i, f"valve {i}") for i in ids) or "no valves"
+
+
+def _triple(values: list[float]) -> str:
+    return " / ".join(f"{v:g}" for v in values)
+
+
+def imbalance_pct(values: list[float]) -> float | None:
+    """Largest deviation from the mean, as a percentage of it — the usual
+    three-phase voltage-imbalance figure. Motors are rated for a few percent;
+    beyond that they run hot."""
+    if not values:
+        return None
+    mean = sum(values) / len(values)
+    if mean <= 0:
+        return None
+    return round(max(abs(v - mean) for v in values) / mean * 100, 1)
+
+
+# ---- controller --------------------------------------------------------------
+
+def _program_facts(prog: dict | None, names: dict[str, str], label: str) -> list[dict]:
+    if not prog:
+        return []
+    bits = [prog["kind"], _valve_list(prog["valves"], names)]
+    if prog["plannedMin"] is not None:
+        if prog["completed"]:
+            bits.append(f"{V.fmt_minutes(prog['plannedMin'])} planned, finished")
+        elif prog["remainingMin"] is not None:
+            bits.append(f"{V.fmt_minutes(prog['remainingMin'])} left of "
+                        f"{V.fmt_minutes(prog['plannedMin'])}")
+    return [{"label": label, "value": f"{prog['name']} · " + " · ".join(bits)},
+            {"label": f"{label} since", "value": prog["start"]}]
+
+
+def controller_sections(dash: Any, nodes: list[dict] | None,
+                        nodes_err: str) -> tuple[list[dict], dict, str]:
+    info = V.normalize_dcon_dashboard(dash or {})
+    timers = V.dcon_timers(dash or {})
+    names = _names(nodes)
+    facts = [{"label": k, "value": v} for k, v in (
+        ("Device", info["device"]), ("Serial", info["serial"]),
+        ("Last packet", info["lastPacket"]),
+        ("Controller clock", info["serverTime"]),
+        ("Time zone", info["timeZone"])) if v]
+    current = timers["current"]
+    running = current and not current["completed"]
+    facts += _program_facts(current, names, "Running now" if running else "Last program")
+    if running:
+        facts += _program_facts(timers["previous"], names, "Before that")
+    sections = [section("facts", "Controller", facts)]
+    if nodes_err:
+        sections.append(section("status", "Valves", error=nodes_err))
+    elif nodes:
+        sections.append(section(
+            "status", "Valves on this controller",
+            [{"name": v["name"],
+              "status": ("on" if running and v["id"] in current["valves"] else "off"),
+              "meta": " · ".join(x for x in (v["type"], v["node"]) if x),
+              "source": "dcon"} for v in nodes],
+            note=f"{len(nodes)} valves on "
+                 f"{len({v['node'] for v in nodes})} field nodes; "
+                 "runtime is a separate report"))
+    summary = info["device"]
+    if nodes:
+        summary += f" · {len(nodes)} valves"
+    if running:
+        summary += f" · running {current['name']}"
+    return sections, info, summary
+
+
+def report_controller(src, params: dict) -> tuple[list, str, list, dict]:
+    dash = src.dashboard()
+    nodes, nodes_err = leg(lambda: V.normalize_dcon_nodes(src.nodes()))
+    sections, info, summary = controller_sections(dash, nodes, nodes_err)
+    patch = {"dcon": info}
+    if nodes is not None:
+        patch["valveNames"] = nodes
+    return sections, summary, list(nodes or []), patch
+
+
+# ---- electricity and pressure, now -------------------------------------------------
+
+def electricity_sections(packet: dict | None, err: str) -> tuple[list[dict], list[dict]]:
+    if err:
+        return [section("metrics", "Electricity", error=err)], []
+    if not packet:
+        return [section("metrics", "Electricity",
+                        note="the controller sent no electricity packet")], []
+    rows = []
+    if "supplyMin" in packet:
+        rows.append(metric("Supply today", V.fmt_minutes(packet["supplyMin"] or 0),
+                           note="three-phase power present"))
+        rows.append(metric("Pump today", V.fmt_minutes(packet["pumpMin"] or 0),
+                           note="motor running on it"))
+    if "currentA" in packet:
+        rows.append(metric("Current", _triple(packet["currentA"]), "A",
+                           note="per phase" if any(packet["currentA"])
+                           else "pump is off"))
+    if "lineV" in packet:
+        rows.append(metric("Line voltage", _triple(packet["lineV"]), "V",
+                           note="phase to phase"))
+    if "phaseV" in packet:
+        imb = imbalance_pct(packet["phaseV"])
+        rows.append(metric("Phase voltage", _triple(packet["phaseV"]), "V",
+                           note=(f"{imb}% imbalance · " if imb is not None else "")
+                           + f"at {packet['at'][11:16]}"))
+    if not rows:
+        return [section("metrics", "Electricity",
+                        note="the controller's packet carried nothing readable")], []
+    return [section("metrics", "Electricity", rows)], rows
+
+
+def pressure_now_sections(points: list[dict] | None, err: str) -> tuple[list[dict], list[dict]]:
+    if err:
+        return [section("metrics", "Pressure", error=err)], []
+    if not points:
+        return [section("metrics", "Pressure",
+                        note="no samples in the last five minutes — the "
+                             "controller only logs pressure while the pump runs")], []
+    last = points[-1]
+    rows = [metric("Inlet", last["inlet"], "bar", note=f"at {last['at'][11:19]}")]
+    if last["outlet"] is not None:
+        rows.append(metric("Outlet", last["outlet"], "bar", note="after the filter"))
+        rows.append(metric("Filter drop", round(last["inlet"] - last["outlet"], 2),
+                           "bar", note="inlet minus outlet"))
+    out = [section("metrics", "Pressure", rows)]
+    if len(points) > 1:
+        out.append(section("series", "Inlet, last five minutes",
+                           [{"at": p["at"], "value": p["inlet"], "unit": "bar"}
+                            for p in points[-MAX_ROWS:]]))
+    cache = [{"at": last["at"], "value": last["inlet"], "unit": "bar",
+              "detail": (f"outlet {last['outlet']} bar"
+                         if last["outlet"] is not None else "")}]
+    return out, cache
 
 
 def _snapshot_stamp() -> str:
-    return (_dt.datetime.now() - SNAPSHOT_LOOKBACK).strftime("%Y-%m-%d %H:%M:%S")
+    return (farm_now() - SNAPSHOT_LOOKBACK).strftime("%Y-%m-%d %H:%M:%S")
 
 
-class IrrigationRunner:
-    def __init__(self, cfg, rtdb, session: aiohttp.ClientSession) -> None:
-        self._cfg = cfg
-        self._rtdb = rtdb
-        self._session = session
-        self.enabled = bool(getattr(cfg, "irrigation_enabled", False))
-        self._seen: list[str] = []
-        self.executed = 0
-        self.refused = 0
-        self.last_ok: str = ""
-        self.last_error: str = ""
+def report_electricity(src, params):
+    packet = V.electricity_packet(src.electricity(_snapshot_stamp()))
+    sections, rows = electricity_sections(packet, "")
+    summary = " · ".join(f"{r['label']} {r['value']} {r['unit']}".strip()
+                         for r in rows[:2]) or "no reading"
+    return sections, summary, rows, {"electricity": rows}
 
-    # ---- low level ------------------------------------------------------
 
-    async def _get_json(self, url: str, headers: dict | None = None,
-                        params: dict | None = None) -> Any:
-        import aiohttp
+def report_pressure(src, params):
+    points = V.pressure_points(src.pressure_now(_snapshot_stamp()))
+    sections, cache = pressure_now_sections(points, "")
+    summary = (f"inlet {points[-1]['inlet']} bar" if points
+               else "pump off — no recent samples")
+    return sections, summary, cache, {"pressure": cache} if cache else {}
 
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
-        async with self._session.get(url, headers=headers or {},
-                                     params=params or {},
-                                     timeout=timeout) as resp:
-            if resp.status >= 400:
-                raise RuntimeError(f"GET {url} -> {resp.status}")
-            try:
-                return await resp.json(content_type=None)
-            except Exception:
-                return await resp.text()
 
-    async def _post_form(self, url: str, form: dict) -> Any:
-        # aiohttp is imported per call site, not at module scope, so
-        # tests/test_logic.py can import this module with nothing installed.
-        # _get_json did that and this did not, so every POST — which is most of
-        # the DCON API — died with "name 'aiohttp' is not defined" the first
-        # time a report ran for real.
-        import aiohttp
+def report_live_readings(src, params):
+    """Composite: power and pressure together say whether the pump is drawing
+    current and producing head. Apart, they are two numbers."""
+    stamp = _snapshot_stamp()
+    packet, perr = leg(lambda: V.electricity_packet(src.electricity(stamp)))
+    points, qerr = leg(lambda: V.pressure_points(src.pressure_now(stamp)))
+    esec, erows = electricity_sections(packet, perr)
+    psec, pcache = pressure_now_sections(points, qerr)
+    bits = []
+    if packet and "currentA" in packet:
+        bits.append("pump running" if any(packet["currentA"]) else "pump off")
+    if points:
+        bits.append(f"inlet {points[-1]['inlet']} bar")
+    if packet and "phaseV" in packet:
+        bits.append(f"{_triple(packet['phaseV'])} V")
+    patch = {}
+    if packet is not None and erows:
+        patch["electricity"] = erows
+    if pcache:
+        patch["pressure"] = pcache
+    return esec + psec, " · ".join(bits) or "no reading", erows + pcache, patch
 
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
-        async with self._session.post(url, data=form,
-                                      timeout=timeout) as resp:
-            if resp.status >= 400:
-                raise RuntimeError(f"POST {url} -> {resp.status}")
-            try:
-                return await resp.json(content_type=None)
-            except Exception:
-                return await resp.text()
 
-    # ---- validation -----------------------------------------------------
+# ---- valves --------------------------------------------------------------------
 
-    def _reject(self, req_id: str, reason: str, req: Any) -> None:
-        self.refused += 1
-        _LOGGER.warning("Refused irrigation request %s (%s): %r",
-                        req_id, reason, req)
-
-    def validate(self, req_id: str, req: Any) -> tuple[str, dict] | None:
-        """Return (report_type, params) for a request worth running."""
-        if not isinstance(req, dict):
-            self._reject(req_id, "not an object", req)
-            return None
-
-        rtype = req.get("type")
-        if not isinstance(rtype, str) or rtype not in REPORT_TYPES:
-            self._reject(req_id, f"unknown report type {rtype!r}", req)
-            return None
-
-        at = req.get("at")
-        if not isinstance(at, (int, float)):
-            self._reject(req_id, "no timestamp", req)
-            return None
-        age = time.time() - (at / 1000.0)
-        if age > REQUEST_MAX_AGE_SECONDS or age < -60:
-            self._reject(req_id, f"stale by {age:.0f}s", req)
-            return None
-
-        params: dict[str, str] = {}
-        if REPORT_TYPES[rtype] == "range":
-            start = _parse_date(req.get("from"))
-            end = _parse_date(req.get("to"))
-            if start is None or end is None:
-                self._reject(req_id, "from/to must be YYYY-MM-DD dates", req)
-                return None
-            if end < start:
-                self._reject(req_id, "to is before from", req)
-                return None
-            if (end - start).days > MAX_RANGE_DAYS:
-                self._reject(req_id,
-                             f"range over {MAX_RANGE_DAYS} days", req)
-                return None
-            params = {"from": start.isoformat(), "to": end.isoformat()}
-        return rtype, params
-
-    # ---- per-vendor fetches ----------------------------------------------
-
-    async def _dcon_form(self, payload: dict) -> Any:
-        cfg = self._cfg
-        if not (cfg.dcon_token_id and cfg.dcon_serial):
-            raise RuntimeError("DCON is not configured")
-        try:
-            return await self._post_form(f"{cfg.dcon_base}/v1/http/", payload)
-        except Exception as err:
-            raise RuntimeError(
-                f"DCON {payload.get('method', payload.get('action'))}: "
-                f"{err or type(err).__name__}")
-
-    async def _dcon_report(self, url_params: dict) -> Any:
-        cfg = self._cfg
-        if not (cfg.dcon_token_id and cfg.dcon_serial):
-            raise RuntimeError("DCON is not configured")
-        return await self._get_json(f"{cfg.dcon_base}/v1/http/",
-                                    params=url_params)
-
-    # ---- vendor calls, one shape per section ------------------------------
-
-    async def _dcon_controller(self) -> tuple[dict, list[dict]]:
-        """The controller card is itself two calls: the app dashboard for the
-        device and its clock, get_node for the valve registry. get_node is the
-        only source of valve *names* — "4 Veg", "6 Kulam" — so a runtime report
-        without it is a list of numbers."""
-        cfg = self._cfg
-        dash_raw = await self._dcon_form(
-            {"action": "dashboard", "p": "app",
-             "token_id": cfg.dcon_token_id, "product": cfg.dcon_product or "DCON"})
-        node_raw = await self._dcon_form(
-            {"action": "dcon_node", "method": "get_node",
-             "serial_no": cfg.dcon_serial})
-        return (vendors.normalize_dcon_dashboard(dash_raw or {}),
-                vendors.normalize_dcon_nodes(node_raw or {}))
-
-    async def _dcon_valves(self, start: str, end: str) -> list[dict]:
-        raw = await self._dcon_form(
-            {"action": "dcon_node", "method": "get_all_valve",
-             "from": start, "to": end, "serial_no": self._cfg.dcon_serial})
-        return vendors.normalize_dcon_valves(raw)
-
-    async def _dcon_log(self, kind: str, start: str, end: str) -> list[dict]:
-        raw = await self._dcon_form(
-            {"action": "logs", "method": kind + "_log",
-             "serial_no": self._cfg.dcon_serial, "from": start, "to": end})
-        return vendors.normalize_dcon_logs(raw, kind)
-
-    async def _dcon_now(self, kind: str) -> list[dict]:
-        """electricity / pressure_cond: a point-in-time pull the controller
-        wants stamped with a clock, so the bridge supplies its own. The two
-        answer in different shapes — pressure as readings, electricity as the
-        raw controller packet — so they parse differently."""
-        raw = await self._dcon_report(
-            {"action": "reports", "type": kind,
-             "serial_no": self._cfg.dcon_serial, "dt": _snapshot_stamp(),
-             "product": self._cfg.dcon_product or "DCON"})
-        if kind == "electricity":
-            return vendors.normalize_dcon_electricity(raw)
-        return vendors.normalize_report(raw, kind)
-
-    async def _dcon_pressure_range(self, start: str, end: str) -> list[dict]:
-        raw = await self._dcon_report(
-            {"action": "reports", "type": "pressure_timer",
-             "serial_no": self._cfg.dcon_serial,
-             "from": f"{start} 00:00:00", "to": f"{end} 23:59:59",
-             "product": self._cfg.dcon_product or "DCON"})
-        return vendors.normalize_report(raw, "pressure")
-
-    # ---- one request, end to end ------------------------------------------
-
-    def _report_base(self, rtype: str, params: dict) -> dict:
-        return {"type": rtype, "label": REPORT_LABELS[rtype],
-                "params": params, "at": SERVER_TIMESTAMP}
-
-    async def _leg(self, call) -> tuple[Any, str]:
-        """Run one call of a composite report. A leg that fails hands back its
-        plain-word reason instead of sinking the whole report: a timer log the
-        controller will not produce must not cost the user the motor log they
-        asked for in the same pull."""
-        try:
-            return await call(), ""
-        except Exception as err:
-            return None, str(err)[:200] or type(err).__name__
-
-    def _result(self, rtype: str, params: dict, sections: list[dict],
-                summary: str, rows: list | None = None,
-                patch: dict | None = None) -> tuple[dict, dict]:
-        """Roll sections into one report. Status is ok, partial when a leg
-        failed but something still rendered, error when nothing did — the
-        dashboard tags all three differently so a half-report never reads as
-        a whole one."""
-        drawn = [s for s in sections if s.get("rows") or s.get("note")]
-        failed = [s for s in sections if s.get("status") == "error"]
-        # Two legs of the same vendor fail for the same reason; say it once.
-        reasons = list(dict.fromkeys(s["error"] for s in failed if s["error"]))
-        if failed and not drawn:
-            status, error = "error", "; ".join(reasons)[:200]
-        elif failed:
-            status, error = "partial", "; ".join(reasons)[:200]
-        else:
-            status, error = "ok", ""
-        report = {**self._report_base(rtype, params), "status": status,
-                  "summary": summary, "sections": sections,
-                  # rows stays for the pre-sections dashboard build: a client
-                  # that has not reloaded still renders the primary rows.
-                  "rows": list(rows or [])[:vendors.MAX_LIST]}
-        if error:
-            report["error"] = error
-        return report, (patch or {})
-
-    @staticmethod
-    def _metric(label: str, value: Any, unit: str = "", note: str = "") -> dict:
-        return {"label": label, "value": value, "unit": unit, "note": note}
-
-    @staticmethod
-    def _reading_sections(title: str, rows: list, err: str,
-                          source: str) -> list[dict]:
-        """One vendor reading: the latest value as a headline, and a
-        sparkline only when the vendor actually returned a curve."""
-        if err:
-            return [vendors.section("metrics", title, source=source, error=err)]
-        stats = vendors.series_stats(rows)
-        if not stats.get("count"):
-            return [vendors.section("metrics", title, source=source,
-                                    note="the vendor returned no reading")]
-        unit = stats.get("unit") or ""
-        metrics = [{"label": title, "value": stats["last"], "unit": unit,
-                    "note": (rows[-1].get("at") if isinstance(rows[-1], dict)
-                             else "") or "latest"}]
-        if stats["count"] > 1:
-            metrics.append({"label": f"{title} range", "value":
-                            f"{stats['min']} – {stats['max']}", "unit": unit,
-                            "note": f"avg {stats['avg']} over "
-                                    f"{stats['count']} readings"})
-        out = [vendors.section("metrics", title, metrics, source=source)]
-        if stats["count"] > 1:
-            out.append(vendors.section("series", f"{title} over time", rows,
-                                       source=source))
+def valve_sections(valves: list[dict] | None, err: str, window: str) -> list[dict]:
+    if err:
+        return [section("bars", "Valve runtime", error=err)]
+    valves = valves or []
+    crop = [v for v in valves if v["type"].lower() in IRRIGATION_TYPES]
+    plumbing = [v for v in valves if v not in crop]
+    ran = [v for v in crop if v["minutes"] > 0]
+    total = sum(v["minutes"] for v in ran)
+    per_day: dict[str, int] = {}
+    for v in crop:
+        for d in v["days"]:
+            per_day[d["at"]] = per_day.get(d["at"], 0) + d["value"]
+    backwash = sum(v["minutes"] for v in plumbing if "backwash" in v["type"].lower())
+    idle = [v["name"] for v in crop if v["minutes"] == 0]
+    rows = [metric("Valves watered", len(ran), note=f"of {len(crop)} in {window}"),
+            metric("Valve time", V.fmt_minutes(total),
+                   note="each valve's minutes added up; two open at once count twice")]
+    if ran:
+        top = max(ran, key=lambda v: v["minutes"])
+        rows.append(metric("Most watered", top["name"], note=V.fmt_minutes(top["minutes"])))
+    if per_day:
+        busiest = max(per_day.items(), key=lambda kv: kv[1])
+        rows.append(metric("Busiest day", V.fmt_minutes(busiest[1]), note=busiest[0]))
+    if backwash:
+        rows.append(metric("Backwash", V.fmt_minutes(backwash), note="filter cleaning"))
+    out = [section("metrics", "Valves", rows)]
+    days = sorted(per_day)
+    if len(days) <= 1:
+        # One day: every valve at a glance, the ones that got nothing included.
+        out.append(section("grid", "Every valve", [
+            {"name": v["name"], "value": v["minutes"], "unit": "min",
+             "status": "on" if v["minutes"] else "off", "type": v["type"]}
+            for v in crop], note=(f"{len(idle)} not watered" if idle else "")))
         return out
+    # A range: valve by day, so a valve that ran every morning and one that
+    # ran once for four hours stop looking the same.
+    cols = [{"key": f"c{i}", "label": d[5:]} for i, d in enumerate(days)]
+    grid = []
+    for v in crop:
+        by_day = {d["at"]: d["value"] for d in v["days"]}
+        grid.append({"name": v["name"], "total": v["minutes"],
+                     **{c["key"]: by_day.get(d, 0) for c, d in zip(cols, days)}})
+    out.append(section("matrix", "Minutes per valve per day", grid, unit="min",
+                       legend=cols, note=(f"not watered: {', '.join(idle)}" if idle else "")))
+    out.append(section("series", "Valve time per day",
+                       [{"at": d, "value": per_day[d], "unit": "min"} for d in days]))
+    if ran:
+        out.append(section("bars", "Runtime per valve",
+                           [{"name": v["name"], "value": v["minutes"], "unit": "min",
+                             "status": "on"} for v in sorted(ran, key=lambda v: -v["minutes"])]))
+    return out
 
-    async def _run_validated(self, rtype: str, params: dict) -> tuple[dict, dict]:
-        """Execute one validated request. Returns (report, cache_patch)."""
-        handler = getattr(self, f"_report_{rtype}")
-        return await handler(params)
 
-    # ---- live reports ------------------------------------------------------
+def report_valves(src, params):
+    window = _window(params)
+    valves = V.normalize_dcon_valves(src.valves(params["from"], params["to"]))
+    crop = [v for v in valves if v["type"].lower() in IRRIGATION_TYPES]
+    total = sum(v["minutes"] for v in crop)
+    ran = sum(1 for v in crop if v["minutes"])
+    return (valve_sections(valves, "", window),
+            f"{ran} of {len(crop)} valves watered · {V.fmt_minutes(total)} · {window}",
+            valves, {"valves": valves})
 
-    @staticmethod
-    def _controller_facts(dcon: dict) -> list[dict]:
-        pairs = (("Device", dcon.get("device")), ("Serial", dcon.get("serial")),
-                 ("Last packet", dcon.get("lastPacket")),
-                 ("Controller clock", dcon.get("serverTime")),
-                 ("Time zone", dcon.get("timeZone")))
-        return [{"label": label, "value": value}
-                for label, value in pairs if value]
 
-    async def _report_controller(self, params: dict) -> tuple[dict, dict]:
-        dcon, valves = await self._dcon_controller()
-        facts = self._controller_facts(dcon)
-        sections = [vendors.section("facts", "Controller", facts, source="dcon")] \
-            if facts else [vendors.section(
-                "facts", "Controller", source="dcon",
-                note="the controller answered with no readable fields")]
-        if valves:
-            sections.append(vendors.section(
-                "status", "Valves on this controller",
-                [{"name": v["name"], "status": "unknown",
-                  "meta": v.get("type") or f"valve {v['id']}", "source": "dcon"}
-                 for v in valves], source="dcon",
-                note="names as programmed on the controller; runtime is a "
-                     "separate report"))
-        summary = dcon.get("device") or "Controller"
-        if valves:
-            summary += f" · {len(valves)} valves"
-        return self._result("controller", params, sections, summary,
-                            [], {"dcon": dcon, "valveNames": valves})
+# ---- timer log: program runs -------------------------------------------------------
 
-    @staticmethod
-    def _electricity_sections(rows: list, err: str) -> list[dict]:
-        if err:
-            return [vendors.section("metrics", "Electricity", source="dcon",
-                                    error=err)]
-        if not rows:
-            return [vendors.section(
-                "metrics", "Electricity", source="dcon",
-                note="the controller's last packet carried no readable "
-                     "voltage or current")]
-        return [vendors.section("metrics", "Electricity", rows, source="dcon")]
+def _control(code: str) -> str:
+    return V.CONTROL_CODES.get(code, code)
 
-    async def _report_electricity(self, params: dict) -> tuple[dict, dict]:
-        rows = await self._dcon_now("electricity")
-        sections = self._electricity_sections(rows, "")
-        summary = " · ".join(f"{r['label']} {r['value']} {r['unit']}".strip()
-                             for r in rows) or "no reading"
-        return self._result("electricity", params, sections, summary, rows,
-                            {"electricity": rows})
 
-    async def _report_pressure(self, params: dict) -> tuple[dict, dict]:
-        rows = await self._dcon_now("pressure_cond")
-        sections = self._reading_sections("Pressure", rows, "", "dcon")
-        stats = vendors.series_stats(rows)
-        summary = (f"{stats['last']} {stats.get('unit') or ''}".strip()
-                   if stats.get("count") else "no reading")
-        return self._result("pressure", params, sections, summary, rows,
-                            {"pressure": rows})
+def run_row(run: dict, names: dict[str, str]) -> dict:
+    planned = run["plannedMin"]
+    if planned is None:
+        amount = ""
+    elif run["finished"]:
+        amount = f"{V.fmt_minutes(planned)}, finished"
+    else:
+        amount = f"{V.fmt_minutes(run['deliveredMin'] or 0)} of {V.fmt_minutes(planned)}, stopped"
+    bits = [amount, _valve_list(run["valves"], names)]
+    if run["backwashes"]:
+        bits.append(f"{run['backwashes']} backwash pause"
+                    + ("s" if run["backwashes"] > 1 else ""))
+    if run["startedBy"]:
+        bits.append(f"started by {_control(run['startedBy'])}")
+    if run["endedBy"] and not run["finished"]:
+        bits.append(f"ended by {_control(run['endedBy'])}")
+    bits += run["faults"]
+    return {"at": run["start"], "event": f"{run['kind']} · {run['name']}",
+            "detail": " · ".join(b for b in bits if b), "source": "timer"}
 
-    async def _report_live_readings(self, params: dict) -> tuple[dict, dict]:
-        """Composite: electricity and pressure, pulled together. Read apart
-        they are two numbers; read together they say whether the pump is
-        drawing power and producing head."""
-        power, power_err = await self._leg(lambda: self._dcon_now("electricity"))
-        press, press_err = await self._leg(lambda: self._dcon_now("pressure_cond"))
-        sections = (self._electricity_sections(power or [], power_err)
-                    + self._reading_sections("Pressure", press or [],
-                                             press_err, "dcon"))
-        patch = {}
-        if power is not None:
-            patch["electricity"] = power
-        if press is not None:
-            patch["pressure"] = press
-        bits = [f"{r['label']} {r['value']} {r['unit']}".strip()
-                for r in (power or [])]
-        stats = vendors.series_stats(press or [])
-        if stats.get("count"):
-            bits.append(f"pressure {stats['last']} {stats.get('unit') or ''}".strip())
-        summary = " · ".join(bits) or "no reading"
-        return self._result("live_readings", params, sections, summary,
-                            list(power or []) + list(press or []), patch)
 
-    # ---- range reports -----------------------------------------------------
+def timer_sections(segments: list[dict] | None, err: str, names: dict[str, str],
+                   window: str) -> tuple[list[dict], list[dict], list[dict]]:
+    """-> (sections, runs, timeline rows newest first)."""
+    if err:
+        return [section("timeline", "Program runs", error=err)], [], []
+    segments = segments or []
+    runs = V.join_runs(segments)
+    if not runs:
+        return [section("timeline", "Program runs",
+                        note=f"no programs ran in {window}")], [], []
+    washes = V.backwash_stats(segments)
+    delivered = sum(r["deliveredMin"] or 0 for r in runs)
+    finished = sum(1 for r in runs if r["finished"])
+    faults = sum(len(r["faults"]) for r in runs)
+    rows = [metric("Runs", len(runs), note=f"{finished} finished, "
+                   f"{len(runs) - finished} stopped early"),
+            metric("Water time", V.fmt_minutes(delivered),
+                   note="by the controller's countdown"),
+            metric("Backwashes", washes["count"],
+                   note=f"{V.fmt_minutes(washes['minutes'])} of filter cleaning"),
+            metric("Valve faults", faults, note="no signal, or did not open/close"
+                   if faults else "none logged")]
+    by_program: dict[str, int] = {}
+    for r in runs:
+        by_program[r["name"]] = by_program.get(r["name"], 0) + (r["deliveredMin"] or 0)
+    timeline = [run_row(r, names) for r in reversed(runs)]
+    out = [section("metrics", "Programs", rows)]
+    if len(by_program) > 1:
+        out.append(section("bars", "Water time per program",
+                           [{"name": n, "value": m, "unit": "min", "status": "on"}
+                            for n, m in sorted(by_program.items(), key=lambda kv: -kv[1]) if m]))
+    out.append(section("timeline", "Program runs, newest first", timeline,
+                       note=f"{len(segments)} log rows joined into {len(runs)} runs "
+                            "— the controller logs a run in pieces around each backwash"))
+    return out, runs, timeline
 
-    @staticmethod
-    def _valve_sections(rows: list, err: str, window: str) -> list[dict]:
-        if err:
-            return [vendors.section("bars", "Valve runtime", source="dcon",
-                                    error=err)]
-        bars = [{"name": v.get("name") or (f"Valve {v['id']}" if v.get("id")
-                                           else "Valve"),
-                 "value": int(v.get("minutes") or 0),
-                 "unit": "min", "status": v.get("status") or "unknown"}
-                for v in rows]
-        ran = [b for b in bars if b["value"] > 0]
-        total = sum(b["value"] for b in ran)
-        metrics = [{"label": "Valves run", "value": len(ran), "unit": "",
-                    "note": f"of {len(rows)} in {window}" if window
-                            else f"of {len(rows)}"},
-                   {"label": "Total runtime", "value":
-                    vendors.fmt_minutes(total), "unit": "",
-                    "note": (f"longest {vendors.fmt_minutes(max(b['value'] for b in ran))}"
-                             if ran else "nothing ran")},
-                   {"label": "Busiest day", "value":
-                    (max((d["value"] for v in rows for d in (v.get("days") or [])),
-                         default=0) or 0), "unit": "min",
-                    "note": "most any one valve ran in a single day"}]
-        out = [vendors.section("metrics", "Valves", metrics, source="dcon")]
-        if ran:
-            out.append(vendors.section("bars", "Runtime per valve",
-                                       sorted(ran, key=lambda b: -b["value"]),
-                                       source="dcon"))
-        else:
-            out.append(vendors.section(
-                "status", "Valves",
-                [{"name": v.get("name") or "Valve",
-                  "status": v.get("status") or "unknown",
-                  "meta": v.get("runtime") or "no runtime recorded",
-                  "source": "dcon"} for v in rows], source="dcon"))
-        return out
 
-    async def _report_valves(self, params: dict) -> tuple[dict, dict]:
-        start, end = params["from"], params["to"]
-        rows = await self._dcon_valves(start, end)
-        sections = self._valve_sections(rows, "", f"{start} → {end}")
-        ran = sum(1 for v in rows if int(v.get("minutes") or 0) > 0)
-        total = sum(int(v.get("minutes") or 0) for v in rows)
-        return self._result(
-            "valves", params, sections,
-            f"{ran} of {len(rows)} valves ran · {vendors.fmt_minutes(total)} "
-            f"· {start} → {end}", rows, {"valves": rows})
+def _timer_leg(src, params):
+    return V.timer_segments(src.timer_log(params["from"], params["to"]))
 
-    async def _report_timer_log(self, params: dict) -> tuple[dict, dict]:
-        return await self._one_log("timer_log", "timer", params)
 
-    async def _report_motor_log(self, params: dict) -> tuple[dict, dict]:
-        return await self._one_log("motor_log", "motor", params)
+def _names_leg(src):
+    nodes, _err = leg(lambda: V.normalize_dcon_nodes(src.nodes()))
+    return _names(nodes)
 
-    async def _one_log(self, rtype: str, kind: str,
-                       params: dict) -> tuple[dict, dict]:
-        start, end = params["from"], params["to"]
-        rows = await self._dcon_log(kind, start, end)
-        sections = [vendors.section(
-            "timeline", f"{kind.capitalize()} log",
-            [{**r, "source": kind} for r in rows], source="dcon",
-            note="" if rows else f"nothing logged between {start} and {end}")]
-        patch = {"timerLog": rows} if kind == "timer" else {"motorLog": rows}
-        return self._result(rtype, params, sections,
-                            f"{len(rows)} entries · {start} → {end}",
-                            rows, patch)
 
-    async def _report_session_log(self, params: dict) -> tuple[dict, dict]:
-        """Composite: timer log and motor log woven into one chronology. Read
-        separately you cannot see that the motor stopped mid-timer; read
-        together that is the first thing you see."""
-        start, end = params["from"], params["to"]
-        timers, timer_err = await self._leg(
-            lambda: self._dcon_log("timer", start, end))
-        motors, motor_err = await self._leg(
-            lambda: self._dcon_log("motor", start, end))
-        merged = vendors.merge_timeline((timers or [], "timer"),
-                                        (motors or [], "motor"))
-        sections = [vendors.section(
-            "metrics", "Entries",
-            [{"label": "Timer entries", "value": len(timers or []), "unit": "",
-              "note": timer_err or f"{start} → {end}"},
-             {"label": "Motor entries", "value": len(motors or []), "unit": "",
-              "note": motor_err or f"{start} → {end}"}])]
-        if merged:
-            sections.append(vendors.section("timeline", "Combined log", merged,
-                                            source="dcon"))
-        if timer_err:
-            sections.append(vendors.section("timeline", "Timer log",
-                                            source="dcon", error=timer_err))
-        if motor_err:
-            sections.append(vendors.section("timeline", "Motor log",
-                                            source="dcon", error=motor_err))
-        patch = {}
-        if timers is not None:
-            patch["timerLog"] = timers
-        if motors is not None:
-            patch["motorLog"] = motors
-        return self._result(
-            "session_log", params, sections,
-            f"{len(merged)} entries · {start} → {end}", merged, patch)
+def report_timer_log(src, params):
+    window = _window(params)
+    segments = _timer_leg(src, params)
+    names = _names_leg(src)
+    sections, runs, timeline = timer_sections(segments, "", names, window)
+    finished = sum(1 for r in runs if r["finished"])
+    return (sections, f"{len(runs)} runs, {finished} finished · {window}",
+            timeline, {"timerLog": timeline[:V.MAX_LIST]})
 
-    async def _report_pressure_range(self, params: dict) -> tuple[dict, dict]:
-        start, end = params["from"], params["to"]
-        rows = await self._dcon_pressure_range(start, end)
-        stats = vendors.series_stats(rows)
-        sections = self._pressure_sections(rows, "", f"{start} → {end}")
-        summary = (f"{stats['min']}–{stats['max']} {stats.get('unit') or ''}"
-                   f" · {start} → {end}" if stats.get("count")
-                   else f"no readings · {start} → {end}")
-        return self._result("pressure_range", params, sections, summary, rows,
-                            {"pressure": rows})
 
-    @staticmethod
-    def _pressure_sections(rows: list, err: str, window: str) -> list[dict]:
-        if err:
-            return [vendors.section("series", "Pressure", source="dcon",
-                                    error=err)]
-        stats = vendors.series_stats(rows)
-        if not stats.get("count"):
-            return [vendors.section("series", "Pressure", source="dcon",
-                                    note=f"no readings in {window}"
-                                         if window else "no readings")]
-        unit = stats.get("unit") or ""
-        metrics = [{"label": "Average", "value": stats["avg"], "unit": unit,
-                    "note": f"{stats['count']} readings"},
-                   {"label": "Low", "value": stats["min"], "unit": unit,
-                    "note": window},
-                   {"label": "High", "value": stats["max"], "unit": unit,
-                    "note": window}]
-        return [vendors.section("metrics", "Pressure", metrics, source="dcon"),
-                vendors.section("series", "Pressure over time", rows,
-                                source="dcon")]
+# ---- motor log: power, pump, energy -------------------------------------------------
 
-    async def _report_performance(self, params: dict) -> tuple[dict, dict]:
-        """Composite: valve runtime against the pressure over the same window.
-        The one question a runtime bar cannot answer on its own is whether the
-        line held while the valve was open."""
-        start, end = params["from"], params["to"]
-        window = f"{start} → {end}"
-        valves, valve_err = await self._leg(
-            lambda: self._dcon_valves(start, end))
-        press, press_err = await self._leg(
-            lambda: self._dcon_pressure_range(start, end))
-        sections = (self._valve_sections(valves or [], valve_err, window)
-                    + self._pressure_sections(press or [], press_err, window))
-        patch = {}
-        if valves is not None:
-            patch["valves"] = valves
-        if press is not None:
-            patch["pressure"] = press
-        total = sum(int(v.get("minutes") or 0) for v in (valves or []))
-        stats = vendors.series_stats(press or [])
-        bits = [f"{vendors.fmt_minutes(total)} of valve runtime" if total else "",
-                (f"pressure {stats['min']}–{stats['max']} "
-                 f"{stats.get('unit') or ''}".strip()
-                 if stats.get("count") else ""), window]
-        return self._result("performance", params, sections,
-                            " · ".join(b for b in bits if b),
-                            list(valves or []), patch)
+def motor_sections(days: list[dict] | None, err: str,
+                   window: str) -> tuple[list[dict], list[dict]]:
+    if err:
+        return [section("metrics", "Pump and power", error=err)], []
+    days = days or []
+    if not days:
+        return [section("metrics", "Pump and power",
+                        note=f"nothing logged in {window}")], []
+    pump = sum(d["pumpMin"] or 0 for d in days)
+    supply = sum(d["supplyMin"] or 0 for d in days)
+    metered = [d for d in days if d["kwh"] is not None]
+    kwh = round(sum(d["kwh"] for d in metered), 1)
+    metered_pump = sum(d["pumpMin"] or 0 for d in metered)
+    rows = [metric("Energy", kwh, "kWh",
+                   note=f"{len(metered)} of {len(days)} days metered"),
+            metric("Pump ran", V.fmt_minutes(pump),
+                   note=f"avg {V.fmt_minutes(pump / len(days))} a day"),
+            metric("Power present", V.fmt_minutes(supply),
+                   note=(f"pump used {round(pump / supply * 100)}% of it"
+                         if supply else "no supply logged"))]
+    if metered_pump:
+        rows.append(metric("Average draw", round(kwh / (metered_pump / 60), 2), "kW",
+                           note="energy over pump hours"))
+    resets = [d["day"] for d in days if d["meterReset"]]
+    out = [section("metrics", "Pump and power", rows,
+                   note=(f"energy meter reset on {', '.join(resets)}; that day "
+                         "has no energy figure") if resets else "")]
+    if len(days) > 1:
+        out.append(section(
+            "stack", "Power and pump, per day",
+            [{"at": d["day"], "total": round((d["supplyMin"] or 0) / 60, 1),
+              "part": round((d["pumpMin"] or 0) / 60, 1)} for d in days],
+            unit="h", legend=[{"key": "total", "label": "Power available"},
+                              {"key": "part", "label": "Pump ran"}]))
+        if len(metered) > 1:
+            out.append(section("series", "Energy per day",
+                               [{"at": d["day"], "value": d["kwh"], "unit": "kWh"}
+                                for d in metered]))
+    timeline = [{"at": f"{d['day']} {d['through']}".strip(), "event": "Pump day",
+                 "detail": " · ".join(x for x in (
+                     f"pump {V.fmt_minutes(d['pumpMin'] or 0)} of "
+                     f"{V.fmt_minutes(d['supplyMin'] or 0)} with power",
+                     f"{d['kwh']} kWh" if d["kwh"] is not None else "meter reset")
+                     if x), "source": "motor"} for d in reversed(days)]
+    return out, timeline
 
-    async def handle(self, req_id: str, req: Any) -> None:
-        if req is None or req_id in self._seen:
-            return
-        self._seen.append(req_id)
-        if len(self._seen) > SEEN_LIMIT:
-            del self._seen[: len(self._seen) - SEEN_LIMIT]
-        checked = self.validate(req_id, req)
-        root = self._cfg.root
-        try:
-            if checked is not None:
-                rtype, params = checked
-                try:
-                    report, patch = await self._run_validated(rtype, params)
-                    self.executed += 1
-                    self.last_ok = _now_stamp()
-                    self.last_error = ""
-                    _LOGGER.info("Ran irrigation report %s (%s)", rtype, req_id)
-                except Exception as err:
-                    message = str(err)[:200] or type(err).__name__
-                    report, patch = (
-                        {**self._report_base(rtype, params), "status": "error",
-                         "summary": "", "rows": [], "error": message}, {})
-                    self.last_error = message
-                    _LOGGER.warning("Irrigation report %s failed: %s",
-                                    req_id, message)
-                try:
-                    await self._rtdb.put(
-                        f"{root}/irrigation_reports/{req_id}", report)
-                    if patch:
-                        await self._rtdb.patch(f"{root}/irrigation", patch)
-                    await self._rtdb.patch(
-                        f"{root}/irrigation/meta",
-                        {"lastUpdated": SERVER_TIMESTAMP,
-                         "lastType": rtype,
-                         "lastError": report.get("error", "")})
-                except Exception:
-                    self.last_error = "mirror write failed"
-                    _LOGGER.exception("Could not mirror irrigation report %s",
-                                      req_id)
-        except Exception:
-            _LOGGER.exception("Irrigation request %s failed", req_id)
-        finally:
-            # Refused or failed, the node still goes: a request left in the
-            # queue would be retried on every reconnect.
-            if req_id in self._seen:
-                try:
-                    await self._rtdb.put(
-                        f"{root}/irrigation_requests/{req_id}", None)
-                except Exception:
-                    _LOGGER.exception("Could not clear irrigation request %s",
-                                      req_id)
 
-    async def _dispatch(self, path: str, data: Any) -> None:
-        """Translate one RTDB stream event into zero or more requests."""
-        path = (path or "/").strip("/")
-        if not path:
-            for req_id, req in (data or {}).items():
-                await self.handle(req_id, req)
-        elif "/" not in path:
-            await self.handle(path, data)
-        # Deeper paths only ever appear for a node we are already deleting.
+def report_motor_log(src, params):
+    window = _window(params)
+    days = V.motor_days(src.motor_log(params["from"], params["to"]))
+    sections, timeline = motor_sections(days, "", window)
+    kwh = round(sum(d["kwh"] for d in days if d["kwh"] is not None), 1)
+    pump = sum(d["pumpMin"] or 0 for d in days)
+    return (sections, f"{kwh} kWh · pump {V.fmt_minutes(pump)} · {window}",
+            timeline, {"motorLog": timeline[:V.MAX_LIST]})
 
-    # ---- stream -----------------------------------------------------------
 
-    def status(self) -> dict:
-        return {"enabled": self.enabled, "requestsRun": self.executed,
-                "requestsRefused": self.refused, "lastOk": self.last_ok,
-                "lastError": self.last_error}
+def report_session_log(src, params):
+    """Composite: program runs and the pump's day, in one chronology. Apart
+    you cannot see that the pump ran sixteen hours on a day the programs
+    asked for four; together it is the first thing you see."""
+    window = _window(params)
+    segments, terr = leg(lambda: _timer_leg(src, params))
+    days, merr = leg(lambda: V.motor_days(src.motor_log(params["from"], params["to"])))
+    names = _names_leg(src) if segments else {}
+    tsec, runs, tline = timer_sections(segments, terr, names, window)
+    msec, mline = motor_sections(days, merr, window)
+    merged = sorted(tline + mline, key=lambda r: r["at"], reverse=True)
+    heads = [s for s in tsec + msec if s["kind"] != "timeline"]
+    errors = [s for s in tsec + msec if s["kind"] == "timeline" and s["status"] == "error"]
+    sections = heads + errors
+    if merged:
+        sections.append(section("timeline", "Runs and pump days, newest first", merged))
+    delivered = sum(r["deliveredMin"] or 0 for r in runs)
+    pump = sum(d["pumpMin"] or 0 for d in (days or []))
+    bits = [f"{len(runs)} runs, {V.fmt_minutes(delivered)} of water" if runs else "",
+            f"pump {V.fmt_minutes(pump)}" if days else "", window]
+    patch = {}
+    if segments is not None:
+        patch["timerLog"] = tline[:V.MAX_LIST]
+    if days is not None:
+        patch["motorLog"] = mline[:V.MAX_LIST]
+    return sections, " · ".join(b for b in bits if b), merged, patch
 
-    async def _purge_queue(self) -> None:
-        """Drop whatever is sitting in the queue when reports are switched off.
 
-        The queue is client-writable, and only this runner ever deletes from it.
-        With the runner off, a request written by the dashboard stayed there
-        forever — two were found in production on 2026-09-23, one of them a day
-        old. Nothing would have executed them (they are long stale by the time
-        anyone enables reports), so they were pure litter on a path clients can
-        append to. One read, one delete, at startup."""
-        path = f"{self._cfg.root}/irrigation_requests"
-        try:
-            existing = await self._rtdb.get(path, shallow=True)
-        except Exception:
-            _LOGGER.debug("Could not read the irrigation queue to purge it",
-                          exc_info=True)
-            return
-        if not existing:
-            return
-        try:
-            await self._rtdb.put(path, None)
-            _LOGGER.info("Reports are off: dropped %d queued request(s) that "
-                         "nothing would have answered", len(existing))
-        except Exception:
-            _LOGGER.warning("Could not clear the irrigation queue")
+# ---- pressure over a range -------------------------------------------------------
 
-    async def run(self) -> None:
-        if not self.enabled:
-            _LOGGER.info("Irrigation reports are disabled; not watching the "
-                         "request queue")
-            await self._purge_queue()
-            return
-        _LOGGER.info("Watching irrigation request queue")
-        while True:
-            try:
-                await self._stream_once()
-            except asyncio.CancelledError:
-                raise
-            except Exception as err:
-                _LOGGER.error("Irrigation stream error: %s",
-                              err or type(err).__name__)
-            await asyncio.sleep(5.0)
+def pressure_sections(points: list[dict] | None, err: str, params: dict) -> list[dict]:
+    window = _window(params)
+    if err:
+        return [section("series", "Pressure", error=err)]
+    points = points or []
+    if not points:
+        return [section("series", "Pressure",
+                        note=f"no samples in {window} — the controller only "
+                             "logs pressure while the pump runs")]
+    multi = _days(params) > 1
+    return pressure_detail(points, _days(params) * 1440, multi)
 
-    async def _stream_once(self) -> None:
-        import aiohttp
 
-        url = f"{self._cfg.firebase_db_url}/{self._cfg.root}/irrigation_requests.json"
-        token = await self._rtdb._token()
-        headers = {"Authorization": f"Bearer {token}", "Accept": "text/event-stream"}
-        # sock_read=None: the stream is idle most of the time by design, and RTDB
-        # sends a keep-alive rather than closing. A total timeout would kill it.
-        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=None)
+def pressure_detail(points: list[dict], span_min: float, multi: bool) -> list[dict]:
+    inlet = V.series_stats([p["inlet"] for p in points])
+    paired = [p for p in points if p["outlet"] is not None]
+    outlet = V.series_stats([p["outlet"] for p in paired])
+    drops = [{"at": p["at"], "drop": round(p["inlet"] - p["outlet"], 2)} for p in paired]
+    drop = V.series_stats([d["drop"] for d in drops])
+    rows = [metric("Inlet", inlet["avg"], "bar",
+                   note=f"avg of {inlet['count']:,} samples · "
+                        + _spread(points, "inlet", "bar", multi))]
+    if outlet["count"]:
+        rows.append(metric("Outlet", outlet["avg"], "bar",
+                           note=_spread(paired, "outlet", "bar", multi)))
+        top = V.extreme(drops, "drop", max)
+        rows.append(metric("Filter drop", drop["avg"], "bar",
+                           note=f"up to {drop['max']:g} at {_clock(top['at'], multi)}; "
+                                "rises as the filter clogs"))
+    minutes = V.bucket_minutes(span_min)
+    step = (f"{minutes}-minute" if minutes < 60 else
+            "hourly" if minutes == 60 else
+            "daily" if minutes >= 1440 else f"{minutes // 60}-hourly")
+    out = [section("metrics", "Pressure", rows),
+           section("lines", f"Inlet and outlet, {step} average",
+                   V.bucket_multi(points, ("inlet", "outlet"), minutes), unit="bar",
+                   legend=[{"key": "inlet", "label": "Inlet"},
+                           {"key": "outlet", "label": "Outlet"}])]
+    if paired:
+        # A sparkline, so 32 points: its own window, not the line chart's.
+        few = V.bucket_minutes(span_min, MAX_ROWS)
+        label = (f"{few}-minute" if few < 60 else "hourly" if few == 60 else
+                 "daily" if few >= 1440 else f"{few // 60}-hourly")
+        series = [{"at": r["at"], "value": r["drop"], "unit": "bar"}
+                  for r in V.bucket_multi(drops, ("drop",), few) if "drop" in r]
+        out.append(section("series", f"Filter drop, {label} average", series))
+    return out
 
-        async with self._session.get(url, headers=headers, timeout=timeout,
-                                     allow_redirects=True) as resp:
-            if resp.status >= 400:
-                raise RuntimeError(f"irrigation stream -> {resp.status}: "
-                                   f"{(await resp.text())[:200]}")
-            _LOGGER.info("Irrigation request stream open")
-            event = ""
-            async for raw in resp.content:
-                line = raw.decode("utf-8", "replace").rstrip("\r\n")
-                if line.startswith("event:"):
-                    event = line[6:].strip()
-                elif line.startswith("data:"):
-                    payload = line[5:].strip()
-                    if event in ("put", "patch") and payload and payload != "null":
-                        try:
-                            body = json.loads(payload)
-                        except ValueError:
-                            _LOGGER.warning("Unparseable irrigation stream payload")
-                            continue
-                        await self._dispatch(body.get("path"), body.get("data"))
-                    elif event == "auth_revoked":
-                        _LOGGER.info("Stream token expired; reconnecting")
-                        return
+
+def _pressure_cache(points: list[dict]) -> list[dict]:
+    return [{**row, "unit": "bar"} for row in V.bucket(points, "inlet", 1)][-V.MAX_LIST:]
+
+
+def report_pressure_range(src, params):
+    window = _window(params)
+    points = V.pressure_points(src.pressure_range(params["from"], params["to"]))
+    stats = V.series_stats([p["inlet"] for p in points])
+    summary = (f"inlet {stats['min']}–{stats['max']} bar, avg {stats['avg']} · {window}"
+               if stats["count"] else f"no samples · {window}")
+    cache = _pressure_cache(points)
+    return (pressure_sections(points, "", params), summary, cache,
+            {"pressure": cache} if cache else {})
+
+
+def report_performance(src, params):
+    """Composite: valve runtime against the pressure over the same window —
+    the one thing a runtime bar cannot say is whether the line held."""
+    window = _window(params)
+    valves, verr = leg(lambda: V.normalize_dcon_valves(
+        src.valves(params["from"], params["to"])))
+    points, perr = leg(lambda: V.pressure_points(
+        src.pressure_range(params["from"], params["to"])))
+    sections = valve_sections(valves, verr, window) + pressure_sections(points, perr, params)
+    crop = [v for v in (valves or []) if v["type"].lower() in IRRIGATION_TYPES]
+    total = sum(v["minutes"] for v in crop)
+    stats = V.series_stats([p["inlet"] for p in (points or [])])
+    bits = [f"{V.fmt_minutes(total)} of valve time" if total else "",
+            f"inlet avg {stats['avg']} bar" if stats["count"] else "", window]
+    patch = {}
+    if valves is not None:
+        patch["valves"] = valves
+    if points:
+        patch["pressure"] = _pressure_cache(points)
+    return sections, " · ".join(b for b in bits if b), list(valves or []), patch
+
+
+# ---- pressure, last hour ---------------------------------------------------------
+
+def report_pressure_hour(src, params):
+    since = (farm_now() - _dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    points = V.pressure_points(src.pressure_now(since))
+    if not points:
+        return ([section("metrics", "Pressure",
+                         note="no samples in the last hour — the controller only "
+                              "logs pressure while the pump runs")],
+                "pump off — no samples in the last hour", [], {})
+    last = points[-1]
+    stats = V.series_stats([p["inlet"] for p in points])
+    return (pressure_detail(points, 60, False),
+            f"inlet {last['inlet']} bar now, avg {stats['avg']} over the hour",
+            [], {"pressure": _pressure_cache(points)})
+
+
+# ---- power over time ------------------------------------------------------------
+
+def _gap_minutes(a: str, b: str) -> float:
+    x, y = V.parse_stamp(a), V.parse_stamp(b)
+    return (y - x).total_seconds() / 60 if x and y else 0.0
+
+
+def power_sections(rows: list[dict], params: dict) -> tuple[list[dict], str]:
+    window = _window(params)
+    rows = [r for r in rows if "phaseV" in r]
+    if not rows:
+        return [section("metrics", "Power", note=f"no electricity packets in {window}")], \
+            f"no readings · {window}"
+    multi = _days(params) > 1
+    # A packet reading under 90 V on every phase is the supply gone, not a
+    # low supply: the controller keeps reporting on its own battery.
+    cut = lambda r: max(r["phaseV"]) < 90
+    running = lambda r: bool(r.get("currentA")) and max(r["currentA"]) > 0.5
+    flat = [{"at": r["at"], **{f"v{i}": r["phaseV"][i] for i in range(3)},
+             **({f"a{i}": r["currentA"][i] for i in range(3)} if r.get("currentA") else {})}
+            for r in rows]
+    live = [f for f, r in zip(flat, rows) if not cut(r)]
+
+    # Pump and supply time come from the controller's own counters, which
+    # every packet carries and which reset at midnight — not from adding up
+    # gaps between packets, which overcounts across any gap in reporting.
+    # Read this way 2026-09-22 ends at 20h 13m supply, 13h 27m pump: exactly
+    # what the motor log says for that day.
+    run_min = supply_min = 0.0
+    by_day: dict[str, list[dict]] = {}
+    for r in rows:
+        if r.get("pumpMin") is not None:
+            by_day.setdefault(r["at"][:10], []).append(r)
+    for day_rows in by_day.values():
+        first, last = day_rows[0], day_rows[-1]
+        from_midnight = first["at"][11:16] <= "00:10"
+        run_min += last["pumpMin"] - (0 if from_midnight else first["pumpMin"])
+        supply_min += last["supplyMin"] - (0 if from_midnight else first["supplyMin"])
+    cuts, cut_start, longest = 0, None, 0.0
+    for r in rows:
+        if cut(r) and cut_start is None:
+            cut_start, cuts = r["at"], cuts + 1
+        elif not cut(r) and cut_start is not None:
+            longest, cut_start = max(longest, _gap_minutes(cut_start, r["at"])), None
+    if cut_start is not None:
+        longest = max(longest, _gap_minutes(cut_start, rows[-1]["at"]))
+
+    metrics = []
+    if live:
+        avgs = [round(sum(f[f"v{i}"] for f in live) / len(live)) for i in range(3)]
+        metrics.append(metric("Phase voltage", " / ".join(map(str, avgs)), "V",
+                              note=f"average · {imbalance_pct(avgs)}% imbalance"))
+        low = min(({"at": f["at"], "v": f[f"v{i}"], "p": i + 1} for f in live for i in range(3)),
+                  key=lambda x: x["v"])
+        high = max(({"at": f["at"], "v": f[f"v{i}"], "p": i + 1} for f in live for i in range(3)),
+                   key=lambda x: x["v"])
+        metrics.append(metric("Lowest", f"{low['v']:g}", "V",
+                              note=f"phase {low['p']} at {_clock(low['at'], multi)}"))
+        metrics.append(metric("Highest", f"{high['v']:g}", "V",
+                              note=f"phase {high['p']} at {_clock(high['at'], multi)}"))
+    loaded = [r for r in rows if running(r)]
+    if loaded:
+        amps = [sum(r["currentA"]) / 3 for r in loaded]
+        peak = max(loaded, key=lambda r: max(r["currentA"]))
+        metrics.append(metric("Current, pump running", round(sum(amps) / len(amps), 1), "A",
+                              note=f"peak {max(peak['currentA']):g} A at "
+                                   f"{_clock(peak['at'], multi)}"))
+    if by_day:
+        metrics.append(metric("Pump ran", V.fmt_minutes(run_min),
+                              note=f"of {V.fmt_minutes(supply_min)} with power"))
+    metrics.append(metric("Supply cuts", cuts,
+                          note=f"longest {V.fmt_minutes(longest)}" if cuts else "none"))
+    span = max(_gap_minutes(rows[0]["at"], rows[-1]["at"]), 60)
+    minutes = V.bucket_minutes(span)
+    amps = V.bucket_multi(flat, ("a0", "a1", "a2"), minutes)
+    # Every window on the timeline, and a window with only cut packets carries
+    # no voltage keys: the chart breaks the line there instead of joining
+    # across an outage.
+    have = {r["at"]: r for r in V.bucket_multi(live, ("v0", "v1", "v2"), minutes)}
+    volts = [have.get(r["at"], {"at": r["at"]}) for r in amps]
+    for r in amps:
+        r["on"] = 1 if max(r.get("a0", 0), r.get("a1", 0), r.get("a2", 0)) > 0.5 else 0
+    phases = [{"key": f"{k}{i}", "label": f"Phase {i + 1}"} for i in range(3) for k in "v"]
+    sections = [section("metrics", "Power", metrics),
+                section("lines", "Voltage per phase", volts, unit="V", legend=phases,
+                        note="gaps are supply cuts"),
+                section("lines", "Current per phase", amps, unit="A",
+                        legend=[{"key": f"a{i}", "label": f"Phase {i + 1}"} for i in range(3)],
+                        note="shaded where the pump was running")]
+    summary = " · ".join(x for x in (
+        f"pump {V.fmt_minutes(run_min)}" if by_day else "",
+        f"{cuts} supply cut{'s' if cuts != 1 else ''}" if cuts else "no supply cuts",
+        window) if x)
+    return sections, summary
+
+
+def report_power_range(src, params):
+    raw = src.electricity(f"{params['from']} 00:00:00")
+    rows = V.electricity_series(raw, f"{params['from']} 00:00:00", f"{params['to']} 23:59:59")
+    sections, summary = power_sections(rows, params)
+    return sections, summary, [], {}
+
+
+BUILDERS = {
+    "live_readings": report_live_readings,
+    "session_log": report_session_log,
+    "performance": report_performance,
+    "controller": report_controller,
+    "electricity": report_electricity,
+    "pressure": report_pressure,
+    "valves": report_valves,
+    "timer_log": report_timer_log,
+    "motor_log": report_motor_log,
+    "pressure_range": report_pressure_range,
+    "power_range": report_power_range,
+    "pressure_hour": report_pressure_hour,
+}
+
+
+def build(rtype: str, params: dict, src) -> tuple[dict, dict]:
+    """Run one validated request. Returns (report, cache_patch).
+
+    Status is ok, partial when a section errored but something still drew,
+    error when nothing did — three tags on the dashboard, so a half-answer
+    never reads as a whole one."""
+    base = {"type": rtype, "label": REPORT_LABELS[rtype], "params": params,
+            "at": SERVER_TIMESTAMP}
+    try:
+        sections, summary, rows, patch = BUILDERS[rtype](src, params)
+    except Exception as err:          # noqa: BLE001 — a failed pull is a report too
+        return {**base, "status": "error", "summary": "", "sections": [], "rows": [],
+                "error": str(err)[:200] or type(err).__name__}, {}
+    failed = [s for s in sections if s["status"] == "error"]
+    drawn = [s for s in sections if s["status"] != "error" and (s["rows"] or s["note"])]
+    reasons = list(dict.fromkeys(s["error"] for s in failed if s["error"]))
+    status = "error" if failed and not drawn else ("partial" if failed else "ok")
+    report = {**base, "status": status, "summary": V._text(summary),
+              "sections": sections,
+              # rows stays for a dashboard build from before sections existed.
+              "rows": [V.scrub(r) for r in list(rows or [])[:V.MAX_LIST]]}
+    if failed:
+        report["error"] = "; ".join(reasons)[:200]
+    return report, {k: V.scrub(v) for k, v in patch.items()}

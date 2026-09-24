@@ -51,10 +51,19 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(rows.map { $0["name"] }, ["a", "c", "k"])
     }
 
+    func testSectionLegendIsParsed() {
+        let s = Parse.section(["kind": "lines", "unit": "V", "rows": [["at": "t", "v0": 240.5, "on": 1]],
+                               "legend": [["key": "v0", "label": "Phase 1"], ["label": "no key"]]])
+        XCTAssertEqual(s?.legend.map { $0["key"] }, ["v0"], "a legend entry without a key is dropped")
+        XCTAssertEqual(s?.rows.first?["v0"], "240.5")
+        XCTAssertEqual(s?.rows.first?["on"], "1")
+    }
+
     func testBridgeControlAbsentIsNotFalse() {
         let m = Parse.meta(["bridge": ["lastSeen": 1, "heartbeatSeconds": 30]])
         XCTAssertNil(m.bridge?.control)
-        XCTAssertNil(m.bridge?.irrigationEnabled)
+        XCTAssertNil(m.reportsEnabled)
+        XCTAssertEqual(Parse.meta(["reports": ["enabled": false]]).reportsEnabled, false)
     }
 
     /* ---- state ---- */
@@ -88,11 +97,19 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(q.operable, 2)
     }
 
-    func testUnassignedSortsLastAndNaturalOrder() {
-        let all = [ent("sensor", "a", "1", area: nil), ent("sensor", "b", "1", area: "z10"),
-                   ent("sensor", "c", "1", area: "z2")]
+    func testAreasInNaturalOrder() {
+        let all = [ent("sensor", "b", "1", area: "z10"), ent("sensor", "c", "1", area: "z2")]
         let g = Sorting.groupByArea(all) { $0 == "z10" ? "Zone 10" : $0 == "z2" ? "Zone 2" : $0 }
-        XCTAssertEqual(g.map(\.id), ["z2", "z10", Area.unassigned])
+        XCTAssertEqual(g.map(\.id), ["z2", "z10"])
+    }
+
+    func testOnlyEntitiesInARealRoomExist() {
+        let areas = ["z2": Area(id: "z2", name: "Zone 2")]
+        let all = [ent("switch", "a", "on", area: nil), ent("switch", "b", "on", area: "z2"),
+                   ent("switch", "c", "on", area: "deleted_room"),
+                   ent("switch", "d", "on", area: Area.unassigned)]
+        XCTAssertEqual(Sorting.inRooms(all, areas: areas).map(\.objectId), ["b"])
+        XCTAssertTrue(Sorting.inRooms(all, areas: [:]).isEmpty, "no areas loaded, nothing shown")
     }
 
     func testOperableDomainsFirstInAnArea() {
@@ -114,6 +131,10 @@ final class LogicTests: XCTestCase {
         XCTAssertFalse(Gate.evaluate(.control, bridge: off, nowMs: now, skewMs: 0).ok)
         XCTAssertTrue(Gate.evaluate(.irrigation, bridge: off, nowMs: now, skewMs: 0).ok,
                       "control off does not block reports")
+        XCTAssertTrue(Gate.evaluate(.irrigation, bridge: nil, nowMs: now, skewMs: 0).ok,
+                      "reports run in a Cloud Function, not on the NUC")
+        XCTAssertFalse(Gate.evaluate(.irrigation, bridge: live, reportsEnabled: false,
+                                     nowMs: now, skewMs: 0).ok)
 
         var old = live; old.control = nil
         XCTAssertTrue(Gate.evaluate(.control, bridge: old, nowMs: now, skewMs: 0).ok, "absent is not false")
@@ -160,7 +181,7 @@ final class LogicTests: XCTestCase {
         XCTAssertNotNil(IrrigationTypes.validate(type: "valves", from: "2026-07-01", to: "2026-09-01"))
         XCTAssertNil(IrrigationTypes.validate(type: "valves", from: "2026-09-01", to: "2026-09-03"))
         XCTAssertNotNil(IrrigationTypes.validate(type: "operate_pump", from: "", to: ""))
-        XCTAssertEqual(IrrigationTypes.all.count, 10)
+        XCTAssertEqual(IrrigationTypes.all.count, 12)
     }
 
     func testRuntime() {

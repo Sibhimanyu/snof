@@ -14,6 +14,48 @@ firebase deploy --only hosting,database    # both
 Both are fast and safe to repeat. Hosting keeps previous versions, so a bad
 deploy is a rollback in the console, not an outage.
 
+## Report function
+
+Irrigation reports are a Python Cloud Function, `irrigation_report`, in
+`dashboard/functions/`, codebase `reports`, region `asia-southeast1`.
+[irrigation.md](irrigation.md) covers what it does and what it costs.
+
+Once per machine, the CLI needs a venv to read the function definitions:
+
+```bash
+cd dashboard/functions
+python3.11 -m venv venv && ./venv/bin/pip install -r requirements.txt
+python3 tests/test_reports.py            # pure, needs none of that
+```
+
+Once per project, set the two secrets. Paste the values, and never put them
+in a file in the repo:
+
+```bash
+cd dashboard
+firebase functions:secrets:set DCON_TOKEN_ID
+firebase functions:secrets:set DCON_SERIAL
+```
+
+Then deploy:
+
+```bash
+firebase deploy --only functions:reports
+```
+
+The first deploy enables Cloud Functions, Cloud Build, Artifact Registry,
+Eventarc and Secret Manager on the project. That needs Blaze, which
+`snof-live` already has. Verify the function end to end by pressing Generate
+on a live report and reading its log:
+
+```bash
+firebase functions:log --only irrigation_report | tail -20
+```
+
+Look for `Irrigation report <id> (<type>): ok in 1.4s`. To stop all vendor
+calls without a deploy, set `/farms/snof/meta/reports/enabled` to `false`
+with the service account.
+
 ## Verify, do not assume
 
 `index.html` is served `no-cache`, but `styles.css` and `app.js` are cached

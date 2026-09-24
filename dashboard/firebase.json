@@ -2,6 +2,14 @@
   "database": {
     "rules": "database.rules.json"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "reports",
+      "runtime": "python311",
+      "ignore": ["venv", "tests", "__pycache__", ".git", "*.local"]
+    }
+  ],
   "hosting": {
     "public": "public",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],

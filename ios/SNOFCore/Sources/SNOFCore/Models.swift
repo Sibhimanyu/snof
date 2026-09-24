@@ -69,19 +69,16 @@ public struct BridgeMeta: Hashable, Sendable {
     public var heartbeatSeconds: Double?
     /// `allow_control`. nil means a bridge too old to publish it — not the same as off.
     public var control: Bool?
-    /// `irrigation.enabled`, same caveat.
-    public var irrigationEnabled: Bool?
     public var commandsRun: Int?
     public var commandsRefused: Int?
 
     public init(status: String? = nil, lastSeen: Double? = nil, heartbeatSeconds: Double? = nil,
-                control: Bool? = nil, irrigationEnabled: Bool? = nil,
+                control: Bool? = nil,
                 commandsRun: Int? = nil, commandsRefused: Int? = nil) {
         self.status = status
         self.lastSeen = lastSeen
         self.heartbeatSeconds = heartbeatSeconds
         self.control = control
-        self.irrigationEnabled = irrigationEnabled
         self.commandsRun = commandsRun
         self.commandsRefused = commandsRefused
     }
@@ -90,7 +87,12 @@ public struct BridgeMeta: Hashable, Sendable {
 public struct FarmMeta: Hashable, Sendable {
     public var name: String?
     public var bridge: BridgeMeta?
-    public init(name: String? = nil, bridge: BridgeMeta? = nil) { self.name = name; self.bridge = bridge }
+    /// `meta/reports.enabled`: the kill switch the report Cloud Function reads.
+    /// nil (never set) is on; only an explicit false blocks.
+    public var reportsEnabled: Bool?
+    public init(name: String? = nil, bridge: BridgeMeta? = nil, reportsEnabled: Bool? = nil) {
+        self.name = name; self.bridge = bridge; self.reportsEnabled = reportsEnabled
+    }
 }
 
 /* ---- irrigation ---- */
@@ -100,8 +102,9 @@ public struct FarmMeta: Hashable, Sendable {
 public typealias ReportRow = [String: String]
 
 public struct ReportSection: Hashable, Sendable {
-    /// metrics | status | series | bars | timeline | facts. An unknown kind is
-    /// skipped, never guessed at — see docs/irrigation.md.
+    /// metrics | status | series | bars | timeline | facts | lines | stack |
+    /// grid | matrix. An unknown kind is skipped, never guessed at — see
+    /// docs/irrigation.md.
     public var kind: String
     public var title: String
     public var note: String
@@ -110,9 +113,15 @@ public struct ReportSection: Hashable, Sendable {
     public var error: String
     public var unit: String
     public var rows: [ReportRow]
+    /// `[{key, label}]`: which keys of a row to draw, and what to call them —
+    /// the lines of a `lines` chart, the two parts of a `stack`, the columns
+    /// of a `matrix`.
+    public var legend: [ReportRow]
 
     public init(kind: String, title: String = "", note: String = "", source: String = "",
-                status: String = "ok", error: String = "", unit: String = "", rows: [ReportRow] = []) {
+                status: String = "ok", error: String = "", unit: String = "", rows: [ReportRow] = [],
+                legend: [ReportRow] = []) {
+        self.legend = legend
         self.kind = kind
         self.title = title
         self.note = note

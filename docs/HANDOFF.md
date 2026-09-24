@@ -10,6 +10,7 @@ Start here. Everything below links to a document that goes deeper.
 | RTDB rules | **Live**, including the `/commands` write path |
 | Add-on 0.3.0 | **Running** on the NUC, verified by image tag and container contents |
 | Device control | **Deployed but asleep.** Two independent switches still off |
+| Irrigation reports | **Moved off the NUC** on 2026-09-23 into a Cloud Function (`dashboard/functions/`). See [irrigation.md](irrigation.md). Add-on 0.8.0 drops the NUC side. |
 | Git | 5 feature commits + 2 doc commits on `dashboard-design-review`, **not pushed** |
 
 The branch has never been pushed and no PR exists. `origin/main` was merged in
@@ -55,9 +56,11 @@ has been reliably producing in exactly this layer.
   `snof-bridge-deploy@Sibhimanyus-MacBook-Pro-2` and
   `snof-bridge-deploy-20260922` added for this machine. Remove whichever is not
   wanted; do not remove both.
-- **Most entities have no area.** 1366 registry entities, 19 with an area, so
-  ~85% of the dashboard groups under "Unassigned". That is a Home Assistant
-  hygiene task and it flows through to the dashboard automatically.
+- **Most entities have no area, and are therefore invisible.** Since add-on
+  0.9.0 an entity with no room is not published, not shown, and not operable
+  (bridge, rules, web and iOS all enforce it). With 19 of 1366 registry
+  entities in an area, the app shows only a small fraction of the farm until
+  rooms are assigned in Home Assistant. Assigning one flows through live.
 - **373 of 698 published entities are unavailable.** The dashboard now groups
   these by domain rather than listing them, but the underlying integrations are
   presumably genuinely broken and worth a look.
@@ -72,3 +75,4 @@ has been reliably producing in exactly this layer.
 | [dashboard.md](dashboard.md) | Front-end architecture, design system, bugs that must not return |
 | [firebase-deploy.md](firebase-deploy.md) | Hosting, rules, and the two-tier allowlist |
 | [testing-and-preview.md](testing-and-preview.md) | Every suite, and the fixture that matters |
+| [irrigation.md](irrigation.md) | The report function, every DCON endpoint, and the real response shapes |

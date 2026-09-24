@@ -3,9 +3,9 @@ import Charts
 import SNOFCore
 
 /* Nothing here is polled. Each report answers a press of Generate: the app
- * appends a request to /farms/<farm>/irrigation_requests, the bridge on the
- * NUC makes the controller call with its own credentials, and writes the
- * sanitized result to irrigation_reports. This screen never sees a vendor
+ * appends a request to /farms/<farm>/irrigation_requests, a Cloud Function
+ * (dashboard/functions) makes the controller calls with credentials held in
+ * Secret Manager, and writes the finished report to irrigation_reports. This screen never sees a vendor
  * credential and cannot operate a pump or a valve. */
 struct IrrigationView: View {
     @Environment(FarmStore.self) private var store
@@ -153,7 +153,8 @@ struct ReportCard: View {
 /// Draws by kind, never by sniffing shapes. An unknown kind is skipped, so the
 /// bridge can add one without breaking an old build of this app.
 struct ReportSectionView: View {
-    static let kinds: Set<String> = ["metrics", "status", "series", "bars", "timeline", "facts"]
+    static let kinds: Set<String> = ["metrics", "status", "series", "bars", "timeline", "facts",
+                                     "lines", "stack", "grid", "matrix"]
     static let rowCap = 8
 
     let section: ReportSection
@@ -194,6 +195,10 @@ struct ReportSectionView: View {
         case "timeline":
             Timeline(rows: Array(rows.prefix(Self.rowCap)))
             more(rows.count, "entries")
+        case "lines": Lines(section: section)
+        case "stack": Stack(section: section)
+        case "grid": ValveGrid(rows: rows)
+        case "matrix": Matrix(section: section)
         default: EmptyView()
         }
     }
@@ -406,6 +411,193 @@ private struct Timeline: View {
         guard at.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) != nil else { return ("", at) }
         let t = at.dropFirst(11).prefix(5)
         return (String(at.prefix(10)), String(t))
+    }
+}
+
+/* ---- multi-value kinds ----
+ * Same contract as the web: flat rows, and the section's legend names the
+ * keys. A key missing from a row is a gap (a supply cut), so each line is
+ * drawn as separate runs rather than joined across it. Lines are told apart
+ * by weight and dash, not hue: the brand green first, then the page's greys. */
+
+private let lineStyles: [(Color, StrokeStyle)] = [
+    (Theme.brand, StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)),
+    (Theme.text.opacity(0.62), StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)),
+    (Theme.muted, StrokeStyle(lineWidth: 1.8, lineCap: .round, dash: [5, 4])),
+    (Theme.muted.opacity(0.7), StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [2, 3])),
+]
+
+private struct Legend: View {
+    let items: [(String, Int)]
+    var trailing: String = ""
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(items, id: \.1) { label, i in
+                HStack(spacing: 6) {
+                    Path { p in p.move(to: .init(x: 0, y: 1)); p.addLine(to: .init(x: 16, y: 1)) }
+                        .stroke(lineStyles[i % lineStyles.count].0, style: lineStyles[i % lineStyles.count].1)
+                        .frame(width: 16, height: 2)
+                    Text(label)
+                }
+            }
+            if !trailing.isEmpty { Text(trailing).foregroundStyle(Theme.muted.opacity(0.8)) }
+        }
+        .font(.caption).foregroundStyle(Theme.muted)
+    }
+}
+
+private struct Lines: View {
+    let section: ReportSection
+
+    private struct Pt: Identifiable { let id: String; let i: Int; let v: Double; let run: String; let k: Int }
+
+    var body: some View {
+        let legend = Array(section.legend.prefix(4))
+        let rows = section.rows
+        let pts: [Pt] = legend.enumerated().flatMap { k, l -> [Pt] in
+            var run = 0, open = false, out: [Pt] = []
+            for (i, r) in rows.enumerated() {
+                guard let v = Double(r[l["key"] ?? ""] ?? "") else { if open { run += 1 }; open = false; continue }
+                open = true
+                out.append(Pt(id: "\(k)-\(i)", i: i, v: v, run: "\(k)-\(run)", k: k))
+            }
+            return out
+        }
+        let on = rows.enumerated().filter { $0.element["on"] == "1" }.map(\.offset)
+        if rows.count >= 2, let lo = pts.map(\.v).min(), let hi = pts.map(\.v).max() {
+            let pad = max((hi - lo) * 0.08, 0.5)
+            VStack(alignment: .leading, spacing: 6) {
+                Chart {
+                    ForEach(on, id: \.self) { i in
+                        RectangleMark(xStart: .value("t", Double(i) - 0.5), xEnd: .value("t", Double(i) + 0.5))
+                            .foregroundStyle(Theme.brand.opacity(0.14))
+                    }
+                    ForEach(pts) { p in
+                        LineMark(x: .value("t", Double(p.i)), y: .value("v", p.v), series: .value("run", p.run))
+                            .foregroundStyle(lineStyles[p.k % lineStyles.count].0)
+                            .lineStyle(lineStyles[p.k % lineStyles.count].1)
+                    }
+                }
+                .chartXScale(domain: -0.5...(Double(rows.count) - 0.5))
+                .chartYScale(domain: max(0, lo - pad)...(hi + pad))
+                .chartXAxis {
+                    AxisMarks(values: [0, Double(rows.count / 2), Double(rows.count - 1)]) { v in
+                        AxisValueLabel {
+                            if let d = v.as(Double.self) { Text(clock(rows[min(rows.count - 1, max(0, Int(d)))]["at"] ?? "", rows)) }
+                        }
+                    }
+                }
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+                .frame(height: 150)
+                .accessibilityLabel("\(section.title), \(legend.count) lines over \(rows.count) windows")
+                Legend(items: legend.enumerated().map { ($0.element["label"] ?? "", $0.offset) },
+                       trailing: section.unit.isEmpty ? "" : "in \(section.unit)")
+            }
+        }
+    }
+
+    private func clock(_ at: String, _ rows: [ReportRow]) -> String {
+        let oneDay = (rows.first?["at"] ?? "").prefix(10) == (rows.last?["at"] ?? "").prefix(10)
+        return String(at.dropFirst(oneDay ? 11 : 5).prefix(oneDay ? 5 : 11))
+    }
+}
+
+/// The whole is power available that day; the part inside it is the pump's share.
+private struct Stack: View {
+    let section: ReportSection
+    private struct Day: Identifiable { let id: String; let whole: Double; let part: Double }
+
+    var body: some View {
+        if section.legend.count >= 2, let wk = section.legend[0]["key"], let pk = section.legend[1]["key"] {
+            let days = section.rows.map {
+                Day(id: $0["at"] ?? "", whole: Double($0[wk] ?? "") ?? 0, part: Double($0[pk] ?? "") ?? 0)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Chart(days) { d in
+                    BarMark(x: .value("Day", String(d.id.suffix(2))), yStart: .value("h", 0), yEnd: .value("h", d.whole))
+                        .foregroundStyle(Theme.track)
+                    BarMark(x: .value("Day", String(d.id.suffix(2))), yStart: .value("h", 0), yEnd: .value("h", min(d.part, d.whole)))
+                        .foregroundStyle(Theme.brand)
+                }
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+                .frame(height: 130)
+                HStack(spacing: 14) {
+                    swatch(Theme.track, section.legend[0]["label"] ?? "")
+                    swatch(Theme.brand, section.legend[1]["label"] ?? "")
+                    if !section.unit.isEmpty { Text("in \(section.unit)").foregroundStyle(Theme.muted.opacity(0.8)) }
+                }
+                .font(.caption).foregroundStyle(Theme.muted)
+            }
+        }
+    }
+
+    private func swatch(_ c: Color, _ label: String) -> some View {
+        HStack(spacing: 6) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 10, height: 10); Text(label) }
+    }
+}
+
+/// Every valve at a glance; one that got nothing stays in, dimmed, reading "none".
+private struct ValveGrid: View {
+    let rows: [ReportRow]
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 7)], spacing: 7) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                let m = Int(Double(r["value"] ?? "") ?? 0)
+                HStack(spacing: 8) {
+                    ValveGlyph(art: ValveArt.key(name: r["name"], type: r["type"], status: m > 0 ? "on" : "off"), size: 24)
+                        .opacity(m > 0 ? 1 : 0.45).saturation(m > 0 ? 1 : 0)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(r["name"] ?? "Valve").font(.caption).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(m > 0 ? Format.minutes(m) : "none")
+                            .font(.subheadline.weight(m > 0 ? .bold : .semibold).monospacedDigit())
+                            .foregroundStyle(m > 0 ? Theme.on : Theme.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(m > 0 ? Theme.panel2 : Color.clear, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous)
+                    .strokeBorder(m > 0 ? Color.clear : Theme.line2, lineWidth: 1))
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+}
+
+/// Valve × day. Heat is the brand green at an opacity proportional to minutes.
+private struct Matrix: View {
+    let section: ReportSection
+    var body: some View {
+        let cols = section.legend
+        let top = max(1, section.rows.flatMap { r in cols.map { Int(Double(r[$0["key"] ?? ""] ?? "") ?? 0) } }.max() ?? 1)
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                GridRow {
+                    Text("Valve").frame(width: 92, alignment: .leading)
+                    ForEach(Array(cols.enumerated()), id: \.offset) { _, c in Text(c["label"] ?? "").frame(width: 52) }
+                    Text("Total").frame(width: 60)
+                }
+                .font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted).padding(.vertical, 5)
+                ForEach(Array(section.rows.enumerated()), id: \.offset) { _, r in
+                    Divider().overlay(Theme.line)
+                    GridRow {
+                        Text(r["name"] ?? "").font(.caption).foregroundStyle(Theme.text).lineLimit(1)
+                            .frame(width: 92, alignment: .leading)
+                        ForEach(Array(cols.enumerated()), id: \.offset) { _, c in
+                            let m = Int(Double(r[c["key"] ?? ""] ?? "") ?? 0)
+                            Text(m > 0 ? Format.minutes(m) : "–")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(m > 0 ? Theme.text : Theme.muted)
+                                .frame(width: 52, height: 26)
+                                .background(Theme.brand.opacity(m > 0 ? 0.10 + 0.55 * Double(m) / Double(top) : 0))
+                        }
+                        Text(Format.minutes(Int(Double(r["total"] ?? "") ?? 0)))
+                            .font(.caption2.weight(.bold).monospacedDigit()).foregroundStyle(Theme.text).frame(width: 60)
+                    }
+                }
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line, lineWidth: 1))
     }
 }
 

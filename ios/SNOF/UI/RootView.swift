@@ -108,7 +108,9 @@ struct AccountSheet: View {
                 Section("Bridge") {
                     LabeledContent("Status", value: store.bridgeStatus.label)
                     LabeledContent("Device control", value: store.meta.bridge?.control == false ? "Switched off" : store.meta.bridge?.control == true ? "On" : "Unknown")
-                    LabeledContent("Irrigation reports", value: store.meta.bridge?.irrigationEnabled == false ? "Switched off" : store.meta.bridge?.irrigationEnabled == true ? "On" : "Unknown")
+                }
+                Section("Reports") {
+                    LabeledContent("Irrigation reports", value: store.meta.reportsEnabled == false ? "Switched off" : "On")
                 }
                 Section("Appearance") {
                     Picker("Theme", selection: $appearance) {

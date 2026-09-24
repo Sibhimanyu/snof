@@ -20,7 +20,6 @@ from aiohttp import web
 from . import config
 from .commands import CommandConsumer
 from .ha_client import REGISTRY_EVENTS, HAClient
-from .irrigation import IrrigationRunner
 from .mapper import StateMapper
 from .registry import Registry
 from .rtdb import RTDBWriter
@@ -41,8 +40,10 @@ class Bridge:
         self.ha: HAClient | None = None
         # `lambda` rather than passing self.ha: the client is replaced on every
         # reconnect, and the consumer must always get the live one.
-        self.commands = CommandConsumer(cfg, self.rtdb, lambda: self.ha if self.connected else None, session)
-        self.irrigation = IrrigationRunner(cfg, self.rtdb, session)
+        # `is_visible` is the mapper's own publish check, so a command can only
+        # ever reach an entity a user could have seen: one in a room.
+        self.commands = CommandConsumer(cfg, self.rtdb, lambda: self.ha if self.connected else None, session,
+                                        is_visible=self.mapper.should_publish)
         self.connected = False
         # entity_id -> digest of the last node we published, so an event that
         # changes nothing visible costs no write at all.
@@ -70,6 +71,14 @@ class Bridge:
         self._fingerprints[entity_id] = digest
         self.rtdb.queue(entity_id, f"{self.cfg.root}/entities/{domain}/{object_id}", node)
         return True
+
+    def _unpublish(self, entity_id: str) -> None:
+        """Remove an entity from the mirror: deleted in HA, or no longer in a room."""
+        if "." not in entity_id:
+            return
+        domain, object_id = entity_id.split(".", 1)
+        self.rtdb.queue(entity_id, f"{self.cfg.root}/entities/{domain}/{object_id}", None)
+        self._fingerprints.pop(entity_id, None)
 
     def _build_tree(self, states: list[dict]) -> dict[str, dict]:
         tree: dict[str, dict] = {}
@@ -107,6 +116,12 @@ class Bridge:
         an event that changes nothing costs zero writes."""
         tree = self._build_tree(states)
         changed = 0
+        # An entity taken out of its room (or deleted) must vanish, not linger
+        # with a stale area: anything published before and absent now goes.
+        live = {n["entity_id"] for objs in tree.values() for n in objs.values()}
+        for entity_id in [e for e in self._fingerprints if e not in live]:
+            self._unpublish(entity_id)
+            changed += 1
         for domain, objs in tree.items():
             for object_id, node in objs.items():
                 if self._queue_if_changed(domain, object_id, node):
@@ -138,17 +153,15 @@ class Bridge:
     def on_state_changed(self, data: dict) -> None:
         new_state = data.get("new_state")
         entity_id = data.get("entity_id", "")
-        root = self.cfg.root
 
         if new_state is None:
             # Entity was removed from HA; drop it from the mirror too.
-            if "." in entity_id:
-                domain, object_id = entity_id.split(".", 1)
-                self.rtdb.queue(entity_id, f"{root}/entities/{domain}/{object_id}", None)
-                self._fingerprints.pop(entity_id, None)
+            self._unpublish(entity_id)
             return
 
         if not self.mapper.should_publish(entity_id):
+            if entity_id in self._fingerprints:
+                self._unpublish(entity_id)
             return
         domain, object_id, node = self.mapper.to_node(new_state)
         # Home Assistant fires state_changed for attribute-only updates too, so
@@ -187,7 +200,10 @@ class Bridge:
                     "control": self.cfg.allow_control,
                     "commandsRun": self.commands.executed,
                     "commandsRefused": self.commands.refused,
-                    "irrigation": self.irrigation.status(),
+                    # Irrigation reports moved to a Cloud Function in 0.8.0
+                    # (dashboard/functions). null clears the old status so
+                    # nothing reads a stale "enabled" off this heartbeat.
+                    "irrigation": None,
                 })
             except Exception:
                 _LOGGER.exception("Heartbeat write failed")
@@ -301,7 +317,6 @@ async def amain() -> None:
             asyncio.create_task(bridge._heartbeat_loop(), name="heartbeat"),
             asyncio.create_task(bridge._registry_loop(), name="registry"),
             asyncio.create_task(bridge.commands.run(), name="commands"),
-            asyncio.create_task(bridge.irrigation.run(), name="irrigation"),
         ]
 
         stop = asyncio.Event()

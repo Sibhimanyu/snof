@@ -37,6 +37,9 @@ Each is independently sufficient to stop a bad command. Keep it that way.
   nor postdated to fire later
 - `data` accepts only `brightness` (0–255) and `percentage` (0–100); `$other`
   is rejected outright
+- the target must exist at `farms/<slug>/entities/<domain>/<object_id>` — and
+  the bridge publishes only entities that are in a room, so a command for an
+  unassigned, excluded or invented entity id is refused before it is queued
 
 Note: `database.rules.json` accepts `//` line comments but **not** `"//"` keys —
 a `"//": "..."` entry fails deploy with `Expected '{'`.
@@ -50,6 +53,8 @@ Re-checks all of the above against `ALLOWED_SERVICES`, plus:
 - drops anything more than 60 s in the future (clock skew, not instruction)
 - rejects `True` where a number is expected — `bool` is an `int` subclass in
   Python and would otherwise pass a range check
+- refuses any entity that is not in a room (`is_visible`, which is the
+  mapper's own `should_publish`), so what cannot be seen cannot be switched
 - deletes every node whether it ran or was refused, so a bad command cannot loop
 - `_seen` is bounded; it only needs to cover one stream's lifetime
 

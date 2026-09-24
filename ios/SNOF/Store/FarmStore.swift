@@ -47,7 +47,10 @@ final class FarmStore {
 
     private(set) var meta = FarmMeta()
     private(set) var areas: [String: Area] = [:]
+    /// Entities in a room — the only ones the app knows about. See `Sorting.inRooms`.
     private(set) var entities: [Entity] = []
+    /// Everything the entities node carried, before the room filter.
+    private var received: [Entity] = []
     private(set) var index: [String: Entity] = [:]
     private(set) var irrigation = IrrigationCache()
     private(set) var reports: [Report] = []
@@ -154,7 +157,7 @@ final class FarmStore {
         reportTasks.values.forEach { $0.cancel() }
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []
-        meta = FarmMeta(); areas = [:]; entities = []; index = [:]
+        meta = FarmMeta(); areas = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         firstSnapshot = false; canControl = false; isAdmin = false
         deviceStatus = .all; deviceDomain = nil
@@ -163,11 +166,12 @@ final class FarmStore {
     private func receive(_ event: FarmEvent) {
         switch event {
         case .meta(let v): meta = Parse.meta(v)
-        case .areas(let v): areas = Parse.areas(v)
+        case .areas(let v):
+            areas = Parse.areas(v)
+            applyRooms()
         case .entities(let v):
-            let list = Parse.entities(v).sorted(by: Sorting.byName)
-            entities = list
-            index = Dictionary(list.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+            received = Parse.entities(v).sorted(by: Sorting.byName)
+            applyRooms()
             firstSnapshot = true
             reconcilePending()
         case .irrigation(let v): irrigation = Parse.irrigation(v)
@@ -196,11 +200,18 @@ final class FarmStore {
 
     func gate(_ c: Capability) -> Gate {
         // Evaluated against the real clock, not the 5 s tick, at press time.
-        Gate.evaluate(c, bridge: meta.bridge, nowMs: Date().timeIntervalSince1970 * 1000, skewMs: skewMs)
+        Gate.evaluate(c, bridge: meta.bridge, reportsEnabled: meta.reportsEnabled, nowMs: Date().timeIntervalSince1970 * 1000, skewMs: skewMs)
+    }
+
+    /// Areas and entities arrive on separate listeners, so either can change
+    /// which entities are in a real room.
+    private func applyRooms() {
+        entities = Sorting.inRooms(received, areas: areas)
+        index = Dictionary(entities.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
     func areaName(_ id: String) -> String {
-        id == Area.unassigned ? "Unassigned" : areas[id]?.name ?? id
+        areas[id]?.name ?? id
     }
 
     var groupedAreas: [(id: String, entities: [Entity])] {

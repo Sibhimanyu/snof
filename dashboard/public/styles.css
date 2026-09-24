@@ -470,6 +470,75 @@ input[type=range][disabled]{opacity:.4}
 .tl-art{width:20px;height:20px;object-fit:contain;flex:none}
 .bar-value{flex:none;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
 
+/* Multi-series line chart (voltage per phase, inlet vs outlet). Series are
+   told apart by weight and dash, not by hue: the accent for the first, the
+   page's text and muted greys for the rest. Shaded windows mark where the
+   pump was running. */
+.chart{position:relative;margin-top:2px}
+.chart-plot{position:relative;padding-bottom:18px}
+.chart-svg{width:100%;height:150px;display:block;overflow:visible}
+.ln-ax{position:absolute;font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums;
+  line-height:1;white-space:nowrap;pointer-events:none}
+.ln-ay{left:0;width:30px;text-align:right;transform:translateY(-50%)}
+.ln-xs{position:absolute;left:0;right:0;bottom:0;height:14px}
+.ln-ax-s{transform:none}.ln-ax-m{transform:translateX(-50%)}.ln-ax-e{transform:translateX(-100%)}
+.ln{fill:none;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round;
+  vector-effect:non-scaling-stroke}
+.ln-0{stroke:var(--brand);stroke-width:2.2}
+.ln-1{stroke:var(--text);opacity:.62}
+.ln-2{stroke:var(--muted);stroke-dasharray:5 4}
+.ln-3{stroke:var(--faint);stroke-dasharray:2 3}
+.ln-grid{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+.ln-on{fill:var(--accent-soft)}
+.ln-hit{fill:transparent}
+.ln-hit:hover{fill:var(--off-soft)}
+.chart-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:11.5px;color:var(--muted)}
+.lg{display:inline-flex;align-items:center;gap:6px}
+.lg i{display:inline-block;width:16px;height:0;border-top:2px solid var(--muted)}
+.lg i.ln-0{border-top:2.5px solid var(--brand)}
+.lg i.ln-1{border-top-color:var(--text);opacity:.62}
+.lg i.ln-2{border-top:2px dashed var(--muted)}
+.lg i.ln-3{border-top:2px dotted var(--faint)}
+.lg-note{color:var(--faint)}
+
+/* Stacked day bars: the whole is power available, the part inside it is
+   the pump's share of that. */
+.stk{display:flex;align-items:flex-end;gap:3px;height:120px;padding-bottom:16px;position:relative}
+.stk-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;
+  align-items:stretch;position:relative}
+.stk-whole{display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px 4px 2px 2px;
+  background:var(--track);overflow:hidden;min-height:2px}
+.stk-part{display:block;background:var(--brand);border-radius:3px 3px 0 0}
+.stk-at{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-size:10px;
+  color:var(--faint);font-variant-numeric:tabular-nums}
+.lg i.stk-k-whole{width:10px;height:10px;border:0;border-radius:2px;background:var(--track)}
+.lg i.stk-k-part{width:10px;height:10px;border:0;border-radius:2px;background:var(--brand)}
+
+/* Every valve at a glance. One that got nothing stays in the grid, dimmed
+   with the word "none": an idle valve is the thing to notice, not hide. */
+.vgrid{display:grid;gap:7px;grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+.vg{display:grid;grid-template-columns:24px 1fr;grid-template-rows:auto auto;column-gap:8px;
+  align-items:center;padding:8px 10px;border-radius:10px;background:var(--off-soft)}
+.vg-art{grid-row:1 / 3;width:24px;height:24px;object-fit:contain}
+.vg-name{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vg-val{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+.vg-idle{background:transparent;box-shadow:inset 0 0 0 1px var(--line-2)}
+.vg-idle .vg-val{color:var(--faint);font-weight:600}
+.vg-idle .vg-art{opacity:.45;filter:grayscale(1)}
+
+/* Valve × day. Heat is the accent at an opacity proportional to minutes. */
+.mx-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;
+  box-shadow:inset 0 0 0 1px var(--line)}
+.mx{border-collapse:collapse;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums}
+.mx th,.mx td{padding:5px 7px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line)}
+.mx tr:last-child th,.mx tr:last-child td{border-bottom:0}
+.mx th{font-weight:600;color:var(--muted);font-size:10.5px}
+.mx .mx-name{position:sticky;left:0;text-align:left;background:var(--panel);color:var(--text);
+  font-weight:550;font-size:11.5px;z-index:1}
+.mx td{color:var(--text);background:rgb(1 136 67 / var(--heat,0))}
+.mx td.mx-zero{color:var(--faint)}
+.mx .mx-total{font-weight:700;color:var(--text);background:var(--panel)}
+
 /* ---------- report sections ----------
    One block per vendor call, drawn by the kind the bridge declared: tiles for
    headline numbers, a key/value grid for a controller, a day-grouped timeline
@@ -483,7 +552,7 @@ input[type=range][disabled]{opacity:.4}
   text-transform:none}
 .rep-note{margin:7px 0 0;font-size:12.5px;color:var(--faint)}
 .rep-note.rep-err{color:var(--bad)}
-.rep-sec .list,.rep-sec .bars,.rep-sec .spark{margin-top:0}
+.rep-sec .list,.rep-sec .bars,.rep-sec .spark,.rep-sec .chart{margin-top:0}
 
 /* auto-fill, not auto-fit: a section with one reading gets a tile the size of
    every other tile, instead of one stretched across the card. */

@@ -37,6 +37,12 @@ Architecture and data shape are in README.md.
     3. `allow_control` in the add-on options, **off by default**.
   `cover`, `lock` and `alarm_control_panel` are deliberately excluded at every
   layer. Adding one is a security decision, not a config tweak.
+- **Unassigned entities do not exist to users** (add-on 0.9.0). An entity with
+  no room in HA is never published (`mapper.should_publish` →
+  `registry.is_assigned`), `unassigned` is never written to `areas`, the RTDB
+  rules refuse a command whose target is not under `entities/`, the bridge
+  refuses it again (`is_visible`), and web/iOS drop any entity whose area is
+  not a current room. Don't reintroduce an "Unassigned" group anywhere.
 - Attribute export and control are both **allow-lists**. Never invert either.
 - Attribute export is an **allow-list** (`mapper.py::ALLOWED_ATTRS`). Add fields
   there deliberately; never switch it to a deny-list.
@@ -114,7 +120,8 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   registry events. The resync path is verified present in the container but had
   not yet fired in production as of 2026-09-21.
 - Most entities are `unassigned` because only ~19 of ~1366 registry entities
-  have an area in HA. Fixing that is an HA-side task; it flows through live.
+  have an area in HA, so from 0.9.0 they are hidden from the app entirely.
+  Fixing that is an HA-side task; it flows through live.
 - The SSH add-on config had a plaintext `password:`; the owner was advised to
   clear it now that key auth works. Confirm before assuming it was done.
 - Add-on **0.6.0 is deployed and running** on the NUC as of 2026-09-23,
@@ -138,12 +145,17 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   OpenWeather were removed at the owner's request — parsers, add-on options,
   report types and RTDB allow-list entries all deleted, not left dormant. Ten
   report types remain, three of them combining two controller calls.
-- Reports are **armed and proven against the real controller** (add-on 0.7.4):
-  `irrigation_enabled: true`, `dcon_token_id` and `dcon_serial` set through the
-  Supervisor API. Verified live: controller (SibhiSump, 16 valves), power and
-  pressure now, valve runtime against pressure (23h 4m over 11 valves,
-  1.0–2.9 bar), session log (32 entries). The DCON token is a credential and
-  lives only in the add-on options.
+- **Reports moved off the NUC on 2026-09-23** into a Python Cloud Function,
+  `irrigation_report` in `dashboard/functions/` (codebase `reports`,
+  asia-southeast1). It is triggered by a create on `irrigation_requests`, and
+  the DCON token and serial are Secret Manager secrets `DCON_TOKEN_ID` /
+  `DCON_SERIAL`. Add-on 0.8.0 removes `irrigation.py`, `vendors.py` and every
+  `irrigation_enabled`/`dcon_*` option. Its heartbeat nulls
+  `meta/bridge.irrigation`. **Deploy order matters:** the running 0.7.4 still
+  consumes the queue, so update the add-on to 0.8.0 before (or together
+  with) the first function deploy, or each press runs twice. Kill switch:
+  `meta/reports/enabled: false`, service account only. Tests:
+  `cd dashboard/functions && python3 tests/test_reports.py`.
 - **The first live pull leaked.** `normalize_dcon_dashboard()` used to mirror a
   scrubbed dump of the whole node; the DCON dashboard payload carries the
   farm's phone book and the modem IMEI, and eleven numbers reached Firebase
@@ -151,9 +163,14 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   five-field allow-list, and `scrub()` redacts any run of ten or more digits
   anywhere in a string. Never widen a vendor parser to "everything else".
 - Every parser was rewritten against real payloads on 2026-09-23 — all of them
-  were wrong when written blind. `docs/irrigation.md` has the actual shapes.
-  A snapshot query needs a `dt` in the past: the controller returns samples at
-  or after it and stores one every ~11 seconds.
+  were wrong when written blind. `docs/irrigation.md` has the actual shapes
+  and the full endpoint survey. The ones that bite: a timer_log `run_time` is
+  *remaining*-planned, and one run is logged in pieces around a backwash every
+  ~15 min (`join_runs()`). motor_log `ph3_runtime` is HH.MM supply-pump. The
+  energy meter reset on 2026-09-10. Pressure is only sampled while the pump
+  runs. Snapshot stamps must be farm time (+05:30), not the function's UTC.
+  Aggregate over the whole response and cap only what is drawn — the old
+  parsers capped at 32 rows first.
 - Control is **armed** as of 2026-09-23: `allow_control: true`, the log says
   `Watching command queue for domains: fan, input_boolean, light, switch` and
   `Command queue stream open`, and `meta/bridge.control` is true. Set through
@@ -162,13 +179,13 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   `commandsRun` was still 0 at the moment of arming, so the first real press is
   the first time this code has moved physical hardware. To disarm: set
   `allow_control` false the same way and restart.
-- The dashboard reads `meta/bridge.control` and `meta/bridge.irrigation.enabled`
-  (one helper, `bridgeGate()` in `app.js`). A capability switched off on the
-  bridge now renders its controls disabled with the reason, instead of
-  accepting a press and blaming the farm twelve seconds later. Both consumers
-  also drain their queue at startup when they are off — `/commands` and
-  `irrigation_requests` are client-writable and only their consumer deletes
-  from them.
+- The dashboard reads `meta/bridge.control` (`bridgeGate()` in `app.js`) and
+  `meta/reports.enabled` (`reportsGate()`). A capability that is switched off
+  renders its controls disabled with the reason, instead of accepting a press
+  and blaming the farm twelve seconds later. Reports no longer need a live
+  bridge. The iOS app mirrors both in `Gate.evaluate`. The bridge still
+  drains `/commands` at startup when control is off. The function deletes
+  every `irrigation_requests` node it is handed.
 - The SSH add-on had a plaintext `password:` in its options; it was still there
   on 2026-09-22 and should be removed and rotated now that key auth is proven.
 - **iOS app released** on 2026-09-23: `0.1.2 (202609231646)` (first: 0.1.0) at

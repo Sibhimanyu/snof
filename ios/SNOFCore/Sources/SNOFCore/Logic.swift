@@ -91,14 +91,18 @@ public enum Sorting {
 
     public static func byName(_ a: Entity, _ b: Entity) -> Bool { natural(a.name, b.name) }
 
-    /// Areas by name, Unassigned always last.
+    /// Only entities in a real room exist in the app. The bridge already
+    /// refuses to publish anything without an area; this is the second net, so
+    /// a stale node or one whose room was just deleted never surfaces as an
+    /// "Unassigned" pile or becomes pressable.
+    public static func inRooms(_ ents: [Entity], areas: [String: Area]) -> [Entity] {
+        ents.filter { $0.area != Area.unassigned && areas[$0.area] != nil }
+    }
+
+    /// Areas by name.
     public static func groupByArea(_ ents: [Entity], name: (String) -> String) -> [(id: String, entities: [Entity])] {
         let grouped = Dictionary(grouping: ents, by: \.area)
-        return grouped.map { (id: $0.key, entities: $0.value) }.sorted { a, b in
-            if a.id == Area.unassigned { return false }
-            if b.id == Area.unassigned { return true }
-            return natural(name(a.id), name(b.id))
-        }
+        return grouped.map { (id: $0.key, entities: $0.value) }.sorted { natural(name($0.id), name($1.id)) }
     }
 
     /// Operable domains first: the reason to open a room is usually to do something.
@@ -178,14 +182,23 @@ public struct Gate: Equatable, Sendable {
 }
 
 extension Gate {
-    /* Will anything on the NUC act on this? Mirrors bridgeGate() in app.js.
+    /* Will anything act on this? Mirrors bridgeGate() and reportsGate() in
+     * app.js. Device control goes through the NUC, so it needs a live bridge.
+     * Irrigation reports run in a Cloud Function and do not: the only thing
+     * that blocks them is the meta/reports.enabled kill switch.
      * A switched-off capability must read as switched off, not as broken
      * hardware: before the web version checked this, a toggle flipped, wrote a
      * command nothing was watching, and snapped back twelve seconds later.
      * A bridge too old to publish a field leaves it nil; only an explicit
      * false blocks. */
     public static func evaluate(_ capability: Capability, bridge hb: BridgeMeta?,
+                                reportsEnabled: Bool? = nil,
                                 nowMs: Double, skewMs: Double) -> Gate {
+        if capability == .irrigation {
+            return reportsEnabled == false
+                ? Gate(ok: false, why: "Irrigation reports are switched off for now.")
+                : .open
+        }
         guard let hb, let last = hb.lastSeen else {
             return Gate(ok: false, why: "The bridge has not reported in yet, so nothing would act on that.")
         }
@@ -196,8 +209,6 @@ extension Gate {
         switch capability {
         case .control where hb.control == false:
             return Gate(ok: false, why: "Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.")
-        case .irrigation where hb.irrigationEnabled == false:
-            return Gate(ok: false, why: "Irrigation reports are switched off on the bridge. Turn on irrigation_enabled in the add-on options before running one.")
         default:
             return .open
         }
@@ -275,6 +286,8 @@ public enum IrrigationTypes {
         .init(type: "timer_log", label: "Timer log", needsRange: true, combined: false),
         .init(type: "motor_log", label: "Motor log", needsRange: true, combined: false),
         .init(type: "pressure_range", label: "Pressure range", needsRange: true, combined: false),
+        .init(type: "pressure_hour", label: "Pressure, last hour", needsRange: false, combined: false),
+        .init(type: "power_range", label: "Power over time", needsRange: true, combined: false),
     ]
 
     public static func find(_ type: String) -> IrrigationType? { all.first { $0.type == type } }

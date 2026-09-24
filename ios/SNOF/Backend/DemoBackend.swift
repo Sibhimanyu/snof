@@ -11,7 +11,7 @@ import SNOFCore
  *   -demo-real        698 entities, 373 unavailable, real HA naming
  *   -demo-viewer      viewer, not controller
  *   -demo-controloff  bridge publishes control: false
- *   -demo-reportsoff  bridge publishes irrigation.enabled: false
+ *   -demo-reportsoff  meta/reports.enabled: false (the report kill switch)
  *   -demo-stale       bridge heartbeat 400 s old
  *   -demo-signedout   start on the sign-in screen
  *   -demo-denied      signed in, but not on the allowlist
@@ -47,6 +47,16 @@ final class DemoBackend: FarmBackend {
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
         tree = root
+        #if DEBUG
+        // Review hook: SNOF_DEMO_REPORTS=<json> swaps in report cards the Cloud
+        // Function built from real controller payloads (dashboard/preview's
+        // reports-real.json). Debug builds only; the file is never bundled.
+        if let path = ProcessInfo.processInfo.environment["SNOF_DEMO_REPORTS"],
+           let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let reports = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            tree["irrigation_reports"] = reports
+        }
+        #endif
 
         // The fixture was exported with absolute timestamps; move them to now.
         let now = Date().timeIntervalSince1970 * 1000
@@ -64,10 +74,8 @@ final class DemoBackend: FarmBackend {
         var bridge = meta["bridge"] as? [String: Any] ?? [:]
         bridge["lastSeen"] = now - (flag("stale") ? 400_000 : 5_000)
         bridge["control"] = !flag("controloff")
-        var irr = bridge["irrigation"] as? [String: Any] ?? [:]
-        irr["enabled"] = !flag("reportsoff")
-        bridge["irrigation"] = irr
         meta["bridge"] = bridge
+        if flag("reportsoff") { meta["reports"] = ["enabled": false] }
         tree["meta"] = meta
     }
 

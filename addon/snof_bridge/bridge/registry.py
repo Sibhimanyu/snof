@@ -3,6 +3,11 @@
 Home Assistant stores the room in one of two places: directly on the entity, or
 on the device the entity belongs to. Entity wins when both are set, which is how
 HA itself resolves it.
+
+An entity with no room resolves to UNASSIGNED, and UNASSIGNED means "does not
+exist" as far as Firebase is concerned: the mapper never publishes it and the
+command consumer never operates it. It is not an area and never appears in
+areas_payload().
 """
 from __future__ import annotations
 
@@ -29,7 +34,6 @@ class Registry:
             }
             for a in areas
         }
-        self.areas[UNASSIGNED] = {"name": "Unassigned", "icon": "mdi:help-circle-outline", "floor": None}
 
         self._device_area = {
             d["id"]: d["area_id"] for d in devices if d.get("area_id")
@@ -47,7 +51,7 @@ class Registry:
 
         _LOGGER.info(
             "Registry loaded: %d areas, %d devices, %d entities",
-            len(self.areas) - 1, len(self._device_area), len(entities),
+            len(self.areas), len(self._device_area), len(entities),
         )
 
     def area_for(self, entity_id: str) -> str:
@@ -60,6 +64,10 @@ class Registry:
             if area:
                 return area
         return UNASSIGNED
+
+    def is_assigned(self, entity_id: str) -> bool:
+        """True only for an entity whose room is a real, current area."""
+        return self.area_for(entity_id) in self.areas
 
     def areas_payload(self) -> dict:
         return {

@@ -51,7 +51,8 @@ Append to `index.html`, e.g. `index.html?real=1#/areas`:
 | `?viewer=1` | viewer tier — no controls anywhere |
 | `?nodata=1` | snapshot never arrives — the skeleton state |
 | `?stale=1` | bridge heartbeat overdue |
-| `?reportsoff=1` | bridge is live but `irrigation_enabled` is false — the state the farm was actually in |
+| `?reportsoff=1` | the report kill switch is thrown (`meta/reports.enabled: false`) |
+| `?realreports=1` | report cards built by the Cloud Function from real controller payloads, every section kind included. `reports-real.json` is generated locally and gitignored |
 | `?controloff=1` | bridge is live but `allow_control` is false — likewise |
 
 Default (no params) is a small clean farm. **Do not trust it alone.** Every bug

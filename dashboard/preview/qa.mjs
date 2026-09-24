@@ -151,7 +151,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     groups:[...document.querySelectorAll('#irr-type optgroup')].map(o=>o.label),
     seeded:document.querySelectorAll('.rep-card').length,
     scripts:[...document.documentElement.innerHTML].join('').includes('token_id')}));
-  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options.length===10,
+  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options.length===12,
     `${r.options.length} options`);
   check('combined pulls are offered first and labelled as such',
     r.groups[0]==='Combined'&&r.groups[1]==='Single endpoint', r.groups.join('|'));
@@ -264,18 +264,19 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await c.close();
 }
 // Regression: ISSUE-001 — Generate fired into a void when reports were off.
-// Found by /qa on 2026-09-23. The bridge publishes meta/bridge.irrigation and
-// the page ignored it, so the button spun for the full 60s deadline.
+// Found by /qa on 2026-09-23. The page ignored the off switch, so the button
+// spun for the full 60s deadline. Reports now run in a Cloud Function and the
+// switch is meta/reports.enabled.
 {
   const [p,c]=await open('?reportsoff=1#/irrigation');
   await p.waitForSelector('.rep-builder');
   const before=await p.evaluate(()=>({
     disabled:document.querySelector('[data-act="irr-gen"]').disabled,
     why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
-  check('reports switched off on the bridge disables Generate',
+  check('reports switched off disables Generate',
     before.disabled===true, `disabled=${before.disabled}`);
   check('and says why, in words, not a spinner',
-    /switched off on the bridge/.test(before.why), before.why.slice(0,80));
+    /switched off/.test(before.why), before.why.slice(0,80));
   // Force the click past the disabled attribute: a stale render must not be
   // able to write a request nothing will ever answer.
   const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND'))writes.push(m.text());});
@@ -292,7 +293,9 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const r=await p.evaluate(()=>({
     disabled:document.querySelector('[data-act="irr-gen"]').disabled,
     why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
-  check('a stale bridge blocks Generate too', r.disabled===true&&/not reporting in/.test(r.why),
+  // Reports run in a Cloud Function, not on the NUC: a bridge that has gone
+  // quiet must not take them down with it.
+  check('a stale bridge does not block reports', r.disabled===false&&r.why==='',
     r.why.slice(0,80));
   await c.close();
 }

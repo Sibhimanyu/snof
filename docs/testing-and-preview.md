@@ -3,13 +3,28 @@
 Three layers. None of them needs the farm, and none of them replaces watching
 the real thing.
 
+## Report function
+
+```bash
+cd dashboard/functions && python3 tests/test_reports.py
+```
+
+35 tests, no dependencies installed. They cover request validation, joining
+timer segments into runs, the motor log's HH.MM pairs and meter reset,
+pressure aggregated over every sample, electricity labels earned by
+cross-check, no 10-digit number in any report, the RTDB rule's type list
+matching `REPORT_TYPES`, partial and failed composites, and a static check
+that `dcon.py` cannot reach `/v1/command/`. Fixtures are synthetic but in
+the live shapes. Never paste a real dashboard payload in: it is the farm's
+phone book.
+
 ## Bridge logic
 
 ```bash
 cd addon/snof_bridge && python3 tests/test_logic.py
 ```
 
-10 tests, no dependencies installed — mapping, attribute filtering, area
+14 tests, no dependencies installed — mapping, attribute filtering, area
 resolution, dedup stability, and the command validator's refusal cases. Keep
 `aiohttp` imported lazily inside `commands.py` or this stops running clean.
 
@@ -52,7 +67,7 @@ farm shape, for anyone building fixtures:
 | Published | 698 entities across 18 domains |
 | Unavailable | 373 — scattered, not clustered |
 | Active | 15 |
-| With an area | ~1 in 6; the rest group under "Unassigned" |
+| With an area | 117 of 698, in 2 areas; the rest are hidden (unassigned entities do not exist to users) |
 
 Assert structurally, not by sampling. The truncation bug only overlapped when a
 name happened to be long enough for a given viewport, so a passing screenshot

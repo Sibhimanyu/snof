@@ -9,6 +9,8 @@ node. Nothing is executed twice and nothing survives in the queue.
 Defence in depth, because this is the only inbound path that exists:
   * `allow_control` is off unless the add-on options turn it on
   * `control_domains` is an allow-list, never a deny-list
+  * only entities in a room are operable - the same check that decides what is
+    published, so nothing a user cannot see can be switched
   * commands older than `control_max_age_seconds` are dropped, not run, so a
     queue that piles up while the bridge is down does not fire all at once when
     it comes back
@@ -52,8 +54,13 @@ SEEN_LIMIT = 2048
 
 
 class CommandConsumer:
-    def __init__(self, cfg, rtdb, get_ha, session: aiohttp.ClientSession) -> None:
+    def __init__(self, cfg, rtdb, get_ha, session: aiohttp.ClientSession,
+                 is_visible=None) -> None:
         self._cfg = cfg
+        # entity_id -> bool: is this entity in a room, i.e. published at all?
+        # Required in production; None only in tests that do not exercise it,
+        # and then everything is refused rather than everything allowed.
+        self._is_visible = is_visible or (lambda _eid: False)
         self._rtdb = rtdb
         self._get_ha = get_ha          # callable -> HAClient | None, re-read every time
         self._session = session
@@ -87,6 +94,11 @@ class CommandConsumer:
             return None
         if not entity_id.startswith(f"{domain}."):
             self._reject(cmd_id, "entity_id does not match domain", cmd)
+            return None
+        # An entity with no room is invisible to every user, so a command for
+        # one was not made by pressing anything in the app. Refuse it.
+        if not self._is_visible(entity_id):
+            self._reject(cmd_id, "entity is not in a room", cmd)
             return None
 
         at = cmd.get("at")

@@ -90,6 +90,11 @@ class StateMapper:
             return False
         if self.cfg.include_domains and domain not in self.cfg.include_domains:
             return False
+        # Users see rooms and what is in them, nothing else. An entity with no
+        # area in Home Assistant is never mirrored, so to every client it simply
+        # does not exist - and the command consumer uses this same check.
+        if not self.registry.is_assigned(entity_id):
+            return False
         return True
 
     def to_node(self, state: dict) -> tuple[str, str, dict]:

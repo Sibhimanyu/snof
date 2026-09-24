@@ -180,11 +180,11 @@
            farmhouse:'Farmhouse',cold_store:'Cold Store',nursery:'Nursery'};
   const data={
     meta:{name:'Sibhi Natural Orchards', bridge:{status:'online', lastSeen: now-(params.get('stale')?400000:5000),
-      heartbeatSeconds:30, control:!params.get('controloff'),
-      // What the bridge publishes about the report runner every heartbeat.
-      // ?reportsoff=1 is the state the live farm was actually in: reports
-      // deployed, irrigation_enabled false, so nothing answers a request.
-      irrigation:{enabled:!params.get('reportsoff'), requestsRun:0, requestsRefused:0, lastOk:'', lastError:''}}},
+      heartbeatSeconds:30, control:!params.get('controloff')},
+      // What the report Cloud Function publishes. ?reportsoff=1 is the kill
+      // switch thrown: meta/reports.enabled false, set by the service account.
+      reports:{runtime:'cloud-functions', lastSeen: now-60000,
+        ...(params.get('reportsoff') ? {enabled:false} : {})}},
     areas:Object.fromEntries(Object.entries(A).map(([k,v])=>[k,{name:v}])),
     entities:{
       sensor:{
@@ -286,6 +286,12 @@
       rows:[],at:now-10800000}
   };
   if(params.get('noirrig')) delete data.irrigation_reports;
+  // ?realreports=1 swaps in reports the Cloud Function built from real
+  // controller payloads (reports-real.json, generated locally, not committed).
+  if(params.get('realreports')){
+    const req=new XMLHttpRequest(); req.open('GET','reports-real.json',false); req.send(null);
+    data.irrigation_reports=JSON.parse(req.responseText);
+  }
   if(params.get('big')){    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
     const names=['Zone valve','Soil probe','Fence energiser','Water meter','Tank float','Weather station','Frost alarm','Irrigation controller','Solar inverter','Battery bank'];
     for(let i=0;i<1350;i++){
@@ -323,7 +329,8 @@
   const irrLabels={live_readings:'Power and pressure now',session_log:'Irrigation session log',
     performance:'Valve runtime against pressure',controller:'Controller dashboard',
     electricity:'Electricity snapshot',pressure:'Pressure snapshot',valves:'Valve runtime',
-    timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range'};
+    timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range',
+    power_range:'Power over time',pressure_hour:'Pressure, last hour'};
   // Stands in for the bridge's section builders: same kinds, same row shapes,
   // so what renders here is what renders against the NUC.
   const irrCanned=(type,from,to)=>{
