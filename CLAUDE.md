@@ -325,6 +325,15 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   data**: web `?replay=1&fresh=1` reads `dashboard/preview/replay.local.json`
   (gitignored; export with `firebase database:get /farms/snof`), iOS
   `SNOF_DEMO_TREE=<farm.json>` (+ `-system <id>` to open a system page).
+  After the night's review and QA passes (PRs #28, #29; iOS 0.9.3): an
+  **appliance** (a device with a fan, climate, media player or remote) is
+  never an offline fault in any system, anywhere (Home, Rooms, All devices,
+  the badge); "Needs a look" only uses controller data from the last hour and
+  the time-aware running state; a run whose planned end has not passed is not
+  "cut short"; the run-log cache is 150 (was silently 32 via `scrub()`) and
+  reports are pruned to 60. Say "cut short", never "stopped early". Details:
+  docs/irrigation.md "Cache and retention", docs/testing-and-preview.md
+  "Replay the real farm".
 - **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
   SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
   0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with
