@@ -39,6 +39,19 @@ enum Snapshot {
             try? await Task.sleep(for: .seconds(delay))
             // -reports renders every report card at full length, which a
             // window-sized capture cannot show.
+            // -report-sheet renders the first report the way its sheet shows
+            // it; a Catalyst sheet is its own window, out of reach of the
+            // window capture below.
+            if args.contains("-report-sheet"), let store, let first = store.reports.first {
+                let dark = UserDefaults.standard.string(forKey: "appearance") == "dark"
+                let content = ReportSheetContent(report: store.reports.first(where: { !$0.sections.isEmpty }) ?? first)
+                    .frame(width: 402).background(Theme.bg)
+                    .environment(\.colorScheme, dark ? .dark : .light)
+                let r = ImageRenderer(content: content)
+                r.scale = 3
+                try? r.uiImage?.pngData()?.write(to: URL(fileURLWithPath: out))
+                exit(0)
+            }
             if args.contains("-reports"), let store {
                 let content = VStack(spacing: 10) { ForEach(store.reports) { ReportCard(report: $0) } }
                     .padding(16).frame(width: 402).background(Theme.bg)
