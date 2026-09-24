@@ -94,3 +94,32 @@ overlaps a cycle. Confirmation reads it; if a manual run during a cycle ends
 "not confirmed" although the valves opened, switch confirmation to the
 timer_log (a timer_type 3 / start_control MM entry after the send), built
 against a real payload, not blind.
+
+## The command token expires (found 2026-09-24)
+
+The first two real presses came back `400 {"message":"Bad request"}` and
+never reached the controller (its command history has nothing after 09-23).
+Probed from the NUC, harmlessly (the status poll `?@A8`):
+
+| authorization sent | Mobitech's answer |
+|---|---|
+| the stored token | 400 Bad request |
+| an obviously fake token | 400 Bad request — identical |
+| none | 400 Unauthorized access |
+
+The stored token was byte-for-byte the one in the Postman capture, whose
+requests are dated 2025-05-06: a Mobitech app *session* token that had long
+ended. Device id, headers and body shape all match the capture. There is no
+login call in the capture, so a fresh token has to be captured from the app
+(the `authorization` header, ending `@ios`) and put in place with
+`scripts/set-mobitech-command-token.sh`, which reads it from the clipboard,
+merges it into the add-on options and the DCON_COMMAND_AUTH secret, and
+proves it with a status poll. Both consumers now turn this 400 into "the
+Mobitech app token has expired" instead of "Bad request". Signing in to the
+Mobitech app again ends the session, so expect to repeat this.
+
+Also seen in the history: Mobitech's own app sends manual runs as
+`V003,000,…(10 slots)ON 00 15!1@A1` and, in the capture,
+`V012,015ON 01 20@A8`; `FON …` appears too. Our `FON` template is taken from
+accepted history entries; if a live token still gets 400 on a run while the
+status poll succeeds, switch to the `V…ON HH MM` form.

@@ -284,6 +284,10 @@ class IrrigationControl:
                 message = str(json.loads(text).get("message") or "")
             except (ValueError, AttributeError):
                 message = text
+            # Mobitech answers a dead app session token with a bare "Bad
+            # request" — identical to a fake one (proven 2026-09-24). Say so.
+            if status == 400 and message.strip().lower() == "bad request":
+                message = "the Mobitech app token has expired — refresh it (scripts/set-mobitech-command-token.sh)"
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),
                           valves=", ".join(allowed.get(v, f"valve {v}") for v in valves), minutes=minutes)
             if ok:
