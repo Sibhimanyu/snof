@@ -313,7 +313,8 @@ function tidyDeviceName(raw, objectIds) {
     const rest = b[2].replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
     return `${b[1]} ${/^[A-Z]{2}/.test(rest) ? rest : rest.toLowerCase()}`;
   }
-  if (SERIAL_NAME.test(raw || '') && objectIds.length) {
+  // Two ids at least: one id's "prefix" is the whole id ("goats_motion_detected").
+  if (SERIAL_NAME.test(raw || '') && objectIds.length >= 2) {
     // Home Assistant keeps the name a device had when its entities were made
     // in their ids: "goats_motion_detected", under a station now called by
     // its serial number.
@@ -653,19 +654,23 @@ const motorWord = (m) => (!m ? 'No reading' : m.running === true ? 'Running' : m
  *  current is drawn with its age and never as water flowing (2026-09-25: Home
  *  showed "River · Running" after the Livesky session had ended). */
 function waterCurrent(m) {
-  const w = state.water || {}, now = serverNow();
-  if (!m || !w.pulledAt || now - w.pulledAt > 10 * 60000) return false;
+  const w = state.water || {}, ws = state.meta?.water || {}, now = serverNow();
+  if (!m) return false;
+  // A vendor's own `at` is stamped only when its read succeeded; `pulledAt`
+  // is stamped on every pull, failed or not.
   if (m.vendor === 'livesky') {
+    const read = ws.livesky?.at || w.pulledAt;
     const at = Date.parse(m.liveAt || m.reportedAt || '');
-    return liveskyState().kind === 'ok' && Number.isFinite(at) && now - at < 15 * 60000;
+    return liveskyState().kind === 'ok' && !!read && now - read <= 10 * 60000 && Number.isFinite(at) && now - at < 15 * 60000;
   }
-  return state.meta?.water?.niagara?.ok !== false;
+  const read = ws.niagara?.at || (ws.niagara?.ok !== false ? w.pulledAt : 0);
+  return !!read && now - read <= 10 * 60000;
 }
 /** How old a reading that is not current is: the starter's own report for
- *  Livesky, the last pull for Niagara (whose reports only mark changes);
- *  "not read" once SNOF's Livesky session is gone. */
+ *  Livesky, Niagara's last good read (its reports only mark changes); "not
+ *  read" once SNOF's Livesky session is gone. */
 const waterAge = (m) => (m.vendor === 'livesky' && liveskyState().kind !== 'ok' ? 'not read'
-  : agoText(m.vendor === 'livesky' ? (m.liveAt || m.reportedAt) : state.water?.pulledAt));
+  : agoText(m.vendor === 'livesky' ? (m.liveAt || m.reportedAt) : (state.meta?.water?.niagara?.at || state.water?.pulledAt)));
 
 function flowHero() {
   const w = state.water || {};
@@ -735,7 +740,7 @@ function irrigationCard() {
       frac = last.planned ? (last.delivered ?? (last.finished ? last.planned : 0)) / last.planned : 1;
       tone = last.finished ? 'is-done' : mayStillRun(last) ? '' : 'is-warn';
       label = runAmount(last).split(' of ')[0] || '—';
-      sub = last.finished ? 'last run' : mayStillRun(last) ? 'so far' : 'cut short';
+      sub = last.finished ? 'last run' : runOutcome(last).replace(/^,? /, '');
       valves = last.valves;
     }
   }
@@ -1372,7 +1377,7 @@ function reportsGate() {
   // Controller reads go through the NUC's relay until the function has a
   // static egress IP (docs/dcon-off-the-nuc.md): with the bridge quiet, a
   // Refresh would only time out. No field yet means relay.
-  if ((state.meta?.reports?.transport || 'relay') === 'relay') return bridgeGate('reports');
+  if (state.meta?.reports?.transport !== 'direct') return bridgeGate('reports');
   return { ok: true, why: '' };
 }
 
@@ -1886,7 +1891,10 @@ function parseRun(r) {
   let valves = pieces[0] || '';
   const l = valves.toLowerCase();
   if (l.includes('backwash') || l.startsWith('started by') || l.startsWith('ended by') || valves === 'no valves') valves = '';
-  return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, going, valves };
+  // "ended by A8": the controller says who ended it (a Stop, a fault), so it
+  // is over whatever the clock says.
+  const ended = pieces.some((p) => /^ended by /i.test(p));
+  return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, going, ended, valves };
 }
 /** Not known to have ended, so never "cut short": the function writes "so
  *  far" for a run it caught part-way, and an older log (which wrote every
@@ -1896,10 +1904,15 @@ function parseRun(r) {
  *  RUN_SLACK_MIN in reports.py. */
 const RUN_SLACK_MS = 30 * 60000;
 const logReadAt = () => Math.min(serverNow(), irrig().timerLogAt || irrig().meta?.lastUpdated || serverNow());
-const mayStillRun = (r) => !r.finished && (r.going ||
-  (r.planned != null && (farmMs(r.start) ?? 0) + r.planned * 60000 + RUN_SLACK_MS > logReadAt()));
-/** ", finished" / " so far" / ", cut short" after a run's amount. */
-const runOutcome = (r) => (r.finished ? ', finished' : mayStillRun(r) ? ' so far' : ', cut short');
+const runEnd = (r) => (farmMs(r.start) ?? 0) + (r.planned || 0) * 60000 + RUN_SLACK_MS;
+const mayStillRun = (r) => !r.finished && !r.ended && (r.going || (r.planned != null && runEnd(r) > logReadAt()));
+/** When the log was read, as the farm's clock: "00:02". */
+const readClock = () => new Date(logReadAt() + farmTz() * 60000).toISOString().slice(11, 16);
+/** ", finished" / " so far" / ", cut short" after a run's amount; " by 00:02"
+ *  once its time is up but the last read caught it part-way — "so far" would
+ *  claim it is still going. */
+const runOutcome = (r) => (r.finished ? ', finished' : !mayStillRun(r) ? ', cut short'
+  : r.planned != null && runEnd(r) <= serverNow() ? ` by ${readClock()}` : ' so far');
 const runAmount = (x) => (x.planned == null ? (x.delivered != null ? fmtMin(x.delivered) : '')
   : x.finished ? fmtMin(x.planned) : `${fmtMin(x.delivered || 0)} of ${fmtMin(x.planned)}`);
 const irrRuns = () => (irrig().timerLog || []).map(parseRun).filter(Boolean)

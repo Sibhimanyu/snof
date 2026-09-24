@@ -275,7 +275,7 @@ extension Gate {
             // Controller reads go through the NUC's relay until the function
             // has a static egress IP (docs/dcon-off-the-nuc.md): with the bridge
             // quiet, a Refresh would only time out. No field yet means relay.
-            if (reportsTransport ?? "relay") != "relay" { return .open }
+            if reportsTransport == "direct" { return .open }
         }
         // Valve control is spoken of as valve control: the owner thinks of the
         // Mobitech side as its own thing, not as "the bridge".

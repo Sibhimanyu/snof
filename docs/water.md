@@ -88,9 +88,10 @@ A vendor that fails keeps its last good state, with its error beside it.
 
 **Current or not** (2026-09-25, `waterCurrent()` in app.js,
 `WaterState.isCurrent` in SNOFCore): a motor is drawn as running (green, pipe
-flowing) only when its vendor answered a pull in the last 10 minutes and, for
-Livesky, whose starter reports every few seconds, its own report is under 15
-minutes old. Niagara reports on change, so an hour-old "motor on" with no
+flowing) only when its vendor's last *good* read (`meta/water/<vendor>/at`,
+stamped only on success — `pulledAt` is stamped on every pull) is under 10
+minutes old and, for Livesky, whose starter reports every few seconds, its
+own report is under 15 minutes old. Niagara reports on change, so an hour-old "motor on" with no
 "off" since is still the state. Otherwise Home shows the last state with its
 age ("Running · 2h ago", or "not read" once SNOF's Livesky session has ended),
 the Water tab shows it in grey, and the card's header drops "just now" — the

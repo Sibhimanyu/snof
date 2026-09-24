@@ -236,15 +236,29 @@ extension Irrigation {
     /// read 22 minutes into its hour is not cut short two hours later
     /// (2026-09-25). Mirrors mayStillRun() in app.js.
     public static func mayStillRun(_ r: ProgramRun, readAt: Date, zone: TimeZone) -> Bool {
-        if r.finished { return false }
+        // "ended by A8": over, whatever the clock says (a Stop, a fault).
+        if r.finished || r.ended { return false }
         if r.going { return true }
-        guard let planned = r.plannedMin, let start = FarmTime.date(r.start, zone: zone) else { return false }
-        return start.addingTimeInterval(Double(planned) * 60 + runSlack) > readAt
+        guard let end = runEnd(r, zone: zone) else { return false }
+        return end > readAt
     }
 
-    /// What follows a run's amount: "" (finished), " so far", ", cut short".
-    public static func outcome(_ r: ProgramRun, readAt: Date, zone: TimeZone) -> String {
-        r.finished ? "" : mayStillRun(r, readAt: readAt, zone: zone) ? " so far" : ", cut short"
+    /// Start + planned minutes + the backwash slack; nil without a plan.
+    static func runEnd(_ r: ProgramRun, zone: TimeZone) -> Date? {
+        guard let planned = r.plannedMin, let start = FarmTime.date(r.start, zone: zone) else { return nil }
+        return start.addingTimeInterval(Double(planned) * 60 + runSlack)
+    }
+
+    /// What follows a run's amount: "" (finished), " so far", ", cut short";
+    /// " by 00:02" once its time is up but the last read caught it part-way —
+    /// "so far" would claim it is still going. Mirrors runOutcome() in app.js.
+    public static func outcome(_ r: ProgramRun, readAt: Date, now: Date, zone: TimeZone) -> String {
+        if r.finished { return "" }
+        if !mayStillRun(r, readAt: readAt, zone: zone) { return ", cut short" }
+        if let end = runEnd(r, zone: zone), end <= now {
+            return " by " + FarmTime.when(ms: readAt.timeIntervalSince1970 * 1000, now: now, zone: zone)
+        }
+        return " so far"
     }
 
     /// What each crop got on one farm day, from the controller's run log.

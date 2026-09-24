@@ -180,13 +180,32 @@ import Foundation
         var i = Attention.Input(); i.irrigation = c; i.now = late
         #expect(Attention.items(i).contains { $0.text == "1 run cut short in the last 24 h" })
         let mango2 = Irrigation.runs(c).first!
-        #expect(Irrigation.outcome(mango2, readAt: Irrigation.logReadAt(c, now: late), zone: zone) == " so far")
+        // Its hour and the slack are past by 01:50: "by 00:02", not "so far".
+        #expect(Irrigation.outcome(mango2, readAt: Irrigation.logReadAt(c, now: late), now: late, zone: zone) == " by 00:02")
+        let early = FarmTime.date("2026-09-25 00:30:00", zone: zone)!
+        #expect(Irrigation.outcome(mango2, readAt: Irrigation.logReadAt(c, now: early), now: early, zone: zone) == " so far")
         // The function now says so itself, and stamps when it read the log.
         c.timerLog[1]["detail"] = "11m of 1h so far · 17 Mango 2 · started by timer"
         c.timerLogAt = c.lastUpdated
         let r = Irrigation.runs(c).first!
         #expect(r.going && !r.finished && r.deliveredMin == 11 && r.plannedMin == 60 && r.valves == "17 Mango 2")
         #expect(Irrigation.mayStillRun(r, readAt: late.addingTimeInterval(86_400), zone: zone), "until a later read says otherwise")
+    }
+
+    @Test func aRunTheControllerEndedIsCutShortAtOnce() {
+        // A Stop 8 minutes into a 30-minute manual run, read 2 minutes later:
+        // "ended by A8" settles it, whatever the planned minutes say.
+        var c = IrrigationCache()
+        c.timeZone = "+05:30"
+        c.timerLog = [["at": "2026-09-25 01:00:00", "event": "Program · Manual Mode",
+                       "detail": "8m of 30m, stopped · 4 Veg · started by A8 · ended by A8", "source": "timer"]]
+        let zone = FarmTime.zone("+05:30")
+        c.timerLogAt = FarmTime.date("2026-09-25 01:10:00", zone: zone)!.timeIntervalSince1970 * 1000
+        let now = FarmTime.date("2026-09-25 01:12:00", zone: zone)!
+        let r = Irrigation.runs(c).first!
+        #expect(r.ended && r.valves == "4 Veg")
+        #expect(!Irrigation.mayStillRun(r, readAt: Irrigation.logReadAt(c, now: now), zone: zone))
+        #expect(Irrigation.outcome(r, readAt: Irrigation.logReadAt(c, now: now), now: now, zone: zone) == ", cut short")
     }
 
     @Test func aFanIsNeverASwitchModuleFault() {

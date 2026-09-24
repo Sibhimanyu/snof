@@ -71,6 +71,20 @@ import Foundation
         #expect(WaterFormat.hms("01:04:28") == "1:04:28")
     }
 
+    @Test func aFailedNiagaraPullIsNotCurrentAndDatesFromItsLastGoodRead() {
+        // pulledAt is stamped on every pull; niagara.at only on a good read.
+        var w = Parse.water(water, meta: meta)
+        let pulled = Date(timeIntervalSince1970: 1790270066755.0 / 1000)
+        w.niagara.at = pulled.addingTimeInterval(-3 * 3600).timeIntervalSince1970 * 1000
+        w.niagara.ok = false
+        #expect(!w.isCurrent(w.supply.first, now: pulled.addingTimeInterval(30)))
+        #expect(w.readingDate(w.supply.first!) == Date(timeIntervalSince1970: w.niagara.at! / 1000))
+        // A good read a minute ago is current, however old its last report.
+        w.niagara.ok = true
+        w.niagara.at = pulled.addingTimeInterval(-60).timeIntervalSince1970 * 1000
+        #expect(w.isCurrent(w.supply.first, now: pulled))
+    }
+
     @Test func onlyACurrentReadingFlows() {
         var w = Parse.water(water, meta: meta)
         #expect(!w.isCurrent(w.supply.first, now: Date(timeIntervalSince1970: 1790270126.755)), "the fixture's Niagara pull failed (502)")

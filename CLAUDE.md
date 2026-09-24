@@ -341,9 +341,11 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   DCON design-asset export; see DESIGN.md "Brand artwork" and `design/brand/`.
 - **Overnight pass, 2026-09-25** (PRs #24–#31, iOS 0.10.0; add-on on the NUC
   is **0.10.5**, image tag checked 02:30). Rules now in force on web and iOS:
-  a run the log caught part-way is "so far", never "cut short" (the function
-  writes it and stamps `irrigation/timerLogAt`; the apps judge older rows
-  against the read time); water is drawn as flowing only on a current reading
+  a run the log caught part-way is "so far" (then "by 00:02" once its window
+  has passed), never "cut short", and a row that says "ended by" is cut short
+  at once (the function writes "so far" and stamps `irrigation/timerLogAt` —
+  **merged but deploy it only after iOS 0.10.0 is on the phone**, since 0.9.3
+  misreads the wording; the apps judge older rows against the read time); water is drawn as flowing only on a current reading
   (`waterCurrent` / `WaterState.isCurrent`); offline vs switched off is per
   device (`offlineIsFault`); serial-number device names are tidied for display
   with the raw names kept for the printer add-on grouping; reports close with

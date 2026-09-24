@@ -213,6 +213,8 @@ final class LogicTests: XCTestCase {
                        "stale bridge, relayed reads")
         XCTAssertTrue(Gate.evaluate(.irrigation, bridge: nil, reportsTransport: "direct", nowMs: now, skewMs: 0).ok,
                       "direct reads do not need the NUC")
+        XCTAssertFalse(Gate.evaluate(.irrigation, bridge: nil, reportsTransport: "", nowMs: now, skewMs: 0).ok,
+                       "only an explicit direct opens without the bridge, as on the web")
         XCTAssertFalse(Gate.evaluate(.irrigation, bridge: live, reportsEnabled: false,
                                      nowMs: now, skewMs: 0).ok)
 

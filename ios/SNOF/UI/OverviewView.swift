@@ -35,8 +35,9 @@ struct OverviewView: View {
         }
         .navigationTitle("Home")
         // Home is the first screen: keep the water picture current while it is
-        // open (the function spaces pulls 15 s apart whoever asks).
-        .task {
+        // open (the function spaces pulls 15 s apart whoever asks). Restarted
+        // once meta arrives: before it the gate is closed and nothing refreshes.
+        .task(id: store.metaLoaded) {
             await store.autoRefreshIrrigationIfStale()
             while !Task.isCancelled {
                 await store.refreshWater()
@@ -237,11 +238,14 @@ struct IrrigationRingCard: View {
                         let planned = Double(last.plannedMin ?? 0)
                         let got = Double(last.deliveredMin ?? (last.finished ? last.plannedMin ?? 0 : 0))
                         // Caught part-way by the last read: "so far", neither green nor amber.
-                        let open = Irrigation.mayStillRun(last, readAt: Irrigation.logReadAt(c, now: store.now), zone: FarmTime.zone(c.timeZone))
+                        let readAt = Irrigation.logReadAt(c, now: store.now), zone = FarmTime.zone(c.timeZone)
+                        let open = Irrigation.mayStillRun(last, readAt: readAt, zone: zone)
+                        let outcome = Irrigation.outcome(last, readAt: readAt, now: store.now, zone: zone)
+                            .trimmingCharacters(in: CharacterSet(charactersIn: ", "))
                         Ring(fraction: planned > 0 ? got / planned : 1,
                              color: last.finished ? Theme.brand : open ? Theme.muted : Theme.warn,
                              label: last.deliveredMin.map(Format.minutes) ?? last.amount ?? "—",
-                             sub: last.finished ? "last run" : open ? "so far" : "cut short")
+                             sub: last.finished ? "last run" : outcome)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(say.running ? say.title : say.title.replacingOccurrences(of: "Last: ", with: ""))
@@ -428,6 +432,8 @@ struct IrrigationNowCard: View {
         // Why Refresh (and Run) are off, said once when the quiet bridge is both reasons.
         let reads = store.gate(.irrigation), valves = store.gate(.irrigationControl)
         let both = store.canRunIrrigation && !reads.ok && reads.bridge && !valves.ok && valves.bridge
+        // Nothing is known before meta arrives: no "not reporting" on launch.
+        let known = store.metaLoaded
         Block(title: "Now", context: c.device) {
             if store.canControl { RefreshButton() }
         } content: {
@@ -438,8 +444,8 @@ struct IrrigationNowCard: View {
             } else {
                 WaterNow(cache: c, zone: zone, now: store.now)
             }
-            if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now, quiet: both) }
-            if store.canControl, !reads.ok {
+            if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now, quiet: both || !known) }
+            if store.canControl, !reads.ok, known {
                 Note(text: both ? Gate.bridgeDownBoth : reads.why, tone: .warn).padding(.horizontal, 18).padding(.bottom, 10)
             }
         }
@@ -545,7 +551,7 @@ struct WaterNow: View {
         if let last = Irrigation.runs(cache).first {
             var bits: [String] = []
             if let a = last.amount {
-                bits.append(last.finished ? "\(a), finished" : a + Irrigation.outcome(last, readAt: Irrigation.logReadAt(cache, now: now), zone: zone))
+                bits.append(last.finished ? "\(a), finished" : a + Irrigation.outcome(last, readAt: Irrigation.logReadAt(cache, now: now), now: now, zone: zone))
             }
             if !last.valves.isEmpty { bits.append(last.valves) }
             if let w = FarmTime.when(last.start, now: now, zone: zone) { bits.append("started \(w)") }

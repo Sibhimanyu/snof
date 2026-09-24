@@ -578,7 +578,7 @@ def timer_sections(segments: list[dict] | None, err: str, names: dict[str, str],
     going = sum(1 for r in runs if still_going(r, read_at))
     faults = sum(len(r["faults"]) for r in runs)
     rows = [metric("Runs", len(runs), note=f"{finished} finished, "
-                   f"{len(runs) - finished - going} stopped early"
+                   f"{len(runs) - finished - going} cut short"
                    + (f", {going} still going" if going else "")),
             metric("Water time", V.fmt_minutes(delivered),
                    note="by the controller's countdown"),

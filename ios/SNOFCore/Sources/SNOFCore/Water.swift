@@ -109,18 +109,22 @@ public struct WaterState: Hashable, Sendable {
     /// ended). Mirrors waterCurrent() in app.js.
     public func isCurrent(_ m: WaterMotor?, now: Date) -> Bool {
         let nowMs = now.timeIntervalSince1970 * 1000
-        guard let m, let pulled = pulledAt, nowMs - pulled <= 10 * 60_000 else { return false }
+        guard let m else { return false }
+        // A vendor's own `at` is stamped only when its read succeeded;
+        // `pulledAt` is stamped on every pull, failed or not.
         if m.vendor == "livesky" {
-            guard livesky.kind(nowMs: nowMs) == .ok, let at = m.lastReport else { return false }
+            guard livesky.kind(nowMs: nowMs) == .ok, let read = livesky.status.at ?? pulledAt,
+                  nowMs - read <= 10 * 60_000, let at = m.lastReport else { return false }
             return now.timeIntervalSince(at) < 15 * 60
         }
-        return niagara.ok != false
+        guard let read = niagara.at ?? (niagara.ok != false ? pulledAt : nil) else { return false }
+        return nowMs - read <= 10 * 60_000
     }
 
     /// When a reading that is not current was taken: the starter's own report
-    /// for Livesky, the last pull for Niagara (whose reports only mark changes).
+    /// for Livesky, Niagara's last good read (its reports only mark changes).
     public func readingDate(_ m: WaterMotor) -> Date? {
-        m.vendor == "livesky" ? m.lastReport : pulledAt.map { Date(timeIntervalSince1970: $0 / 1000) }
+        m.vendor == "livesky" ? m.lastReport : (niagara.at ?? pulledAt).map { Date(timeIntervalSince1970: $0 / 1000) }
     }
 }
 

@@ -293,6 +293,9 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
       why:document.querySelector('.rep-builder + .note-off')?.textContent||''};});
   check('once reads are direct, a stale bridge does not block them', direct.disabled===false&&direct.why==='',
     JSON.stringify(direct).slice(0,80));
+  const blank=await p.evaluate(()=>{state.meta.reports.transport='';render();
+    return document.querySelector('[data-act="irr-gen"]')?.disabled;});
+  check('only an explicit "direct" opens reads without the bridge', blank===true);
   await c.close();
 }
 {
@@ -431,9 +434,21 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
       timerLog:[{at:stamp(start),event:'Program · Mango2',detail:'11m of 1h, stopped · 17 Mango 2 · started by timer',source:'timer'},
                 {at:stamp(start-3*3600e3),event:'Program · Mango1',detail:'25m of 1h, stopped · 16 Mango 1 · started by A8',source:'timer'}]});
     render(); const irr=document.getElementById('view').innerText;
-    location.hash='#/'; render(); return {irr, home:document.getElementById('view').innerText};});
-  check('a run the log caught part-way reads "so far", not "cut short"', /11m of 1h so far/.test(r.irr)&&!/Mango2[^\n]*cut short|11m of 1h, cut short/.test(r.irr),
-        (r.irr.match(/.{0,24}(so far|cut short).{0,16}/)||[''])[0]);
+    // Read 10 minutes ago, 22 minutes in: still inside its hour, so "so far".
+    const read2=serverNow()-10*60e3; state.irrigation.meta={lastUpdated:read2};
+    state.irrigation.timerLog=[Object.assign({},state.irrigation.timerLog[0],{at:stamp(read2-22*60e3)})]; render();
+    const soFar=document.getElementById('view').innerText;
+    // Ended by a Stop 8 minutes in, read 2 minutes later: cut short at once.
+    state.irrigation.timerLog=[{at:stamp(read2-10*60e3),event:'Program · Manual Mode',detail:'8m of 30m, stopped · 4 Veg · started by A8 · ended by A8',source:'timer'}];
+    render(); const ended=document.getElementById('view').innerText;
+    state.irrigation.timerLog=[{at:stamp(start),event:'Program · Mango2',detail:'11m of 1h, stopped · 17 Mango 2 · started by timer',source:'timer'},
+                {at:stamp(start-3*3600e3),event:'Program · Mango1',detail:'25m of 1h, stopped · 16 Mango 1 · started by A8',source:'timer'}];
+    state.irrigation.meta={lastUpdated:read};
+    location.hash='#/'; render(); return {irr, soFar, ended, home:document.getElementById('view').innerText};});
+  check('a run caught part-way, its hour since past, reads "by <read time>", not "cut short"', /11m of 1h by \d\d:\d\d/.test(r.irr)&&!/11m of 1h, cut short/.test(r.irr),
+        (r.irr.match(/.{0,24}(so far|cut short| by \d\d:\d\d).{0,16}/)||[''])[0]);
+  check('while it could still be going, it reads "so far"', /11m of 1h so far/.test(r.soFar), (r.soFar.match(/.{0,24}(so far|cut short| by ).{0,16}/)||[''])[0]);
+  check('a run the controller ended is cut short at once', /8m of 30m, cut short/.test(r.ended), (r.ended.match(/.{0,24}(so far|cut short| by ).{0,16}/)||[''])[0]);
   check('Needs a look counts only the run the log saw end', /1 run cut short/.test(r.home)&&!/2 runs cut short/.test(r.home),
         (r.home.match(/\d+ runs? cut short[^\n]*/)||['none'])[0]);
   await c.close();
@@ -454,12 +469,16 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     state.water.river.reportedAt=iso(now-20e3); const fresh=f();
     state.meta.water.livesky.expires=now-60e3; const expired=f();
     state.meta.water.enabled=false; const off=f();
-    return {stale,fresh,expired,off};});
+    // Niagara failing for 3 h while pulls go on: its age is its last good read.
+    state.meta.water.enabled=true; state.meta.water.livesky.expires=now+864e5; state.water.pulledAt=now-5000;
+    state.meta.water.niagara={ok:false,error:'Niagara: HTTP 502',at:now-3*3600e3}; const niagaraDown=f();
+    return {stale,fresh,expired,off,niagaraDown};});
   check('a stale river reading shows its age and does not flow', r.stale.pipes[0]===false&&r.stale.ages.length===1&&r.stale.head==='', JSON.stringify(r.stale));
   check('Niagara, which reports on change, still flows on a fresh pull', r.stale.pipes[1]===true);
   check('fresh readings flow, with the pull age in the header', r.fresh.pipes.every(Boolean)&&r.fresh.ages.length===0&&/ago|just now/.test(r.fresh.head), JSON.stringify(r.fresh));
   check('an ended Livesky session stops the river flowing', r.expired.pipes[0]===false&&r.expired.ages[0]==='not read', JSON.stringify(r.expired));
   check('Home says when water readings are off', r.off.head==='readings off', r.off.head);
+  check('a failing Niagara read is not current, and ages from its last good read', r.niagaraDown.pipes[1]===false&&r.niagaraDown.ages.includes('3h ago'), JSON.stringify(r.niagaraDown));
   await c.close();
 }
 {

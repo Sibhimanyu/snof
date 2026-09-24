@@ -102,6 +102,8 @@ public struct ProgramRun: Hashable, Sendable {
     public let valves: String
     /// The function caught it part-way ("11m of 1h so far"): not ended.
     public var going = false
+    /// "ended by A8": the controller says who ended it (a Stop, a fault).
+    public var ended = false
 
     public var day: String { String(start.prefix(10)) }
 
@@ -171,9 +173,10 @@ public enum Irrigation {
             let l = p.lowercased()
             return p.isEmpty || l.contains("backwash") || l.hasPrefix("started by") || l.hasPrefix("ended by") ? nil : p
         } ?? ""
+        let ended = pieces.contains { $0.lowercased().hasPrefix("ended by ") }
         return ProgramRun(kind: kind, name: name, start: start, deliveredMin: delivered,
                           plannedMin: planned, finished: finished, valves: valves == "no valves" ? "" : valves,
-                          going: going)
+                          going: going, ended: ended)
     }
 
     /// "pump 16h 21m of 19h 42m with power · 77.89 kWh".

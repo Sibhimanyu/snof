@@ -24,7 +24,8 @@ public enum DeviceNames {
             let keepCase = rest.range(of: "^[A-Z]{2}", options: .regularExpression) != nil
             return "\(model) \(keepCase ? rest : rest.lowercased())"
         }
-        if serial.firstMatch(in: raw, range: all) != nil, !objectIds.isEmpty {
+        // Two ids at least: one id's "prefix" is the whole id ("goats_motion_detected").
+        if serial.firstMatch(in: raw, range: all) != nil, objectIds.count >= 2 {
             // Home Assistant keeps the name a device had when its entities were
             // made in their ids: "goats_motion_detected", under a station now
             // called by its serial number.

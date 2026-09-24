@@ -55,7 +55,8 @@ struct IrrigationView: View {
             }
         }
         .navigationTitle("Irrigation")
-        .task { await store.autoRefreshIrrigationIfStale() }
+        // Again once meta arrives: before it the gate is closed.
+        .task(id: store.metaLoaded) { await store.autoRefreshIrrigationIfStale() }
         .sheet(item: $opened) { open in
             ReportSheet(reportKey: open.id).environment(store)
         }

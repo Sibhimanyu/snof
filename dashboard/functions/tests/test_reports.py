@@ -658,7 +658,7 @@ def test_a_run_the_log_caught_part_way_is_so_far_not_stopped():
     assert "stopped" in R.run_row(run, {})["detail"]
     # The metric counts it as going, not as stopped early.
     rows = R.timer_sections(V.timer_segments(TIMER_LOG), "", {}, "w", V.parse_stamp("2026-09-22 00:00:00"))[0][0]["rows"]
-    assert "stopped early" in rows[0]["note"], rows[0]
+    assert "cut short" in rows[0]["note"], rows[0]
 
 
 if __name__ == "__main__":

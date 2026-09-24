@@ -55,6 +55,11 @@ it, each written down where it lives:
   camera station). The apps tidy them for display; the source still says it.
 - **Livesky / Niagara motor control is not built.** It needs the owner's
   answers to the questions in [water.md](water.md).
+- **Deploy `functions:reports` once iOS 0.10.0 is on the phone** (not done
+  overnight on purpose): it writes runs caught part-way as "so far", which
+  iOS 0.9.3 would misread as a valve list. `cd dashboard && firebase deploy
+  --only functions:reports --project snof-live --force`. It also stamps
+  `timerLogAt` and keeps `meta/reports.transport` current from `water_poll`.
 - **Static egress IP for DCON**, so reads and valve commands can leave the NUC
   ([dcon-off-the-nuc.md](dcon-off-the-nuc.md)).
 - **A Stop was refused mid-run** on 2026-09-24 (the controller's clock ran

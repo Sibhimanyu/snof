@@ -23,6 +23,8 @@ import Foundation
         #expect(DeviceNames.tidy("T8400P202040124D", objectIds: ["goats", "t8400p202040124d_battery"]) == "T8400P202040124D")
         #expect(DeviceNames.tidy("SONOFF1000123456", objectIds: ["sonoff1000123456_power"]) == "SONOFF1000123456")
         #expect(DeviceNames.tidy("T8400P202040124D", objectIds: []) == "T8400P202040124D")
+        // One id is no shared prefix: it would be "Goats motion detected".
+        #expect(DeviceNames.tidy("T8400P202040124D", objectIds: ["goats_motion_detected"]) == "T8400P202040124D")
         #expect(DeviceNames.tidy("HVAC_CONTROLLER01", objectIds: []) == "HVAC_CONTROLLER01")
         #expect(DeviceNames.tidy("Pump House Light", objectIds: ["pump_house_light"]) == "Pump House Light")
         #expect(DeviceNames.tidy("ABCDEFGHIJKL", objectIds: ["abc"]) == "ABCDEFGHIJKL")
