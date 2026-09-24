@@ -520,7 +520,12 @@ input[type=range][disabled]{opacity:.42}
 .rep-summary{margin:0;padding:0 20px 14px;font-size:13.5px;color:var(--muted)}
 .rep-summary.rep-err{color:var(--bad)}
 .rep-body{padding:4px 20px 18px;border-top:1px solid var(--line-soft)}
-.rep-card .list{margin-top:10px}
+/* A list inside a report is part of the card, not a card within it: it runs
+   edge to edge with hairlines above and below instead of its own frame. */
+.rep-card .list{margin:10px -20px 0;border-left:0;border-right:0;border-radius:0;background:transparent}
+.rep-card .list .row{padding-left:20px;padding-right:20px}
+.rep-body > .list:first-child{margin-top:-4px;border-top:0}
+.rep-body > .list:last-child{margin-bottom:-18px;border-bottom:0}
 
 /* ---------- inline report charts (irrigation: readings + valve runtime) ---------- */
 .spark{margin-top:10px}
