@@ -31,6 +31,13 @@ the farm can make:
     running, `stop` is refused unless a Manual Mode run is
   * commands older than 60 s are dropped, one command per 10 s at most, and
     every node is deleted whether it ran or not
+  * **no second change until the first is confirmed** (owner, 2026-09-24:
+    Mobitech accepts anything and its server cannot handle conflicts). A lock
+    at /farms/<farm>/irrigation_lock is taken before sending and held while
+    the controller is re-read every 10 s for up to 2 min, until its own state
+    shows the run started or stopped. The RTDB rules refuse new commands
+    while the lock is live, and so does this code. The result records
+    `verified`.
 """
 from __future__ import annotations
 
@@ -50,6 +57,7 @@ _LOGGER = logging.getLogger(__name__)
 
 QUEUE = "irrigation_commands"
 RESULTS = "irrigation_command_results"
+LOCK = "irrigation_lock"
 
 MAX_AGE_SECONDS = 60.0
 MIN_GAP_SECONDS = 10.0
@@ -58,6 +66,13 @@ NODES_TTL_SECONDS = 600.0
 REQUEST_TIMEOUT_SECONDS = 30
 STREAM_RETRY_SECONDS = 5.0
 SEEN_LIMIT = 512
+# Confirmation: gentle on Mobitech's server — at most VERIFY_WINDOW /
+# VERIFY_EVERY reads of the dashboard per change.
+VERIFY_EVERY_SECONDS = 10.0
+VERIFY_WINDOW_SECONDS = 120.0
+# The lock outlives the confirmation window, so a crash mid-way cannot leave
+# the rules refusing commands forever: it simply expires.
+LOCK_SECONDS = 180.0
 
 _SLOT = re.compile(r"^A[0-9A-Z]$")
 _VALVES = re.compile(r"^[0-9]{1,2}(,[0-9]{1,2}){0,4}$")
@@ -150,8 +165,21 @@ def controller_state(dashboard: Any) -> dict:
     if not cur:
         return {"running": False, "manual": False, "name": ""}
     running = str(cur.get("completed")) != "1"
+    valves = [int(v) for v in re.split(r"[-,]", str(cur.get("on_valves") or "")) if v.strip().isdigit() and int(v)]
     return {"running": running, "manual": running and str(cur.get("timer_type")) == "3",
-            "name": str(cur.get("timer_name") or "")}
+            "name": str(cur.get("timer_name") or ""), "valves": valves}
+
+
+def confirmed(action: str, valves: list[int], state: dict) -> bool:
+    """Does the controller's own state show the change took? A run: a manual
+    run is going on exactly these valves. A stop: no manual run is going."""
+    if action == "run":
+        return bool(state.get("manual")) and set(valves) <= set(state.get("valves") or [])
+    return not state.get("manual")
+
+
+def lock_live(lock: Any, now_ms: float) -> bool:
+    return isinstance(lock, dict) and isinstance(lock.get("until"), (int, float)) and lock["until"] > now_ms
 
 
 def check_against(action: str, valves: list[int], state: dict, allowed: dict[int, str]) -> None:
@@ -229,16 +257,23 @@ class IrrigationControl:
         self._seen.append(cmd_id)
         del self._seen[:-SEEN_LIMIT]
         result: dict[str, Any] = {"ok": False, "action": cmd.get("action") if isinstance(cmd, dict) else None}
+        locked = False
+        lock_path = f"{self._cfg.root}/{LOCK}"
         try:
             action, valves, minutes = validate(cmd, self._cfg.irrigation_max_minutes)
             if time.monotonic() - self._last_sent < MIN_GAP_SECONDS:
                 raise Refused("another command was sent seconds ago")
+            if lock_live(await self._rtdb.get(lock_path), time.time() * 1000):
+                raise Refused("the last valve change is still being confirmed")
             allowed = await self._allowed_valves() if action == "run" else {}
             state = controller_state(await self._read("dashboard"))
             check_against(action, valves, state, allowed)
             slot = self._cfg.dcon_user_slot
             command = run_command(valves, minutes, slot) if action == "run" else stop_command(slot)
             self._last_sent = time.monotonic()
+            await self._rtdb.put(lock_path, {"cmd": cmd_id, "action": action,
+                                             "until": int((time.time() + LOCK_SECONDS) * 1000)})
+            locked = True
             status, text = await self._send(command)
             ok = status < 400
             try:
@@ -251,6 +286,14 @@ class IrrigationControl:
                 self.sent += 1
                 _LOGGER.info("Sent irrigation %s %s%s -> %s %s", action,
                              result["valves"], f" for {minutes} min" if minutes else "", status, result["message"])
+                # Sent is not done. Tell the app we are confirming, then read
+                # the controller until its state shows the change.
+                result.update(verified=False, confirming=True)
+                await self._rtdb.put(f"{self._cfg.root}/{RESULTS}/{cmd_id}", {**result, "at": {".sv": "timestamp"}})
+                result["verified"] = await self._confirm(action, valves)
+                result["confirming"] = False
+                _LOGGER.info("Irrigation %s %s", action, "confirmed by the controller" if result["verified"]
+                             else f"NOT confirmed within {VERIFY_WINDOW_SECONDS:.0f} s")
             else:
                 _LOGGER.warning("Irrigation %s answered HTTP %s: %s", action, status, result["message"])
         except Refused as why:
@@ -266,10 +309,26 @@ class IrrigationControl:
                                      {**result, "at": {".sv": "timestamp"}})
             except Exception:
                 _LOGGER.exception("Could not record irrigation result %s", cmd_id)
+            if locked:
+                try:
+                    await self._rtdb.put(lock_path, None)
+                except Exception:
+                    _LOGGER.exception("Could not release the irrigation lock (it expires by itself)")
             try:
                 await self._rtdb.put(f"{self._cfg.root}/{QUEUE}/{cmd_id}", None)
             except Exception:
                 _LOGGER.exception("Could not clear irrigation command %s", cmd_id)
+
+    async def _confirm(self, action: str, valves: list[int]) -> bool:
+        deadline = time.monotonic() + VERIFY_WINDOW_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(VERIFY_EVERY_SECONDS)
+            try:
+                if confirmed(action, valves, controller_state(await self._read("dashboard"))):
+                    return True
+            except Exception:
+                _LOGGER.debug("Confirmation read failed; retrying", exc_info=True)
+        return False
 
     # ---- stream --------------------------------------------------------------
 

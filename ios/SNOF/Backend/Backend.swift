@@ -24,6 +24,9 @@ enum FarmEvent {
     case reports(Any?)
     /// irrigation_command_results: what the NUC did with each Run/Stop.
     case irrigationResults(Any?)
+    /// irrigation_lock: held from before a Run/Stop is sent until the
+    /// controller confirms it (or 3 min pass). While live, nothing may change.
+    case irrigationLock(Any?)
     case controller(Bool)
     case admin(Bool)
     case serverTimeOffset(Double)

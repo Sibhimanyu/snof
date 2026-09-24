@@ -22,6 +22,12 @@ Architecture and data shape are in README.md.
 
 ## Hard rules
 
+- **No second valve change until the first is confirmed** (owner,
+  2026-09-24): Mobitech accepts anything and its server cannot handle
+  conflicts. `irrigation_lock` is taken before sending and held until the
+  controller's own state shows the change (≤2 min of 10 s reads); RTDB rules,
+  the consumer and the app all refuse while it is live. Never ship a valve
+  path without it. Details: docs/irrigation-control.md.
 - **The NUC runs the Home Assistant bridge and nothing else** (owner,
   2026-09-24). Every Mobitech DCON call, report reads and valve commands,
   belongs in Firebase Cloud Functions. Mobitech 403s every Google Cloud

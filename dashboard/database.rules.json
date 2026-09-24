@@ -63,7 +63,12 @@
         // Off entirely unless allow_irrigation_control is set on the NUC.
         "irrigation_commands": {
           "$cmd": {
-            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['action','uid','at']) && (newData.child('action').val() === 'stop' || newData.hasChildren(['valves','minutes']))",
+            // No second change until the first is confirmed (owner,
+            // 2026-09-24): Mobitech accepts anything and cannot handle
+            // conflicts, so while irrigation_lock is live — taken by the
+            // consumer before it sends, released once the controller shows
+            // the change, expiring by itself after 3 min — nothing may queue.
+            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['action','uid','at']) && (newData.child('action').val() === 'stop' || newData.hasChildren(['valves','minutes'])) && (!root.child('farms').child($farm).child('irrigation_lock').exists() || root.child('farms').child($farm).child('irrigation_lock/until').val() < now)",
             "action": { ".validate": "newData.isString() && newData.val().matches(/^(run|stop)$/)" },
             "valves": { ".validate": "newData.isString() && newData.val().length <= 14 && newData.val().matches(/^[0-9]{1,2}(,[0-9]{1,2}){0,4}$/)" },
             "minutes": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 60 && newData.val() % 1 === 0" },

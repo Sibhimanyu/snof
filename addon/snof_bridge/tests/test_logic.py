@@ -490,6 +490,24 @@ def test_only_irrigation_valves_and_only_when_the_controller_is_idle():
     assert "no manual run" in _refused(ic.check_against, "stop", [], idle, allowed)
 
 
+def test_a_change_is_only_confirmed_by_the_controllers_own_state():
+    manual = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "3",
+                                                "timer_name": "Manual", "on_valves": "4-6-0-0-0"}}}}
+    program = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "1",
+                                                 "timer_name": "Morning", "on_valves": "4-0-0"}}}}
+    idle = {"MCON1": {"timers": {"current": {"completed": "1", "timer_type": "3", "on_valves": "4-6"}}}}
+    assert ic.controller_state(manual)["valves"] == [4, 6]
+    assert ic.confirmed("run", [4, 6], ic.controller_state(manual))
+    assert not ic.confirmed("run", [4, 12], ic.controller_state(manual)), "a valve we asked for is not on"
+    assert not ic.confirmed("run", [4], ic.controller_state(program)), "a program is not our manual run"
+    assert not ic.confirmed("run", [4, 6], ic.controller_state(idle)), "finished is not running"
+    assert ic.confirmed("stop", [], ic.controller_state(idle))
+    assert not ic.confirmed("stop", [], ic.controller_state(manual))
+    now = 1_800_000_000_000
+    assert ic.lock_live({"until": now + 1}, now) and not ic.lock_live({"until": now - 1}, now)
+    assert not ic.lock_live(None, now) and not ic.lock_live({"cmd": "x"}, now)
+
+
 def test_irrigation_control_is_off_without_every_setting():
     from types import SimpleNamespace as NS
     full = dict(allow_irrigation_control=True, dcon_serial="s", dcon_token_id="t",

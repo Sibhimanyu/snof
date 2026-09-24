@@ -288,13 +288,21 @@ final class DemoBackend: FarmBackend {
                 program["at"] = at
             }
             irr["program"] = program
-            self.tree["irrigation"] = irr
+            // As the farm does it: lock, send, "confirming", then confirmed
+            // once the controller shows the change, and the lock released.
+            self.handler?(.irrigationLock(["cmd": key, "action": command.action, "until": at + 180_000]))
             var results = self.tree["irrigation_command_results"] as? [String: Any] ?? [:]
-            results[key] = ["ok": true, "action": command.action, "status": 200, "valves": valveText,
-                            "minutes": command.minutes ?? 0, "message": "Command has been sent successfully", "at": at]
-            self.tree["irrigation_command_results"] = results
-            self.handler?(.irrigation(irr))
+            let sent: [String: Any] = ["ok": true, "action": command.action, "status": 200, "valves": valveText,
+                                       "minutes": command.minutes ?? 0, "message": "Command has been sent successfully", "at": at]
+            results[key] = sent.merging(["verified": false, "confirming": true]) { $1 }
             self.handler?(.irrigationResults(results))
+            try? await Task.sleep(for: .seconds(4))
+            self.tree["irrigation"] = irr
+            self.handler?(.irrigation(irr))
+            results[key] = sent.merging(["verified": true, "confirming": false]) { $1 }
+            self.tree["irrigation_command_results"] = results
+            self.handler?(.irrigationResults(results))
+            self.handler?(.irrigationLock(nil))
         }
         return key
     }

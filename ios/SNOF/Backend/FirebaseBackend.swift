@@ -127,6 +127,7 @@ final class FirebaseBackend: FarmBackend {
                 onDenied: denied) { handler(.reports($0)) }
         observe(db.reference(withPath: "\(farm)/irrigation_command_results").queryLimited(toLast: 10),
                 onDenied: nil) { handler(.irrigationResults($0)) }
+        observe("\(farm)/irrigation_lock", onDenied: nil) { handler(.irrigationLock($0)) }
     }
 
     func detach() {

@@ -69,28 +69,51 @@ NODES = {"node1": {"valve": {
     "2": {"valve_name": "2 BPump", "valve_type": "Booster Pump"},
 }}}
 IDLE = {"MCON1": {"timers": {"current": {"completed": "1", "timer_type": "1", "timer_name": "Morning"}}}}
-MANUAL = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "3", "timer_name": "Manual"}}}}
+MANUAL = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "3", "timer_name": "Manual",
+                                            "on_valves": "4-6-0-0-0"}}}}
 PROGRAM = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "1", "timer_name": "Morning"}}}}
 
 
 class Reads:
-    def __init__(self, dashboard=IDLE):
-        self._dash = dashboard
+    """A controller. `after` is what its dashboard says once a command has been
+    sent (None: it never changes, so nothing is ever confirmed)."""
+    def __init__(self, dashboard=IDLE, after="auto"):
+        self._dash, self._after, self.sent = dashboard, after, False
+        self.dashboard_reads = 0
 
     def nodes(self):
         return NODES
 
     def dashboard(self):
-        return self._dash
+        self.dashboard_reads += 1
+        if not self.sent or self._after is None:
+            return self._dash
+        return self._after
 
 
 class Commander:
-    def __init__(self):
-        self.sent = []
+    def __init__(self, reads=None):
+        self.sent, self.reads = [], reads
 
     def send(self, command):
         self.sent.append(command)
+        if self.reads is not None:
+            self.reads.sent = True
+            if self.reads._after == "auto":
+                self.reads._after = IDLE if command.startswith("OFF") else MANUAL
         return 200, '{"message": "Command sent"}'
+
+
+class Clock:
+    """Fake time: sleep() moves it on, so a 2-minute confirmation runs instantly."""
+    def __init__(self, t=None):
+        self.t = time.time() if t is None else t
+
+    def now(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
 
 
 def enabled_store(**meta):
@@ -104,11 +127,18 @@ def cmd(**over):
     return base
 
 
-def run(store, cmd_id, command, reads=None, commander=None, now=time.time):
-    commander = commander or Commander()
+def run(store, cmd_id, command, reads=None, commander=None, now=None, clock=None):
+    reads = reads or Reads()
+    commander = commander or Commander(reads)
+    if commander.reads is None:
+        commander.reads = reads
+    clock = clock or Clock()
+    if now is not None:
+        clock.t = now()
     store.data.setdefault("farms", {}).setdefault("snof", {}).setdefault("irrigation_commands", {})[cmd_id] = command
-    result = IC.handle(store, ROOT, cmd_id, command, reads=reads or Reads(),
-                       commander_factory=lambda: commander, slot="A8", max_minutes=60, now=now)
+    result = IC.handle(store, ROOT, cmd_id, command, reads=reads,
+                       commander_factory=lambda: commander, slot="A8", max_minutes=60,
+                       now=clock.now, sleep=clock.sleep)
     return result, commander
 
 
@@ -186,6 +216,38 @@ def test_a_bad_slot_is_refused_before_any_read():
     result = IC.handle(store, ROOT, "-a", cmd(), reads=Reads(), commander_factory=lambda: c,
                        slot="U3", max_minutes=60)
     assert c.sent == [] and "not configured" in result["message"]
+
+
+def test_sent_is_not_done_until_the_controller_confirms():
+    store = enabled_store()
+    reads = Reads()
+    result, c = run(store, "-a", cmd(), reads=reads)
+    assert result["ok"] and result["verified"] is True and result["confirming"] is False
+    assert reads.dashboard_reads >= 2, "read before sending, then again to confirm"
+    assert store.reference(f"{ROOT}/irrigation_lock").get() is None, "lock released once confirmed"
+
+
+def test_an_unconfirmed_change_says_so_and_still_releases_the_lock():
+    store = enabled_store()
+    reads = Reads(after=None)          # the controller never shows the run
+    result, c = run(store, "-a", cmd(), reads=reads)
+    assert len(c.sent) == 1 and result["ok"] and result["verified"] is False
+    reads_used = reads.dashboard_reads - 1
+    assert reads_used <= IC.VERIFY_WINDOW_SECONDS / IC.VERIFY_EVERY_SECONDS, f"{reads_used} reads: too many for a weak server"
+    assert store.reference(f"{ROOT}/irrigation_lock").get() is None
+
+
+def test_nothing_is_sent_while_the_last_change_is_being_confirmed():
+    store = enabled_store()
+    clock = Clock()
+    store.data["farms"]["snof"]["irrigation_lock"] = {"cmd": "-a", "action": "run",
+                                                      "until": int((clock.t + 60) * 1000)}
+    result, c = run(store, "-b", cmd(at=clock.t * 1000), clock=clock)
+    assert c.sent == [] and result["ok"] is False and "being confirmed" in result["message"]
+    # An expired lock (a crash mid-confirmation) does not block for ever.
+    store.data["farms"]["snof"]["irrigation_lock"]["until"] = int((clock.t - 1) * 1000)
+    result, c = run(store, "-c", cmd(at=clock.t * 1000), clock=clock)
+    assert result["ok"] and len(c.sent) == 1
 
 
 def test_command_template_matches_the_add_on():
