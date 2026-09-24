@@ -237,7 +237,7 @@ extension Irrigation {
         var byNumber: [Int: String] = [:]
         for r in rows { if let id = r["id"].flatMap(Int.init), let n = r["name"] { byNumber[id] = n } }
         let dayRuns = runs(c).filter { $0.day == day && !$0.valves.isEmpty }
-        var valves: [String: (no: Int?, min: Int, cut: Int)] = [:]
+        var valves: [String: (no: Int?, min: Int, cut: Set<String>)] = [:]
         var order: [String] = []
         for r in dayRuns {
             let cut = !r.finished && !mayStillRun(r, now: now, zone: zone)
@@ -245,13 +245,14 @@ extension Irrigation {
                 let no = valveNumber(raw)
                 let name = no.flatMap { byNumber[$0] } ?? raw
                 if valves[name] == nil { order.append(name) }
-                var v = valves[name] ?? (no, 0, 0)
+                var v = valves[name] ?? (no, 0, [])
                 v.min += r.deliveredMin ?? 0
-                if cut { v.cut += 1 }
+                if cut { v.cut.insert("\(r.start)|\(r.name)") }
                 valves[name] = v
             }
         }
         var crops: [String: CropWater] = [:]
+        var cutRuns: [String: Set<String>] = [:]
         var keys: [String] = []
         for n in order {
             guard let v = valves[n] else { continue }
@@ -261,7 +262,10 @@ extension Irrigation {
             if crops[key] == nil { keys.append(key) }
             var cw = crops[key] ?? CropWater(key: key, art: art, label: label.isEmpty ? n : label, minutes: 0, cutShort: 0, valves: [])
             cw.minutes = max(cw.minutes, v.min)
-            cw.cutShort = max(cw.cutShort, v.cut)
+            // Runs of one crop's valves, counted once each (Mango1 and Mango2
+            // are separate programs, so their cuts add up).
+            cutRuns[key, default: []].formUnion(v.cut)
+            cw.cutShort = cutRuns[key]?.count ?? 0
             cw.valves.append(ValveWater(name: n, minutes: v.min))
             crops[key] = cw
         }
@@ -271,8 +275,8 @@ extension Irrigation {
             .sorted { (Int($0["id"] ?? "") ?? 0) < (Int($1["id"] ?? "") ?? 0) }
             .compactMap { $0["name"] }
         let oldest = c.timerLog.compactMap { $0["at"] }.min() ?? ""
-        // A truncated log is exactly at a cap: 32 before 2026-09-25, 150 since.
-        let partial = (c.timerLog.count == 32 || c.timerLog.count >= 150) && String(oldest.prefix(10)) >= day
+        // The function keeps 150 runs; at the cap, earlier runs may be missing.
+        let partial = c.timerLog.count >= 150 && String(oldest.prefix(10)) >= day
         let sorted = keys.compactMap { crops[$0] }
             .sorted { $0.minutes != $1.minutes ? $0.minutes > $1.minutes : $0.label < $1.label }
         return (sorted, dry, dayRuns, partial)
@@ -352,7 +356,7 @@ public enum Attention {
                 && (FarmTime.date(r.start, zone: zone).map { $0 >= since } ?? false)
         }
         if !cut.isEmpty {
-            out.append(.init(.warn, "\(cut.count) \(cut.count == 1 ? "run" : "runs") stopped early",
+            out.append(.init(.warn, "\(cut.count) \(cut.count == 1 ? "run" : "runs") cut short in the last 24 h",
                              cut.prefix(2).map { "\($0.name) \($0.amount ?? "")" }.joined(separator: " · "), .irrigation))
         }
         if let err = c.lastError, !err.isEmpty {
@@ -360,7 +364,7 @@ public enum Attention {
             out.append(.init(.warn, "Could not reach the controller", String(short.prefix(80)), .irrigation))
         }
         if i.mobitechSignInNeeded {
-            out.append(.init(.warn, "Mobitech sign-in needed", "valve control is off until an admin signs in", .irrigation))
+            out.append(.init(.warn, "Mobitech sign-in needed", "sign in so valve commands keep working", .irrigation))
         }
         let w = i.water
         for m in ([w.river] + w.motors.map { Optional($0) }).compactMap({ $0 }) {

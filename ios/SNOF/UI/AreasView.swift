@@ -57,7 +57,12 @@ struct AreaDetailView: View {
                 }
             } else {
                 if store.canControl && !store.gate(.control).ok { ControlNote() }
-                ForEach(Sorting.domainsForArea(list), id: \.domain) { group in
+                // A wholly offline device shows nothing but "unavailable":
+                // one line at the end instead (a switched-off printer was 56
+                // dead rows). A search still finds its readings.
+                let deadIDs = Set(devices.filter(\.isOffline).map(\.id))
+                let shown = search.isEmpty ? list.filter { !deadIDs.contains($0.device ?? $0.key) } : list
+                ForEach(Sorting.domainsForArea(shown), id: \.domain) { group in
                     TitledPanel(title: Entity.humanDomain(group.domain).capitalized, count: group.entities.count) {
                         if Farm.controllable.contains(group.domain) {
                             ForEach(Array(group.entities.enumerated()), id: \.element.id) { i, e in
@@ -68,6 +73,13 @@ struct AreaDetailView: View {
                             RowList(items: group.entities, framed: false) { DeviceRow(entity: $0) }
                         }
                     }
+                }
+                if search.isEmpty {
+                    let deadDevices = devices.filter(\.isOffline)
+                    let faults = deadDevices.filter { Systems.offlineIsFault($0, system: index[$0.id]) }
+                    let off = deadDevices.filter { !Systems.offlineIsFault($0, system: index[$0.id]) }
+                    if !faults.isEmpty { Note(text: "Offline: " + faults.map(\.name).joined(separator: ", "), tone: .warn) }
+                    if !off.isEmpty { Note(text: "Switched off: " + off.map(\.name).joined(separator: ", ")) }
                 }
             }
         }

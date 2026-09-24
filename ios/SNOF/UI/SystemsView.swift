@@ -13,6 +13,7 @@ struct SystemRoute: Hashable { let id: FarmSystemID }
 
 struct AttentionCard: View {
     @Environment(FarmStore.self) private var store
+    @State private var all = false      // "N more" opened by hand
 
     var body: some View {
         let items = store.attention
@@ -41,14 +42,19 @@ struct AttentionCard: View {
                         .font(Theme.panelTitle).foregroundStyle(Theme.text)
                 }
                 .padding(.horizontal, 18).padding(.vertical, 12)
-                ForEach(items.prefix(5)) { item in
+                ForEach(all ? items : Array(items.prefix(5))) { item in
                     Hairline()
                     AttentionRowView(item: item)
                 }
                 if items.count > 5 {
                     Hairline()
-                    Text("\(items.count - 5) more").font(Theme.small).foregroundStyle(Theme.faint)
-                        .padding(.horizontal, 18).padding(.vertical, 10)
+                    Button { withAnimation(.snappy) { all.toggle() } } label: {
+                        Text(all ? "Show fewer" : "\(items.count - 5) more")
+                            .font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .padding(.horizontal, 18).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .modifier(Panel(padding: 0))
@@ -439,7 +445,10 @@ struct PumpPowerCard: View {
                 HStack {
                     Text("Pump & power").font(Theme.panelTitle).foregroundStyle(Theme.text)
                     Spacer()
-                    if let at = supply?.at { Text("at \(at)").font(Theme.small).foregroundStyle(Theme.faint) }
+                    // Its age, not a bare "at 23:58" that says nothing after midnight.
+                    if let t = c.program?.at ?? c.lastUpdated {
+                        Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint)
+                    }
                 }
                 HStack(alignment: .bottom, spacing: 24) {
                     if let s = supply, s.hasVoltage {

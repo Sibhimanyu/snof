@@ -620,7 +620,7 @@ final class FarmStore {
 
     /// One line for any screen, or nil when SNOF's session is fine.
     var mobitechProblem: String? {
-        guard let st = mobitechStatus else { return "SNOF is not signed in to Mobitech, so valve commands cannot be sent." }
+        guard let st = mobitechStatus else { return "SNOF is not signed in to Mobitech. Sign in so valve commands keep working." }
         guard st.rejected, let when = st.lastRejected else { return nil }
         return "Mobitech rejected SNOF's session at \(Date(timeIntervalSince1970: when / 1000).formatted(date: .abbreviated, time: .shortened)). Sign in again to send valve commands."
     }

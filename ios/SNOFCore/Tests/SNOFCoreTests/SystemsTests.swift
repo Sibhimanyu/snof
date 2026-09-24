@@ -113,9 +113,9 @@ import Foundation
         let r = Irrigation.crops(c, day: "2026-09-24", now: start.addingTimeInterval(30 * 60))
         #expect(r.crops.first?.cutShort == 0, "22 minutes into a 1h run is not cut short")
         var i = Attention.Input(); i.irrigation = c; i.now = start.addingTimeInterval(30 * 60)
-        #expect(!Attention.items(i).contains { $0.text.contains("stopped early") })
+        #expect(!Attention.items(i).contains { $0.text.contains("cut short") })
         i.now = start.addingTimeInterval(90 * 60)
-        #expect(Attention.items(i).contains { $0.text == "1 run stopped early" }, "once its hour has passed it is")
+        #expect(Attention.items(i).contains { $0.text == "1 run cut short in the last 24 h" }, "once its hour has passed it is")
     }
 
     @Test func failedNameLookupStillResolves() {
@@ -141,10 +141,23 @@ import Foundation
 
     @Test func partialDayIsFlagged() {
         var c = IrrigationCache()
-        c.timerLog = (0..<32).map { i in ["at": "2026-09-24 \(String(format: "%02d", 23 - i / 2)):00:00", "event": "Program · X", "detail": "1h, finished · 12 Coco 1", "source": "timer"] }
-        #expect(Irrigation.crops(c, day: "2026-09-24").partial, "32 rows all on the day: earlier runs may be missing")
-        c.timerLog.removeLast()
-        #expect(!Irrigation.crops(c, day: "2026-09-24").partial, "31 rows is the whole log")
+        c.timerLog = (0..<150).map { i in ["at": "2026-09-24 \(String(format: "%02d", 23 - i / 7)):\(String(format: "%02d", i % 60)):00", "event": "Program · X", "detail": "1h, finished · 12 Coco 1", "source": "timer"] }
+        #expect(Irrigation.crops(c, day: "2026-09-24").partial, "at the 150-run cap, all on the day: earlier runs may be missing")
+        c.timerLog = Array(c.timerLog.prefix(32))
+        #expect(!Irrigation.crops(c, day: "2026-09-24").partial, "32 runs can be the whole log")
+    }
+
+    @Test func cutRunsAddUpAcrossACropsPrograms() {
+        var c = IrrigationCache()
+        c.timeZone = "+05:30"
+        c.timerLog = [
+            ["at": "2026-09-24 21:45:22", "event": "Program · Mango1", "detail": "25m of 1h, stopped · 16 Mango 1 · started by A8", "source": "timer"],
+            ["at": "2026-09-24 22:27:09", "event": "Program · Mango1", "detail": "50m of 1h, stopped · 16 Mango 1 · started by timer", "source": "timer"],
+            ["at": "2026-09-24 23:40:08", "event": "Program · Mango2", "detail": "11m of 1h, stopped · 17 Mango 2 · started by timer", "source": "timer"],
+        ]
+        let late = FarmTime.date("2026-09-25 03:00:00", zone: FarmTime.zone("+05:30"))!
+        let mango = Irrigation.crops(c, day: "2026-09-24", now: late).crops.first { $0.label == "Mango" }!
+        #expect(mango.cutShort == 3, "two Mango1 runs and one Mango2 run were cut")
     }
 
     @Test func aFanIsNeverASwitchModuleFault() {

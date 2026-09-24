@@ -2326,7 +2326,10 @@ function waterMotorCard(m, vendorErr) {
       <div class="wmotor-title"><h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p></div>
       ${motorStateTag(m)}
     </div>
-    ${headline.length ? `<div class="mb-facts">${headline.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div>` : ''}
+    ${headline.length ? `<div class="mb-facts">${headline.map(([k, v]) => {
+      const [main, asOf] = String(v).split(' · as of ');
+      return `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(main)}</strong>${asOf ? `<em class="as-of">as of ${escapeHtml(asOf)}</em>` : ''}</div>`;
+    }).join('')}</div>` : ''}
     ${notes.join('')}
     <details class="wdetails"><summary>${when ? `Reported ${escapeHtml(agoText(when))}` : 'Details'}</summary>
       <div class="mb-facts">${details.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></details>

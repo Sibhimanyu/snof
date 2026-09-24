@@ -14,11 +14,14 @@ struct DevicesView: View {
     var body: some View {
         @Bindable var store = store
         let all = store.entities
+        // "Not reporting" is a device that is wholly offline, not one with a
+        // couple of readings down (the inverter, 2 of 54).
+        let dead = Set(store.devices.filter(\.isOffline).map(\.id))
         let scoped = all.filter {
             switch store.deviceStatus {
             case .all: return true
             case .active: return !$0.isBad
-            case .offline: return $0.isBad
+            case .offline: return dead.contains($0.device ?? $0.key)
             }
         }
         let list = scoped.filter {
@@ -27,7 +30,9 @@ struct DevicesView: View {
         }
         let groups = Sorting.byDevice(list, names: store.deviceNames).sorted { Sorting.natural($0.name, $1.name) }
         let whole = Dictionary(store.devices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let filtering = !search.isEmpty || store.deviceDomain != nil || store.deviceStatus == .offline
+        // Opened by hand or by a search: dead devices opened by the filter were
+        // ~170 rows of "unavailable".
+        let filtering = !search.isEmpty || store.deviceDomain != nil
 
         Page(title: "Rooms") {
             RoomsSwitch()
@@ -65,7 +70,7 @@ struct DevicesView: View {
         switch f {
         case .all: return store.devices.count
         case .active: return Sorting.byDevice(all.filter { !$0.isBad }, names: [:]).count
-        case .offline: return Sorting.byDevice(all.filter(\.isBad), names: [:]).count
+        case .offline: return store.devices.filter(\.isOffline).count
         }
     }
 }
@@ -111,16 +116,12 @@ struct DeviceGroupRow: View {
         .animation(.snappy(duration: 0.2), value: open)
     }
 
-    private var shown: String {
-        group.entities.count == whole.entities.count
-            ? "\(whole.entities.count) \(whole.entities.count == 1 ? "reading" : "readings")"
-            : "\(group.entities.count) of \(whole.entities.count) readings"
-    }
 
     @ViewBuilder private var status: some View {
         let down = whole.badCount
         if down == 0 { Tag(text: "All reporting", kind: .on) }
-        else if down == whole.entities.count { Tag(text: "Offline", kind: .bad) }
+        // An appliance off at the wall is "Off", as on Home and Rooms.
+        else if down == whole.entities.count { Tag(text: Systems.isAppliance(whole) ? "Off" : "Offline", kind: Systems.isAppliance(whole) ? .plain : .bad) }
         else { Tag(text: "\(down) of \(whole.entities.count) down", kind: .warn) }
     }
 }
