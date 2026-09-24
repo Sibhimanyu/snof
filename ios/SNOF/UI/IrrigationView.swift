@@ -13,6 +13,10 @@ struct IrrigationView: View {
     @State private var from = Calendar.current.date(byAdding: .day, value: -2, to: .now) ?? .now
     @State private var to = Date.now
     @State private var sending = false
+    /// The report open in the sheet, by key, so it keeps updating while open.
+    @State private var opened: OpenReport?
+    /// Set by Generate: the next report to land opens by itself.
+    @State private var awaitingNew = false
 
     var body: some View {
         Page(eyebrow: "Mobitech DCON", title: "Irrigation",
@@ -22,15 +26,24 @@ struct IrrigationView: View {
                 Note(text: "Report generation is limited to controllers — your account can view results below, but not run new pulls.")
             }
 
-            SectionHead(symbol: "doc.text", title: "Reports")
             if store.reports.isEmpty {
+                SectionHead(symbol: "doc.text", title: "Reports")
                 let gate = store.gate(.irrigation)
                 EmptyBlock(title: "No reports yet",
                            message: !store.canControl ? "No reports have been run yet."
                                : !gate.ok ? gate.why : "Pick a report above and press Generate.",
                            symbol: "doc.text")
             } else {
-                ForEach(store.reports) { ReportCard(report: $0) }
+                // One line per report; each opens on its own. A handful of
+                // full-length reports stacked here made the tab a scroll
+                // through charts to find the one you wanted.
+                TitledPanel(title: "Reports", count: store.reports.count) {
+                    ForEach(Array(store.reports.enumerated()), id: \.element.id) { i, r in
+                        if i > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
+                        Button { opened = OpenReport(id: r.key) } label: { ReportListRow(report: r, now: store.now) }
+                            .buttonStyle(.plain)
+                    }
+                }
             }
 
             if !store.irrigation.isEmpty { LastResults(cache: store.irrigation) }
@@ -39,6 +52,23 @@ struct IrrigationView: View {
                 .padding(.top, 8)
         }
         .navigationTitle("Irrigation")
+        .sheet(item: $opened) { open in
+            ReportSheet(reportKey: open.id)
+        }
+        #if DEBUG
+        .task {
+            if Snapshot.args.contains("-open-report") {
+                try? await Task.sleep(for: .seconds(1))
+                if let k = store.reports.first?.key { opened = OpenReport(id: k) }
+            }
+        }
+        #endif
+        // The report you just asked for opens by itself when it lands.
+        .onChange(of: store.reports.first?.key) { old, new in
+            guard awaitingNew, let new, new != old else { return }
+            awaitingNew = false
+            opened = OpenReport(id: new)
+        }
     }
 
     @ViewBuilder private var builder: some View {
@@ -69,6 +99,7 @@ struct IrrigationView: View {
 
             Button {
                 sending = true
+                awaitingNew = true
                 Task {
                     await store.requestReport(type: type, from: from, to: to)
                     sending = false
@@ -98,17 +129,162 @@ struct IrrigationView: View {
     }
 }
 
+/* ---- the report list and the report sheet ---- */
+
+struct OpenReport: Identifiable, Hashable { let id: String }
+
+/// One report as a list row: what it is, whether it worked, when, and the
+/// one-line summary. The full report is a tap away.
+struct ReportListRow: View {
+    let report: Report
+    let now: Date
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(report.label).font(Theme.font(15, .bold, relativeTo: .subheadline)).tracking(-0.2)
+                        .foregroundStyle(Theme.text).lineLimit(1)
+                    Spacer(minLength: 4)
+                    ReportStatusTag(status: report.status)
+                }
+                Text(meta).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
+                if report.status == "error", !report.error.isEmpty {
+                    Text(report.error).font(Theme.meta).foregroundStyle(Theme.bad).lineLimit(2)
+                } else if !summary.isEmpty {
+                    Text(summary).font(Theme.font(13.5, .regular, relativeTo: .footnote))
+                        .foregroundStyle(Theme.text.opacity(0.85)).lineLimit(2)
+                }
+            }
+            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 13)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the report")
+    }
+
+    /// The summary without the date range the line above already shows —
+    /// the function appends it for the full report, where it is not repeated.
+    private var summary: String {
+        var s = report.summary
+        if let f = report.from, let t = report.to {
+            for range in ["\(f) → \(t)", f == t ? f : nil].compactMap({ $0 }) {
+                if s.hasSuffix(" · " + range) { s.removeLast(range.count + 3) }
+                else if s == range { s = "" }
+            }
+        }
+        return s
+    }
+
+    /// "2026-02-20 → 2026-02-22 · 2h ago".
+    private var meta: String {
+        var bits: [String] = []
+        if let f = report.from, let t = report.to { bits.append(f == t ? f : "\(f) → \(t)") }
+        if report.at > 0 {
+            let age = now.timeIntervalSince1970 - report.at / 1000
+            bits.append(age < 60 ? "just now" : "\(Format.age(age)) ago")
+        }
+        return bits.isEmpty ? "Waiting for the controller" : bits.joined(separator: " · ")
+    }
+}
+
+/// The whole report, on its own, looked up by key so a report still being
+/// written fills in while it is open.
+struct ReportSheet: View {
+    @Environment(FarmStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("appearance") private var appearance: Appearance = .system
+    let reportKey: String
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if let report = store.reports.first(where: { $0.key == reportKey }) {
+                    ReportSheetContent(report: report)
+                } else {
+                    EmptyBlock(title: "Report no longer here",
+                               message: "Only the latest reports are kept. Generate it again for fresh numbers.",
+                               symbol: "doc.text")
+                        .padding(16)
+                }
+            }
+            .background(Theme.bg)
+            .navigationTitle("Report")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(removing: .title)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.font(Theme.font(16, .bold, relativeTo: .body))
+                }
+            }
+            .toolbarBackground(Theme.bar, for: .navigationBar)
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(appearance.scheme)
+    }
+}
+
+/// What the sheet shows for one report: eyebrow, title, then the report.
+struct ReportSheetContent: View {
+    let report: Report
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Irrigation report").eyebrowStyle()
+            Text(report.label).font(Theme.font(28, .bold, relativeTo: .title)).tracking(-1)
+                .foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+            ReportBody(report: report, showTitle: false)
+        }
+        .padding(16)
+        .frame(maxWidth: 820, alignment: .leading)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Three outcomes, three tags: a report where one call answered and one
+/// did not is not "Ready", and must not read as if it were.
+struct ReportStatusTag: View {
+    let status: String
+    var body: some View {
+        switch status {
+        case "ok": Tag(text: "Ready", kind: .on)
+        case "partial": Tag(text: "Partly ready", kind: .warn)
+        case "error": Tag(text: "Failed", kind: .bad)
+        default: Tag(text: "Working…")
+        }
+    }
+}
+
 /* ---- one report ---- */
 
+/// A full report in a panel. The list uses rows and the sheet uses
+/// ReportBody; this stays for the -reports review snapshot.
 struct ReportCard: View {
     let report: Report
+
+    var body: some View {
+        ReportBody(report: report, showTitle: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+    }
+}
+
+/// Everything a report says, without a frame: status and when, summary or
+/// error, then its sections drawn by kind.
+struct ReportBody: View {
+    let report: Report
+    var showTitle = true
 
     var body: some View {
         let drawable = report.sections.filter { ReportSectionView.kinds.contains($0.kind) }
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(report.label).font(Theme.font(16.5, .bold, relativeTo: .headline)).foregroundStyle(Theme.text)
-                statusTag
+                if showTitle {
+                    Text(report.label).font(Theme.font(16.5, .bold, relativeTo: .headline)).foregroundStyle(Theme.text)
+                }
+                ReportStatusTag(status: report.status)
                 Spacer(minLength: 0)
             }
             Text(when).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
@@ -125,19 +301,6 @@ struct ReportCard: View {
                     ReportSectionView(section: sec, withTitle: drawable.count > 1)
                 }
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .panel()
-    }
-
-    /// Three outcomes, three tags: a report where one call answered and one
-    /// did not is not "Ready", and must not read as if it were.
-    @ViewBuilder private var statusTag: some View {
-        switch report.status {
-        case "ok": Tag(text: "Ready", kind: .on)
-        case "partial": Tag(text: "Partly ready", kind: .warn)
-        case "error": Tag(text: "Failed", kind: .bad)
-        default: Tag(text: "Working…")
         }
     }
 
@@ -166,7 +329,7 @@ struct ReportSectionView: View {
             if withTitle, !section.title.isEmpty {
                 HStack(spacing: 6) {
                     Text(section.title).font(Theme.font(14.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
-                    if !section.source.isEmpty { Tag(text: section.source) }
+                    if !section.source.isEmpty { Tag(text: section.source, dot: false) }
                 }
             }
             if section.status == "error" {
@@ -401,7 +564,7 @@ private struct Timeline: View {
                     if let art = ValveArt.key(timelineSource: r["source"]) {
                         ValveGlyph(art: art, size: 22)
                     }
-                    if let s = r["source"], !s.isEmpty { Tag(text: s) }
+                    if let s = r["source"], !s.isEmpty { Tag(text: s, dot: false) }
                 }
                 .padding(.vertical, 5)
             }

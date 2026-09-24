@@ -142,6 +142,13 @@ Refreshing needs LocalDevVPN on and Wi-Fi.
   eyebrow:title:subtitle:)`. On iOS 26 the bar items opt out of the glass
   capsule (`sharedBackgroundVisibility`), behind `#available`. The theme
   follows the phone unless the Account sheet says otherwise.
+- **Reports are a list, not a feed** (0.1.9). Each report is one row
+  (name, status, range, age, one-line summary); tapping opens it in a
+  full-height sheet (`ReportSheet`, looked up by key so a report still being
+  written fills in while open). The report you just generated opens itself
+  when it lands. `-open-report` and `-report-sheet` are the debug review
+  hooks; a Catalyst sheet is its own window, so `-report-sheet` renders
+  `ReportSheetContent` directly.
 - **The farm pulse sentence lives in SNOFCore** (`Pulse.summary`), unit
   tested, mirroring `pulsePanel()` in app.js.
 - **Review hooks** (debug only): `-demo-live` loads production's 2026-09-24
