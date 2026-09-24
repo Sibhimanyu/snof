@@ -877,6 +877,96 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   .run-bar .btn-ghost{padding:0 12px}
 }
 
+/* ---------- Home, drawn (2026-09-25) ----------
+   The water chain as pipes, rings for irrigation and devices, solar, and the
+   switches as tiles. Green = on / flowing, brick = offline, nothing else. */
+.flow{padding:20px 22px 18px;margin-bottom:14px}
+.flow-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.flow-head .panel-link{margin-left:auto}
+.card-age{font-size:12px;font-weight:500;font-style:normal;letter-spacing:0;text-transform:none;color:var(--faint)}
+.flow-row{display:flex;align-items:flex-start;gap:0}
+.flow-node{flex:0 0 auto;width:112px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
+.flow-disc{display:grid;place-items:center;width:72px;height:72px;border-radius:50%;background:var(--panel-2);
+  border:2px solid var(--line);transition:border-color .3s var(--ease),box-shadow .3s var(--ease)}
+.flow-node.is-on .flow-disc{border-color:var(--brand);box-shadow:0 0 0 6px var(--accent-glow)}
+.flow-art{width:44px;height:44px;object-fit:contain}
+.flow-title{font-size:14px;font-weight:700;color:var(--text);margin-top:4px}
+.flow-sub{font-size:12.5px;color:var(--muted)}
+.flow-node.is-on .flow-sub{color:var(--accent);font-weight:650}
+.flow-pipe{flex:1;min-width:24px;margin-top:32px;height:8px}
+.pipe-line{display:block;height:6px;margin-top:1px;border-radius:3px;background:var(--line-2)}
+.flow-pipe.is-on .pipe-line{background:repeating-linear-gradient(90deg,var(--brand) 0 10px,transparent 10px 18px);
+  background-size:18px 100%;animation:flow .9s linear infinite}
+@keyframes flow{to{background-position:18px 0}}
+.flow-branch{display:flex;align-items:center;gap:10px;margin:14px auto 0;padding:8px 14px;width:fit-content;
+  border-radius:999px;background:var(--panel-2);font-size:13px;color:var(--muted)}
+.flow-branch.is-on{color:var(--accent);font-weight:650}
+.flow-mini{width:24px;height:24px;object-fit:contain}
+
+.vcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:28px}
+.vcard{display:flex;flex-direction:column;gap:12px;padding:18px 20px;color:inherit}
+.vcard:hover{box-shadow:var(--shadow-card-hover)}
+.vcard-label{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.vcard-body{display:flex;align-items:center;gap:16px}
+.vcard-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.vcard-text strong{font-size:16px;font-weight:750;letter-spacing:-.02em;color:var(--text)}
+.vcard-text strong.big{font-size:32px;letter-spacing:-.05em;line-height:1}
+.vcard-text strong.big small{margin-left:4px;font-size:14px;font-weight:650;letter-spacing:0;color:var(--faint)}
+.vcard-text span{font-size:13px;color:var(--muted)}
+.vcard-empty{font-size:14px;color:var(--muted)}
+.crops{display:flex;gap:4px;margin-top:4px}
+.crops .crop{width:26px;height:26px;object-fit:contain}
+.ring{position:relative;flex:none;width:92px;height:92px}
+.ring svg{width:100%;height:100%;rotate:-90deg}
+.ring circle{fill:none;stroke-width:9;stroke-linecap:round}
+.ring-track{stroke:var(--panel-3)}
+.ring-track.bad{stroke:var(--bad-line)}
+.ring-fill{stroke:var(--faint);transition:stroke-dasharray .6s var(--ease)}
+.ring.is-on .ring-fill,.ring.donut .ring-fill,.ring.is-done .ring-fill{stroke:var(--brand)}
+.ring.is-warn .ring-fill{stroke:var(--warn)}
+.ring-mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
+.ring-mid strong{font-size:17px;font-weight:750;letter-spacing:-.03em;color:var(--ink);font-variant-numeric:tabular-nums}
+.ring-mid small{font-size:10.5px;font-weight:650;color:var(--faint)}
+.sun{flex:none;display:grid;place-items:center;width:92px;height:92px;border-radius:50%;background:var(--warn-soft)}
+.sun svg{width:52px;height:52px}
+.sun circle{fill:var(--warn)}
+.sun line{stroke:var(--warn);stroke-width:3;stroke-linecap:round}
+
+.tiles-sec{margin-bottom:8px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:118px;padding:14px;
+  border-radius:var(--r-lg);background:var(--panel);border:1px solid var(--edge);box-shadow:var(--shadow-card);
+  color:var(--text);text-align:left;font:inherit;cursor:pointer;transition:background .2s var(--ease),transform .12s var(--ease)}
+.tile:active{transform:scale(.97)}
+.tile:disabled{cursor:default}
+.tile-ico{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--panel-2);color:var(--muted);margin-bottom:auto}
+.tile-ico .ico{width:20px;height:20px}
+.tile-name{font-size:14px;font-weight:700;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tile-meta{font-size:12px;color:var(--muted)}
+.tile.is-on{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
+.tile.is-on .tile-ico{background:rgba(255,255,255,.2);color:var(--on-brand)}
+.tile.is-on .tile-meta{color:rgba(255,255,255,.85)}
+.tile.busy{opacity:.7}
+
+@media (prefers-reduced-motion:reduce){ .flow-pipe.is-on .pipe-line{animation:none} }
+@media (max-width:620px){
+  .flow{padding:16px 14px}
+  .flow-node{width:84px}
+  .flow-disc{width:58px;height:58px}
+  .flow-art{width:36px;height:36px}
+  .flow-pipe{margin-top:25px}
+  .flow-title{font-size:13px}
+  .flow-sub{font-size:11.5px}
+  .vcards{grid-template-columns:1fr 1fr;gap:10px}
+  .vcards > :first-child{grid-column:1 / -1}
+  .vcard{padding:14px}
+  .vcard-body{gap:12px}
+  .vcards > :not(:first-child) .vcard-body{flex-direction:column;align-items:flex-start}
+  .ring,.sun{width:76px;height:76px}
+  .sun svg{width:42px;height:42px}
+  .tiles{grid-template-columns:1fr 1fr}
+}
+
 /* ---------- water chain ----------
    Three numbered stages joined by a thin vertical flow line, so the page
    reads top to bottom the way the water goes: river, other farm, main farm.

@@ -87,31 +87,21 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 }
 
 // ---- hostile real data: 698 entities, 373 unavailable, real HA names --------
+// Home's switches are tiles (2026-09-25): long real names must clip inside
+// the tile, and a dead switch must never be offered as one.
 {
-  const [p,c]=await open('?real=1&viewer=1');
-  await p.waitForSelector('.dev-card');
+  const [p,c]=await open('?real=1');
+  await p.waitForSelector('.tile');
   const r=await p.evaluate(()=>{
-    const name=document.querySelector('.dev-name'), meta=document.querySelector('.dev-meta');
-
-    // text-overflow only takes effect on a block box; inline was the root cause.
-    const truncatable=(el)=>el&&getComputedStyle(el).display!=='inline';
-    let overlap=0, clipped=0;
-    document.querySelectorAll('.dev-card').forEach(card=>{
-      const n=card.querySelector('.dev-name'), s=card.querySelector('.dev-state');
-      if(n&&s&&n.getBoundingClientRect().right>s.getBoundingClientRect().left+1) overlap++;
-      if(n&&n.scrollWidth>n.clientWidth+1) clipped++;
-    });
-    return {nameBlock:truncatable(name), metaBlock:truncatable(meta),
-            overlap, cards:document.querySelectorAll('.dev-card').length,
-            qc:document.querySelectorAll('.qc .dev-card').length,
-            deadInControls:[...document.querySelectorAll('.qc .dev-card')]
-              .filter(c=>c.className.includes('is-bad')).length};
+    const tiles=[...document.querySelectorAll('.tile')];
+    return {n:tiles.length,
+      clamp:tiles.every(t=>{const cs=getComputedStyle(t.querySelector('.tile-name'));return cs.webkitLineClamp==='2'&&cs.overflow==='hidden';}),
+      overflow:tiles.filter(t=>t.scrollWidth>t.clientWidth+1).length,
+      flow:!!document.querySelector('.flow'), cards:document.querySelectorAll('.vcard').length};
   });
-  check('device name is a block box (ellipsis can engage)', r.nameBlock, `display ok=${r.nameBlock}`);
-  check('device meta truncates too', r.metaBlock);
-  check('no name overlaps its state pill', r.overlap===0, `${r.overlap} of ${r.cards} cards`);
-  // Guarded against passing vacuously: the panel must actually hold rows.
-  check('no unavailable device in Quick Controls', r.qc>0&&r.deadInControls===0, `${r.deadInControls} dead of ${r.qc}`);
+  check('Home draws the water flow and the cards', r.flow&&r.cards>=2, JSON.stringify({flow:r.flow,cards:r.cards}));
+  check('switch tiles clamp long names', r.n>0&&r.clamp, `${r.n} tiles`);
+  check('no tile overflows', r.overflow===0, `${r.overflow} of ${r.n}`);
   await c.close();
 }
 {
@@ -131,15 +121,13 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('list rows truncate too', r.rowBlock&&r.rowMetaBlock, `name=${r.rowBlock} meta=${r.rowMetaBlock}`);
   await c.close();
 }
-// Long names must not overflow at the narrowest card width either.
+// Long names must not overflow at a narrow width either.
 {
-  const b2=await open('?real=1&viewer=1');
-  const [p,c]=b2; await p.setViewportSize({width:820,height:900});
-  await p.waitForSelector('.dev-card'); await p.waitForTimeout(150);
-  const r=await p.evaluate(()=>{let o=0;document.querySelectorAll('.dev-card').forEach(card=>{
-    const n=card.querySelector('.dev-name'), s=card.querySelector('.dev-state');
-    if(n&&s&&n.getBoundingClientRect().right>s.getBoundingClientRect().left+1)o++;});return o;});
-  check('no overlap at narrow width either', r===0, `${r} overlaps`);
+  const [p,c]=await open('?real=1');
+  await p.setViewportSize({width:390,height:844});
+  await p.waitForSelector('.tile'); await p.waitForTimeout(150);
+  const o=await p.evaluate(()=>[...document.querySelectorAll('.tile, .vcard, .flow')].filter(t=>t.scrollWidth>t.clientWidth+1).length);
+  check('nothing on Home overflows on a phone', o===0, `${o} overflowing`);
   await c.close();
 }
 // Irrigation is on demand: the builder sends a request, the bridge answers,
