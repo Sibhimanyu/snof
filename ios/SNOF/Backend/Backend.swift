@@ -22,6 +22,8 @@ enum FarmEvent {
     case entities(Any?)
     case irrigation(Any?)
     case reports(Any?)
+    /// irrigation_command_results: what the NUC did with each Run/Stop.
+    case irrigationResults(Any?)
     case controller(Bool)
     case admin(Bool)
     case serverTimeOffset(Double)
@@ -71,6 +73,9 @@ protocol FarmBackend: AnyObject {
     /// Append one node to /farms/<farm>/irrigation_requests; returns its key,
     /// which the bridge reuses as the irrigation_reports key.
     func requestReport(type: String, from: String?, to: String?, uid: String) async throws -> String
+    /// Append one node to /farms/<farm>/irrigation_commands (admins only);
+    /// returns its key, which the NUC reuses for the result.
+    func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String
     /// Drop writes the server has not acknowledged yet. Called when a control
     /// times out, so a toggle queued while offline cannot fire minutes later.
     func cancelUnsentWrites()

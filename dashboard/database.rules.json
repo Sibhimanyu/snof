@@ -53,6 +53,26 @@
           }
         },
 
+        // Irrigation control: the one client path that can move water.
+        // Admins only — not controllers — because it opens field valves.
+        // Two actions: "run" (up to five valve numbers, 1–60 minutes; the
+        // controller ends the run by itself) and "stop" (ends a manual run).
+        // The bridge re-checks all of it, reads the controller first, refuses
+        // anything but Irrigation valves, and spells the command itself from a
+        // fixed template: nothing written here reaches Mobitech as text.
+        // Off entirely unless allow_irrigation_control is set on the NUC.
+        "irrigation_commands": {
+          "$cmd": {
+            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['action','uid','at']) && (newData.child('action').val() === 'stop' || newData.hasChildren(['valves','minutes']))",
+            "action": { ".validate": "newData.isString() && newData.val().matches(/^(run|stop)$/)" },
+            "valves": { ".validate": "newData.isString() && newData.val().length <= 14 && newData.val().matches(/^[0-9]{1,2}(,[0-9]{1,2}){0,4}$/)" },
+            "minutes": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 60 && newData.val() % 1 === 0" },
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "at": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+
         // Report requests for the Mobitech DCON irrigation controller.
         // Same shape of trust as commands: a
         // controller may append a request and nothing else. A Cloud Function

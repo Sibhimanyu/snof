@@ -212,7 +212,7 @@ public enum BridgeStatus: Equatable, Sendable {
     }
 }
 
-public enum Capability: Sendable { case control, irrigation }
+public enum Capability: Sendable { case control, irrigation, irrigationControl }
 
 public struct Gate: Equatable, Sendable {
     public let ok: Bool
@@ -248,6 +248,8 @@ extension Gate {
         switch capability {
         case .control where hb.control == false:
             return Gate(ok: false, why: "Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.")
+        case .irrigationControl where hb.irrigationControl != true:
+            return Gate(ok: false, why: "Irrigation control is switched off on the bridge. It is turned on in the add-on options (allow_irrigation_control), with someone at the pump house for the first run.")
         default:
             return .open
         }
@@ -489,4 +491,61 @@ public enum Format {
         let c = calendar.dateComponents([.year, .month, .day], from: d)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
+}
+
+
+/* ---- irrigation control ---- */
+
+/// What the app may ask the controller to do. The same limits as the
+/// `irrigation_commands` rule and bridge/irrigation_control.py — this is the
+/// fourth refusal, not a replacement for any of the three.
+public struct IrrigationCommand: Equatable, Sendable {
+    public static let maxValves = 5
+    public static let maxMinutes = 60
+
+    public let action: String
+    /// "12,15" — valve numbers, as the rule's regex wants them.
+    public let valves: String?
+    public let minutes: Int?
+
+    public static let stop = IrrigationCommand(action: "stop", valves: nil, minutes: nil)
+
+    public static func run(valves: [Int], minutes: Int, cap: Int = maxMinutes) -> IrrigationCommand? {
+        guard (1...maxValves).contains(valves.count), Set(valves).count == valves.count,
+              valves.allSatisfy({ (1...99).contains($0) }),
+              (1...min(cap, maxMinutes)).contains(minutes) else { return nil }
+        return IrrigationCommand(action: "run", valves: valves.map(String.init).joined(separator: ","),
+                                 minutes: minutes)
+    }
+
+    public var payload: [String: Any] {
+        var p: [String: Any] = ["action": action]
+        if let valves { p["valves"] = valves }
+        if let minutes { p["minutes"] = minutes }
+        return p
+    }
+}
+
+public struct IrrigationValve: Identifiable, Hashable, Sendable {
+    public let id: Int
+    public let name: String
+}
+
+extension Irrigation {
+    /// The valves a manual run may open: Irrigation ones only, never the
+    /// tank, booster pump or backwash valve. The bridge checks again against
+    /// the controller's own registry.
+    public static func operableValves(_ c: IrrigationCache) -> [IrrigationValve] {
+        let rows = c.valveNames.isEmpty ? c.valves : c.valveNames
+        return rows.compactMap { r -> IrrigationValve? in
+            guard (r["type"] ?? "").lowercased() == "irrigation", let id = r["id"].flatMap(Int.init) else { return nil }
+            return IrrigationValve(id: id, name: r["name"] ?? "Valve \(id)")
+        }
+        .sorted { $0.id < $1.id }
+    }
+}
+
+extension CurrentProgram {
+    /// A Manual Mode run — the only thing the app may stop.
+    public var isManual: Bool { kind == "Manual" || name == "Manual Mode" }
 }

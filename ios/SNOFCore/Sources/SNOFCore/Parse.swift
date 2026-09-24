@@ -60,6 +60,9 @@ public enum Parse {
                 control: bool(b["control"]),
                 commandsRun: double(b["commandsRun"]).map { Int($0) },
                 commandsRefused: double(b["commandsRefused"]).map { Int($0) })
+            bridge?.irrigationControl = bool(b["irrigationControl"])
+            bridge?.irrigationMaxMinutes = double((b["irrigationControlStatus"] as? [String: Any])?["maxMinutes"])
+                .map { Int($0) }
         }
         return FarmMeta(name: string(d["name"]), bridge: bridge,
                         reportsEnabled: bool((d["reports"] as? [String: Any])?["enabled"]))

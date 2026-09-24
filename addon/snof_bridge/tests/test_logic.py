@@ -4,6 +4,7 @@ Run from the add-on directory:  python3 tests/test_logic.py
 """
 import asyncio
 import json
+import os
 import logging
 import re
 import sys
@@ -417,6 +418,93 @@ def test_relay_packs_round_trip():
     text = json.dumps({"data": [{"dt": "x"}] * 1000})
     assert gzip.decompress(base64.b64decode(relay.pack(text))).decode() == text
     assert len(relay.pack(text)) < len(text) / 5
+
+# ---- irrigation control --------------------------------------------------------
+
+from bridge import irrigation_control as ic  # noqa: E402
+
+
+def _refused(fn, *a):
+    try:
+        fn(*a)
+    except ic.Refused as why:
+        return str(why)
+    raise AssertionError(f"not refused: {a}")
+
+
+def test_irrigation_commands_are_spelled_as_mobitech_spells_them():
+    # Byte for byte what the Mobitech app sent on 2026-09-17 (valves 8 and 9
+    # for ten minutes) and 2026-09-20 17:24 (valve 6 for two hours).
+    assert ic.run_command([8, 9], 10, "A1") == (
+        "FON 008,009,000,000,000-00 10-00,00,00,00,00-0000,0000,0000,0000,0000"
+        "-00-00-0-0-0000-0000!0--@A1")
+    assert ic.run_command([6], 120, "A1").startswith("FON 006,000,000,000,000-02 00-")
+    assert _refused(ic.run_command, [30], 480, "A1"), "three hours is the hard ceiling"
+    assert ic.run_command([12, 15], 60, "A8").startswith("FON 012,015,000,000,000-01 00-")
+    assert ic.stop_command("A8") == "OFF@A8"
+    assert _refused(ic.stop_command, "U8"), "a U slot means pause to Mobitech"
+    assert _refused(ic.run_command, [1, 2, 3, 4, 5, 6], 10, "A8")
+    assert _refused(ic.run_command, [4, 4], 10, "A8")
+
+
+def test_irrigation_validation_refuses_everything_else():
+    now = 1_790_000_000.0
+    ok = {"action": "run", "valves": "12,15", "minutes": 20, "uid": "u", "at": now * 1000}
+    assert ic.validate(ok, 60, now) == ("run", [12, 15], 20)
+    assert ic.validate({"action": "stop", "uid": "u", "at": now * 1000}, 60, now) == ("stop", [], 0)
+    bad = [
+        {**ok, "action": "program"},
+        {**ok, "minutes": 61}, {**ok, "minutes": 0}, {**ok, "minutes": 20.5}, {**ok, "minutes": True},
+        {**ok, "valves": "12;15"}, {**ok, "valves": "1,2,3,4,5,6"}, {**ok, "valves": "12,12"},
+        {**ok, "valves": 12}, {**ok, "at": (now - 61) * 1000}, {**ok, "at": "now"},
+        {**ok, "command": "OFF@A8"}, "FON 012", None,
+    ]
+    for cmd in bad:
+        assert _refused(ic.validate, cmd, 60, now), cmd
+
+
+NODES = {"node1": {"valve": {"1": {"valve_name": "1 Tank", "valve_type": "Fertilizer"},
+                             "2": {"valve_name": "2 BPump", "valve_type": "Booster Pump"},
+                             "3": {"valve_name": "3 Backwash", "valve_type": "Backwash"},
+                             "12": {"valve_name": "12 Coco 1", "valve_type": "Irrigation"},
+                             "15": {"valve_name": "15 Coco 2", "valve_type": "Irrigation"}}}}
+
+
+def _dash(timer_type, completed, name="Coconut"):
+    return {"MCONTEST": {"timers": {"current": {"timer_type": timer_type, "completed": completed,
+                                                "timer_name": name}}}}
+
+
+def test_only_irrigation_valves_and_only_when_the_controller_is_idle():
+    allowed = ic.irrigation_valves(NODES)
+    assert allowed == {12: "12 Coco 1", 15: "15 Coco 2"}, "never the tank, booster or backwash"
+    idle = ic.controller_state(_dash("1", "1"))
+    ic.check_against("run", [12, 15], idle, allowed)
+    assert "not an irrigation valve: 2, 3" in _refused(ic.check_against, "run", [2, 3], idle, allowed)
+    busy = ic.controller_state(_dash("1", "0"))
+    assert "Coconut is running" in _refused(ic.check_against, "run", [12], busy, allowed)
+    manual = ic.controller_state(_dash("3", "0", "Manual Mode"))
+    assert "running" in _refused(ic.check_against, "run", [12], manual, allowed)
+    ic.check_against("stop", [], manual, allowed)
+    assert "scheduled program" in _refused(ic.check_against, "stop", [], busy, allowed)
+    assert "no manual run" in _refused(ic.check_against, "stop", [], idle, allowed)
+
+
+def test_irrigation_control_is_off_without_every_setting():
+    from types import SimpleNamespace as NS
+    full = dict(allow_irrigation_control=True, dcon_serial="s", dcon_token_id="t",
+                dcon_command_auth="x@ios", dcon_device_id="1", dcon_user_slot="A8",
+                irrigation_max_minutes=60)
+    assert ic.IrrigationControl(NS(**full), None, None).enabled
+    for key, off in [("allow_irrigation_control", False), ("dcon_command_auth", ""),
+                     ("dcon_device_id", ""), ("dcon_user_slot", ""), ("dcon_user_slot", "U8")]:
+        assert not ic.IrrigationControl(NS(**{**full, key: off}), None, None).enabled, key
+
+
+def test_the_read_relay_still_cannot_send_a_command():
+    src = open(os.path.join(os.path.dirname(__file__), "..", "bridge", "relay.py")).read()
+    assert "/v1/command" not in src
+
 
 
 if __name__ == "__main__":

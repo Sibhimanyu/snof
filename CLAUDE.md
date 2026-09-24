@@ -10,7 +10,7 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | Touching | Read |
 |---|---|
 | The NUC or the add-on | [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) |
-| Anything that can operate hardware | [docs/device-control.md](docs/device-control.md) |
+| Anything that can operate hardware | [docs/device-control.md](docs/device-control.md), [docs/irrigation-control.md](docs/irrigation-control.md) |
 | `dashboard/public/` | [docs/dashboard.md](docs/dashboard.md) |
 | Irrigation reports (Mobitech DCON) | [docs/irrigation.md](docs/irrigation.md) |
 | Hosting, rules, the allowlist | [docs/firebase-deploy.md](docs/firebase-deploy.md) |
@@ -37,6 +37,18 @@ Architecture and data shape are in README.md.
     3. `allow_control` in the add-on options, **off by default**.
   `cover`, `lock` and `alarm_control_panel` are deliberately excluded at every
   layer. Adding one is a security decision, not a config tweak.
+- **Irrigation control** (added deliberately on 2026-09-24, owner's request)
+  is a second writable path, `/farms/<slug>/irrigation_commands`, with the
+  same three gates plus more: **admins only** in the rules; the NUC
+  (`bridge/irrigation_control.py`, not the read-only relay) re-validates,
+  reads the controller first, allows only *Irrigation*-type valves (≤5),
+  1–60 minutes, and spells the command from a fixed template; and
+  `allow_irrigation_control` in the add-on options is **off by default**.
+  Two actions only: `run` (Mobitech `FON …@A8`, Manual Mode, the controller
+  ends it itself) and `stop` (`OFF@A8`, only while a Manual Mode run is
+  active). Stopping or pausing a scheduled program (`@U` slots mean *pause*
+  to Mobitech) and starting a program (`ET01-…`) are **not** offered — each
+  is a separate decision. The format is in docs/irrigation-control.md.
 - **Unassigned entities do not exist to users** (add-on 0.9.0; since 0.9.2
   the owner's rule is "only devices with assigned rooms" — the entity's
   *device* must be in a room; an entity-level area alone does not count). An

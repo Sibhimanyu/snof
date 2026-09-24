@@ -75,6 +75,11 @@ public struct BridgeMeta: Hashable, Sendable {
     public var control: Bool?
     public var commandsRun: Int?
     public var commandsRefused: Int?
+    /// `allow_irrigation_control` with every setting it needs. Unlike
+    /// `control`, nil is off: an older bridge cannot send irrigation commands.
+    public var irrigationControl: Bool?
+    /// The bridge's own cap on a manual run.
+    public var irrigationMaxMinutes: Int?
 
     public init(status: String? = nil, lastSeen: Double? = nil, heartbeatSeconds: Double? = nil,
                 control: Bool? = nil,
