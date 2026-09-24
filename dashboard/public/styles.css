@@ -765,7 +765,18 @@ input[type=range][disabled]{opacity:.42}
   .pulse-fig .eyebrow{margin-top:10px}
   .stats{gap:8px}
   .stat{padding:18px 14px 16px;min-height:0}
-  .stat-value{font-size:26px}
+  .stat-value{font-size:22px;white-space:nowrap}
+  .stat-note{font-size:12px}
+  /* Report header on a phone: title and status on one line, the date under
+     it from the left edge, the chevron pinned top right. */
+  .rep-head{position:relative;padding:14px 44px 4px 16px;row-gap:4px}
+  .rep-when{margin-left:0;width:100%}
+  .rep-chev{position:absolute;right:16px;top:18px}
+  .rep-summary{padding:0 16px 14px}
+  .rep-body{padding:4px 16px 16px}
+  .rep-card .list{margin-left:-16px;margin-right:-16px}
+  .rep-card .list .row{padding-left:16px;padding-right:16px}
+  .rep-body > .list:last-child{margin-bottom:-16px}
   .stat-label{font-size:11px;letter-spacing:.1em}
   .att-top{padding:22px 18px;gap:4px 20px}
   .att-row,.att-more{padding-left:18px;padding-right:18px}
