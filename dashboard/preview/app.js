@@ -233,6 +233,7 @@ function enter(user) {
   watch('meta', 'meta');
   watch('areas', 'areas');
   watch('devices', 'devices');
+  watch('mobitech_status', 'mobitechStatus');
   watch('entities', 'entities');
   // The irrigation cache is whatever the last report left behind; the
   // reports list is the last 20 results, newest last from RTDB.
@@ -545,9 +546,13 @@ function troubledAreas(devices) {
 }
 
 /* The farm pulse: one sentence a person would say, then the numbers behind
- * it. Honest before reassuring — a bridge gone quiet outranks everything,
- * and "most areas are running normally" is only said when it is true. */
+ * it — a single meter and three figures, each a link into All devices. Honest
+ * before reassuring: a bridge gone quiet outranks everything, and "most areas
+ * are running normally" is only said when it is true. The sentence names
+ * *where*; the figures under it carry the counts, so neither repeats the other. */
 function pulsePanel(devices, areaCount) {
+  // Counted in devices, not entities: one switched-off printer is one thing to
+  // look at, not 67. A device with some entities still answering is reporting.
   const n = devices.length;
   const bad = devices.filter(deviceOffline).length;
   const on = devices.filter(deviceActive).length;
@@ -565,39 +570,33 @@ function pulsePanel(devices, areaCount) {
     body = 'Assign devices to rooms in Home Assistant and they will appear here.';
   } else if (!bad) {
     title = 'Everything is reporting.';
-    body = `All ${n} ${plural(n, 'device', 'devices')} across ${areaCount} ${plural(areaCount, 'area', 'areas')} are answering` +
-      (on ? `, and ${inWords(on)} ${plural(on, 'is', 'are')} on right now.` : '.');
+    body = `Every device across ${areaCount} ${plural(areaCount, 'area', 'areas')} is answering.`;
   } else if (bad / n <= 0.25) {
     title = 'Most areas are running normally.';
-    body = `${n - bad} of ${n} devices are reporting. ${cap(inWords(bad))} ${plural(bad, 'needs', 'need')} a closer look in ${where}.`;
+    body = `The few that are not reporting are in ${where}.`;
   } else if (bad / n <= 0.5) {
     title = 'A few devices need a look.';
-    body = `${n - bad} of ${n} devices are reporting. ${cap(inWords(bad))} are offline, in ${where}.`;
+    body = `The ones not reporting are in ${where}.`;
   } else {
     title = 'Much of the farm is quiet.';
-    body = `Only ${n - bad} of ${n} devices are reporting. ${cap(inWords(bad))} are offline, most of them in ${where}.`;
+    body = `Most of what is offline is in ${where}.`;
   }
+  const pct = (k) => (n ? (k / n) * 100 : 0).toFixed(1);
+  const fig = (value, label, status, cls = '', of = '') =>
+    `<a class="pstat ${cls}" href="#/devices" data-act="filter" data-status="${status}">` +
+    `<span class="pstat-value">${value}${of}</span><span class="pstat-label">${label}</span></a>`;
+  const figures = n ? `
+    <div class="pulse-meter" role="img" aria-label="${n - bad} of ${n} devices reporting">
+      <span class="pm-ok" style="width:${pct(n - bad)}%"></span><span class="pm-bad" style="width:${pct(bad)}%"></span></div>
+    <div class="pulse-stats">` +
+      fig(n - bad, 'Reporting', 'active', '', `<span class="pstat-of">/${n}</span>`) +
+      fig(on, 'Active now', 'active') +
+      fig(bad, 'Offline', 'offline', bad ? 'pstat-bad' : '') +
+    `</div>` : '';
   return `<section class="pulse${quiet ? ' is-quiet' : ''}" aria-label="Farm pulse">
-    <div><p class="eyebrow">Farm pulse</p><h2 class="pulse-title">${escapeHtml(title)}</h2>
-      <p class="pulse-body">${escapeHtml(body)}</p></div>
-    <div class="pulse-fig"><span class="pulse-n">${pad2(areaCount)}</span>
-      <span class="eyebrow">${plural(areaCount, 'Area', 'Areas')}</span></div>
+    <p class="eyebrow">Farm pulse</p><h2 class="pulse-title">${escapeHtml(title)}</h2>
+    <p class="pulse-body">${escapeHtml(body)}</p>${figures}
   </section>`;
-}
-
-function statTiles(devices) {
-  // Counted in devices, not entities: one switched-off printer is one thing to
-  // look at, not 67. A device with some entities still answering is reporting.
-  const on = devices.filter(deviceActive).length;
-  const bad = devices.filter(deviceOffline).length;
-  const tile = (value, label, status, cls = '', of = '') =>
-    `<a class="stat ${cls}" href="#/devices" data-act="filter" data-status="${status}">` +
-    `<span class="stat-value">${value}${of}</span><span class="stat-label">${label}</span></a>`;
-  return `<div class="stats">` +
-    tile(pad2(devices.length - bad), 'Reporting', 'active', '', `<span class="stat-of">/${pad2(devices.length)}</span>`) +
-    tile(pad2(on), 'Active now', 'active', 'stat-on') +
-    tile(pad2(bad), 'Unavailable', 'offline', bad ? 'stat-bad' : '') +
-    `</div>`;
 }
 
 /** Which devices are down, and where — a to-do list, not an entity count. */
@@ -616,20 +615,37 @@ function attentionCard(devices) {
   const rows = troubled.map((d) => ({ ...d, bad: d.ents.filter(isBad).length }))
     .sort((a, b) => (deviceOffline(b) - deviceOffline(a)) || (b.bad - a.bad) ||
                     a.name.localeCompare(b.name, undefined, NATURAL));
-  const shown = rows.slice(0, 4);
+  // Past a handful, a list of identical "Offline" rows says less than where
+  // they are: one row per room, worst first, with how much of it is down.
+  const byRoom = dead.length > 4;
+  const shown = byRoom ? [] : rows.slice(0, 4);
+  const roomRows = byRoom ? troubledAreas(devices).slice(0, 4).map((id) => {
+    const inRoom = devices.filter((d) => d.area === id);
+    const down = inRoom.filter(deviceOffline).length;
+    return `
+      <a class="att-row" href="#/area/${encodeURIComponent(id)}">
+        <span class="att-main"><span class="att-name">${escapeHtml(areaName(id))}</span>
+          <span class="att-bar" aria-hidden="true"><span style="width:${(down / inRoom.length * 100).toFixed(1)}%"></span></span></span>
+        <span class="att-count">${down}<span class="att-of"> of ${inRoom.length} offline</span></span>
+      </a>`;
+  }).join('') : '';
   return `<section class="panel att" aria-label="Attention">
     <div class="att-top"><span class="att-n">${pad2(dead.length)}</span><div>
       <p class="att-title">${plural(dead.length, 'Device needs', 'Devices need')} attention</p>
       <a class="att-sub" href="#/devices" data-act="filter" data-status="offline">
-        <span>${escapeHtml(rooms.slice(0, 2).join(' · ') + (rooms.length > 2 ? ` · +${rooms.length - 2}` : ''))}</span>${arrow()}</a>
+        <span>${escapeHtml(byRoom ? `Across ${rooms.length} ${plural(rooms.length, 'room', 'rooms')}`
+          : rooms.slice(0, 2).join(' · ') + (rooms.length > 2 ? ` · +${rooms.length - 2}` : ''))}</span>${arrow()}</a>
     </div></div>
-    <div class="att-list">` + shown.map((d) => `
+    <div class="att-list">` + roomRows + shown.map((d) => `
       <a class="att-row" href="#/area/${encodeURIComponent(d.area)}">
         <span class="att-main"><span class="att-name">${escapeHtml(d.name)}</span>
           <span class="att-meta">${escapeHtml(areaName(d.area))}</span></span>
         <span class="tag ${deviceOffline(d) ? 'tag-bad' : 'tag-warn'}">${deviceOffline(d) ? 'Offline' : `${d.bad} of ${d.ents.length} down`}</span>
       </a>`).join('') + `</div>` +
-    (rows.length > shown.length
+    (byRoom
+      ? `<a class="att-more" href="#/devices" data-act="filter" data-status="offline">` +
+        `<span>See all ${rows.length} not reporting</span>${arrow()}</a>`
+      : rows.length > shown.length
       ? `<a class="att-more" href="#/devices" data-act="filter" data-status="offline">` +
         `<span>${rows.length - shown.length} more not reporting</span>${arrow()}</a>` : '') +
     `</section>`;
@@ -639,7 +655,7 @@ function quickControls(all) {
   // An unavailable device in a *control* panel is a dead switch. They belong in
   // the attention list, never here.
   const operable = all.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
-  const quick = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 8);
+  const quick = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 5);
   const controllableTotal = all.filter((e) => CONTROLLABLE.has(e.domain)).length;
   const more = operable.length - quick.length;
   const body = quick.length
@@ -669,7 +685,7 @@ function overviewView(all, areas) {
 
   return head('Your farm, right now.', '', pill, todayLine()) +
     `<div class="ov">
-      <div class="ov-main">${pulsePanel(devices, areas.length)}${statTiles(devices)}${areasPanel}</div>
+      <div class="ov-main">${pulsePanel(devices, areas.length)}${areasPanel}</div>
       <div class="ov-side">${attentionCard(devices)}${quickControls(all)}</div>
     </div>`;
 }
@@ -1567,6 +1583,109 @@ function adminRow(uid, person) {
   </div>`;
 }
 
+/* ---- Mobitech sign-in (admins) ----
+ * Valve commands need a Mobitech *session*. The app creates one exactly the
+ * way Mobitech's own iOS app does (captured 2026-09-24): ask for an SMS code
+ * (POST /v1/otp/), then log in with it and a device token of our own making
+ * (POST /v1/http/ action=login type=otp). Mobitech answers `state: ok` and
+ * echoes the token as `id`; that is what commands are sent with. The browser
+ * talks to Mobitech directly (it allows any origin; it refuses Google Cloud,
+ * so a function could not), then stores the token where no client can read
+ * it (/private/mobitech) and a non-secret line for everyone to see
+ * (farms/<farm>/mobitech_status). The number and the code are never stored. */
+const MOBITECH = 'https://dcon.mobitechwireless.com';
+let mbStep = 'mobile';   // mobile | code
+let mbMobile = '', mbCode = '', mbBusy = false, mbError = '', mbInfo = '';
+let mbToken = '';
+
+/** A device token shaped like the Mobitech app's (an FCM registration token
+ *  with "@ios"): 22 url-safe characters, ":APA91b", 134 more. */
+function mobitechDeviceToken() {
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const pick = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => abc[b % 64]).join('');
+  return `${pick(22)}:APA91b${pick(134)}@ios`;
+}
+
+const mobitechDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+
+async function mobitechSendCode() {
+  const mobile = mobitechDigits(mbMobile);
+  if (!/^\d{10}$/.test(mobile)) { mbError = 'Enter the 10-digit mobile number on the Mobitech account.'; render(); return; }
+  mbBusy = true; mbError = ''; mbInfo = ''; render();
+  try {
+    // Byte for byte what the app sends: a JSON object as the whole
+    // form-encoded body.
+    const r = await fetch(`${MOBITECH}/v1/otp/`, { method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: JSON.stringify({ mobile: `91${mobile}` }) });
+    if (!r.ok) throw new Error(`Mobitech answered ${r.status}`);
+    mbStep = 'code'; mbCode = ''; mbToken = mobitechDeviceToken();
+    mbInfo = `Mobitech sent a code to the number ending ${mobile.slice(-4)}.`;
+  } catch (err) {
+    mbError = `Could not ask Mobitech for a code: ${err.message}`;
+  }
+  mbBusy = false; render();
+}
+
+async function mobitechSignIn() {
+  const mobile = mobitechDigits(mbMobile);
+  const otp = String(mbCode || '').replace(/\D/g, '');
+  if (!/^\d{4,8}$/.test(otp)) { mbError = 'Enter the code from the SMS.'; render(); return; }
+  mbBusy = true; mbError = ''; render();
+  try {
+    const body = new URLSearchParams({ action: 'login', type: 'otp', otp, mobile,
+      token: mbToken || mobitechDeviceToken(), product: 'DCON', app_id: 'com.mobitech.drip' });
+    const r = await fetch(`${MOBITECH}/v1/http/?`, { method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
+    const text = await r.text();
+    let who = {};
+    try { who = JSON.parse(text); } catch { /* not JSON */ }
+    if (!r.ok || who.state !== 'ok') {
+      throw new Error(who.msg || who.message || who.reason || 'the code was not accepted');
+    }
+    const token = String(who.id || body.get('token'));
+    if (!token.endsWith('@ios')) throw new Error('Mobitech did not return a session');
+    const db = firebase.database();
+    const at = firebase.database.ServerValue.TIMESTAMP;
+    await db.ref('private/mobitech').set({ token, at, uid: currentUser.uid });
+    await db.ref(`farms/${FARM}/mobitech_status`).set({ at, uid: currentUser.uid,
+      name: String(who.name || '').slice(0, 64), user: String(who.uname || '').slice(0, 64),
+      mobileLast4: mobile.slice(-4) });
+    mbStep = 'mobile'; mbMobile = ''; mbCode = ''; mbToken = ''; mbInfo = '';
+    toast('ok', `Signed in to Mobitech as ${who.name || who.uname || 'the farm account'}. Valve commands use this session.`);
+  } catch (err) {
+    mbError = `Not signed in: ${err.message}`;
+  }
+  mbBusy = false; render();
+}
+
+function mobitechPanel() {
+  const st = state.mobitechStatus || {};
+  const since = st.at ? new Date(st.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const now = st.at
+    ? `<p class="more-note">Signed in as <strong>${escapeHtml(st.name || st.user || 'the farm account')}</strong>` +
+      `${st.user ? ` (${escapeHtml(st.user)})` : ''} · number ending ${escapeHtml(st.mobileLast4 || '····')} · ${escapeHtml(since)}. ` +
+      `Valve commands are sent with this session. Sign in again if they report an expired token.</p>`
+    : `<p class="more-note note-off">Not signed in yet: valve commands need a Mobitech session.</p>`;
+  const form = mbStep === 'mobile'
+    ? `<div class="rep-builder" data-key="mobitech">
+        <label class="rep-field"><span>Mobitech mobile number</span>
+          <input id="mb-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
+                 value="${escapeHtml(mbMobile)}" data-act="mb-mobile"></label>
+        <button class="btn btn-primary" data-act="mb-send"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Sending…' : 'Send code'}</button>
+      </div>`
+    : `<div class="rep-builder" data-key="mobitech">
+        <label class="rep-field"><span>Code from the SMS</span>
+          <input id="mb-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
+                 value="${escapeHtml(mbCode)}" data-act="mb-code"></label>
+        <button class="btn btn-primary" data-act="mb-signin"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Signing in…' : 'Sign in'}</button>
+        <button class="btn btn-ghost" data-act="mb-back"${mbBusy ? ' disabled' : ''}>Use another number</button>
+      </div>`;
+  return sectionHead('n-admin', 'Mobitech account') + now + form +
+    (mbInfo ? `<p class="more-note">${escapeHtml(mbInfo)}</p>` : '') +
+    (mbError ? `<p class="more-note note-off">${escapeHtml(mbError)}</p>` : '');
+}
+
 function adminView() {
   const acl = state.acl || {};
   const directory = acl.directory || {};
@@ -1609,6 +1728,7 @@ function adminView() {
     : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
 
   return head('Admin', 'Add people and grant or revoke dashboard access.', '', 'Access') +
+    mobitechPanel() +
     sectionHead('n-admin', 'Add a person') + addForm +
     sectionHead('n-admin', 'People') + list +
     `<p class="more-note">Admin status is granted from the command line ` +
@@ -1775,6 +1895,22 @@ function wire(all) {
   view.querySelectorAll('[data-act="acl-none"]').forEach((btn) => {
     btn.onclick = () => aclSet(btn.dataset.uid, 'none');
   });
+  // Mobitech sign-in. Typing holds live rebuilds (as a slider drag does), so
+  // a half-typed number or code is never wiped by a sensor update.
+  view.querySelectorAll('[data-act="mb-mobile"],[data-act="mb-code"]').forEach((input) => {
+    input.onfocus = beginInteract;
+    // Released a beat later: a click on "Send code" blurs the field first,
+    // and an immediate rebuild would swap the button out from under it.
+    input.onblur = () => setTimeout(endInteract, 300);
+    input.oninput = () => { if (input.dataset.act === 'mb-mobile') mbMobile = input.value; else mbCode = input.value; };
+    input.onkeydown = (e) => { if (e.key === 'Enter') { input.blur(); (input.dataset.act === 'mb-mobile' ? mobitechSendCode : mobitechSignIn)(); } };
+  });
+  view.querySelectorAll('[data-act="mb-send"]').forEach((btn) => { btn.onclick = () => mobitechSendCode(); });
+  view.querySelectorAll('[data-act="mb-signin"]').forEach((btn) => { btn.onclick = () => mobitechSignIn(); });
+  view.querySelectorAll('[data-act="mb-back"]').forEach((btn) => {
+    btn.onclick = () => { mbStep = 'mobile'; mbCode = ''; mbToken = ''; mbInfo = ''; mbError = ''; render(); };
+  });
+
   view.querySelectorAll('[data-act="admin-invite"]').forEach((btn) => {
     btn.onclick = () => sendInvite();
   });

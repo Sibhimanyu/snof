@@ -55,6 +55,11 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# The Mobitech session token, written by an admin signing in to Mobitech from
+# the dashboard or the app. The add-on option dcon_command_auth is only the
+# fallback: the session behind a hand-copied token ends and cannot be renewed.
+TOKEN_PATH = "private/mobitech/token"
+
 QUEUE = "irrigation_commands"
 RESULTS = "irrigation_command_results"
 LOCK = "irrigation_lock"
@@ -178,6 +183,15 @@ def confirmed(action: str, valves: list[int], state: dict) -> bool:
     return not state.get("manual")
 
 
+def pick_token(signed_in: Any, fallback: str | None) -> str:
+    """The session from signing in to Mobitech wins; the hand-set option is
+    the fallback. Only something shaped like the app's token counts."""
+    for cand in (signed_in, fallback):
+        if isinstance(cand, str) and cand.strip().endswith("@ios") and len(cand.strip()) >= 40:
+            return cand.strip()
+    return ""
+
+
 def lock_live(lock: Any, now_ms: float) -> bool:
     return isinstance(lock, dict) and isinstance(lock.get("until"), (int, float)) and lock["until"] > now_ms
 
@@ -217,8 +231,10 @@ class IrrigationControl:
     @property
     def enabled(self) -> bool:
         c = self._cfg
+        # No command token needed to switch on: signing in to Mobitech from the
+        # app supplies one (private/mobitech); a command refuses without it.
         return bool(c.allow_irrigation_control and c.dcon_serial and c.dcon_token_id
-                    and c.dcon_command_auth and c.dcon_device_id and _SLOT.match(c.dcon_user_slot or ""))
+                    and c.dcon_device_id and _SLOT.match(c.dcon_user_slot or ""))
 
     def status(self) -> dict:
         return {"enabled": self.enabled, "sent": self.sent, "refused": self.refused,
@@ -243,13 +259,23 @@ class IrrigationControl:
             self._nodes = (time.monotonic(), valves)
         return valves
 
+    async def _command_token(self) -> str:
+        try:
+            signed_in = await self._rtdb.get(TOKEN_PATH)
+        except Exception:
+            signed_in = None
+        return pick_token(signed_in, self._cfg.dcon_command_auth)
+
     async def _send(self, command: str) -> tuple[int, str]:
         import aiohttp
         c = self._cfg
+        token = await self._command_token()
+        if not token:
+            raise Refused("not signed in to Mobitech — sign in from the app's Account (admins)")
         async with self._session.post(
                 f"{c.dcon_base}/v1/command/",
                 json={"device_id": c.dcon_device_id, "command": command},
-                headers={"authorization": c.dcon_command_auth, "accept": "*/*"},
+                headers={"authorization": token, "accept": "*/*"},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)) as resp:
             return resp.status, await resp.text()
 
@@ -287,7 +313,7 @@ class IrrigationControl:
             # Mobitech answers a dead app session token with a bare "Bad
             # request" — identical to a fake one (proven 2026-09-24). Say so.
             if status == 400 and message.strip().lower() == "bad request":
-                message = "the Mobitech app token has expired — refresh it (scripts/set-mobitech-command-token.sh)"
+                message = "the Mobitech session has expired — an admin signs in to Mobitech again (Admin on the web, Account in the app)"
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),
                           valves=", ".join(allowed.get(v, f"valve {v}") for v in valves), minutes=minutes)
             if ok:

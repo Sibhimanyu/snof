@@ -163,7 +163,7 @@ final class FarmStore {
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []; refreshKeys = []
         irrigationTask?.cancel(); irrigationPending = nil
-        meta = FarmMeta(); metaLoaded = false; areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
+        meta = FarmMeta(); metaLoaded = false; mobitechStatus = nil; mobitechPendingToken = nil; areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         firstSnapshot = false; canControl = false; isAdmin = false
         deviceStatus = .all; deviceDomain = nil
@@ -188,6 +188,11 @@ final class FarmStore {
             reports = Parse.reports(v)
             settleReports()
         case .irrigationResults(let v): settleIrrigation(v)
+        case .mobitechStatus(let v):
+            let d = v as? [String: Any]
+            mobitechStatus = d.flatMap { d in Parse.double(d["at"]).map {
+                MobitechStatus(at: $0, name: Parse.string(d["name"]) ?? "", user: Parse.string(d["user"]) ?? "",
+                               mobileLast4: Parse.string(d["mobileLast4"]) ?? "") } }
         case .irrigationLock(let v):
             irrigationLockUntil = Parse.double((v as? [String: Any])?["until"])
         case .controller(let b): canControl = b
@@ -443,6 +448,52 @@ final class FarmStore {
     /* ---- irrigation control ---- */
 
     /// The Run/Stop the NUC has not answered yet.
+    /* ---- Mobitech sign-in (admins) ---- */
+
+    struct MobitechStatus: Equatable { let at: Double; let name: String; let user: String; let mobileLast4: String }
+    private(set) var mobitechStatus: MobitechStatus?
+    /// The device token for the login in progress: made when the code is
+    /// requested, sent with the code. Never stored.
+    private var mobitechPendingToken: String?
+
+    /// Ask Mobitech to text a code. True when it did.
+    func mobitechSendCode(_ raw: String) async -> Bool {
+        guard isAdmin else { show(.err, "Only farm admins can sign in to Mobitech."); return false }
+        guard let mobile = Mobitech.mobile(raw) else { show(.err, "Enter the 10-digit mobile number on the Mobitech account."); return false }
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: Mobitech.codeRequest(mobile: mobile))
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+                show(.err, "Mobitech did not send a code (\((resp as? HTTPURLResponse)?.statusCode ?? 0))."); return false
+            }
+            mobitechPendingToken = Mobitech.deviceToken()
+            return true
+        } catch {
+            show(.err, "Could not reach Mobitech: \(error.localizedDescription)"); return false
+        }
+    }
+
+    /// Log in with the code and store the session. True when signed in.
+    func mobitechSignIn(_ raw: String, code: String) async -> Bool {
+        guard let uid = user?.uid, isAdmin, let mobile = Mobitech.mobile(raw) else { return false }
+        let otp = code.filter(\.isNumber)
+        guard (4...8).contains(otp.count) else { show(.err, "Enter the code from the SMS."); return false }
+        let token = mobitechPendingToken ?? Mobitech.deviceToken()
+        do {
+            let (data, _) = try await URLSession.shared.data(for: Mobitech.loginRequest(mobile: mobile, code: otp, token: token))
+            switch Mobitech.session(from: data, sent: token) {
+            case .failure(.refused(let why)):
+                show(.err, "Not signed in: \(why)"); return false
+            case .success(let session):
+                try await backend.saveMobitechSession(session, mobileLast4: String(mobile.suffix(4)), uid: uid)
+                mobitechPendingToken = nil
+                show(.ok, "Signed in to Mobitech as \(session.name.isEmpty ? session.user : session.name). Valve commands use this session.")
+                return true
+            }
+        } catch {
+            show(.err, "Not signed in: \(error.localizedDescription)"); return false
+        }
+    }
+
     private(set) var irrigationPending: String?
     private var irrigationTask: Task<Void, Never>?
     /// The farm's lock: until when no valve change may be made (server ms).

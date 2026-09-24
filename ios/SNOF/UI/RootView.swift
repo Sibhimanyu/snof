@@ -139,6 +139,15 @@ struct AccountSheet: View {
                     LabeledContent("Status", value: store.bridgeStatus.label)
                     LabeledContent("Device control", value: store.meta.bridge?.control == false ? "Switched off" : store.meta.bridge?.control == true ? "On" : "Unknown")
                 }
+                if store.isAdmin {
+                    Section {
+                        MobitechSignIn()
+                    } header: {
+                        Text("Mobitech account")
+                    } footer: {
+                        Text("Valve commands are sent with this Mobitech session. Sign in again if a command reports an expired token. The number and the code are not stored.")
+                    }
+                }
                 Section("Reports") {
                     LabeledContent("Irrigation reports", value: store.meta.reportsEnabled == false ? "Switched off" : "On")
                 }
@@ -294,5 +303,47 @@ private struct SignInFailure: View {
             .frame(minHeight: Theme.hit)
         }
         .panel()
+    }
+}
+
+
+/// Sign in to Mobitech with an SMS code, as Mobitech's own app does. Admins only.
+struct MobitechSignIn: View {
+    @Environment(FarmStore.self) private var store
+    @State private var mobile = ""
+    @State private var code = ""
+    @State private var codeSent = false
+    @State private var busy = false
+
+    var body: some View {
+        if let st = store.mobitechStatus {
+            LabeledContent("Signed in as", value: [st.name, st.user.isEmpty ? nil : "(\(st.user))"]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " "))
+            LabeledContent("Number", value: "ending \(st.mobileLast4)")
+            LabeledContent("Since", value: Date(timeIntervalSince1970: st.at / 1000).formatted(date: .abbreviated, time: .shortened))
+        } else {
+            Text("Not signed in yet: valve commands need a Mobitech session.").foregroundStyle(Theme.warn)
+        }
+        if !codeSent {
+            TextField("Mobitech mobile number", text: $mobile)
+                .keyboardType(.numberPad).textContentType(.telephoneNumber)
+            Button(busy ? "Sending…" : (store.mobitechStatus == nil ? "Send code" : "Sign in again")) {
+                busy = true
+                Task { codeSent = await store.mobitechSendCode(mobile); busy = false }
+            }
+            .disabled(busy || Mobitech.mobile(mobile) == nil)
+        } else {
+            TextField("Code from the SMS", text: $code)
+                .keyboardType(.numberPad).textContentType(.oneTimeCode)
+            Button(busy ? "Signing in…" : "Sign in") {
+                busy = true
+                Task {
+                    if await store.mobitechSignIn(mobile, code: code) { codeSent = false; code = ""; mobile = "" }
+                    busy = false
+                }
+            }
+            .disabled(busy || code.filter(\.isNumber).count < 4)
+            Button("Use another number", role: .cancel) { codeSent = false; code = "" }.disabled(busy)
+        }
     }
 }

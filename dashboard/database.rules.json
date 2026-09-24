@@ -78,6 +78,20 @@
           }
         },
 
+        // Who is signed in to Mobitech, for the apps to show. Never the
+        // token: that lives in /private/mobitech, which no client can read.
+        // Written by the admin who signs in, in the same step as the token.
+        "mobitech_status": {
+          ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true",
+          ".validate": "newData.hasChildren(['at', 'uid'])",
+          "at": { ".validate": "newData.val() === now" },
+          "uid": { ".validate": "newData.val() === auth.uid" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 64" },
+          "user": { ".validate": "newData.isString() && newData.val().length <= 64" },
+          "mobileLast4": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}$/)" },
+          "$other": { ".validate": false }
+        },
+
         // Report requests for the Mobitech DCON irrigation controller.
         // Same shape of trust as commands: a
         // controller may append a request and nothing else. A Cloud Function
@@ -115,6 +129,23 @@
             "$other": { ".validate": false }
           }
         }
+      }
+    },
+
+    // The Mobitech session token valve commands are sent with. Admins may
+    // replace it (signing in to Mobitech from the dashboard or the app) and
+    // nobody may read it: no ".read" anywhere here, and the root denies. The
+    // NUC and the Cloud Function read it with their service accounts, which
+    // rules do not apply to. Outside /farms on purpose, because a read grant
+    // on a parent cannot be taken back on a child.
+    "private": {
+      "mobitech": {
+        ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true",
+        ".validate": "newData.hasChildren(['token', 'at', 'uid'])",
+        "token": { ".validate": "newData.isString() && newData.val().length >= 40 && newData.val().length <= 400 && newData.val().endsWith('@ios')" },
+        "at": { ".validate": "newData.val() === now" },
+        "uid": { ".validate": "newData.val() === auth.uid" },
+        "$other": { ".validate": false }
       }
     },
 

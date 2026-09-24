@@ -27,6 +27,8 @@ enum FarmEvent {
     /// irrigation_lock: held from before a Run/Stop is sent until the
     /// controller confirms it (or 3 min pass). While live, nothing may change.
     case irrigationLock(Any?)
+    /// farms/<farm>/mobitech_status: who is signed in to Mobitech (never the token).
+    case mobitechStatus(Any?)
     case controller(Bool)
     case admin(Bool)
     case serverTimeOffset(Double)
@@ -79,6 +81,9 @@ protocol FarmBackend: AnyObject {
     /// Append one node to /farms/<farm>/irrigation_commands (admins only);
     /// returns its key, which the NUC reuses for the result.
     func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String
+    /// Store a Mobitech session: the token where no client can read it
+    /// (/private/mobitech) and a non-secret status line. Admins only.
+    func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws
     /// Drop writes the server has not acknowledged yet. Called when a control
     /// times out, so a toggle queued while offline cannot fire minutes later.
     func cancelUnsentWrites()

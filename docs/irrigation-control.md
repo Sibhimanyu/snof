@@ -123,3 +123,33 @@ Also seen in the history: Mobitech's own app sends manual runs as
 `V012,015ON 01 20@A8`; `FON …` appears too. Our `FON` template is taken from
 accepted history entries; if a live token still gets 400 on a run while the
 status poll succeeds, switch to the `V…ON HH MM` form.
+
+## Signing in to Mobitech from the app (2026-09-24)
+
+The session valve commands need is now created the way Mobitech's own iOS
+app creates one (captured by the owner):
+
+1. `POST /v1/otp/`, body `{"mobile":"91XXXXXXXXXX"}` as the whole
+   form-encoded body: Mobitech texts a code.
+2. `POST /v1/http/?` with `action=login&type=otp&otp&mobile` (10 digits)
+   `&token=<device token>@ios&product=DCON&app_id=com.mobitech.drip`:
+   `{"state":"ok","id":"<the same token>","name","uname",…}`.
+
+The token is one the client makes up (shaped like the app's FCM token) and
+Mobitech binds to the session; the `id` it echoes is what commands are sent
+with. **Admin** on the web and **Account** in the iOS app (admins only) run
+this directly against Mobitech (it allows any origin; it refuses Google
+Cloud, so a function could not), then write the token to
+`/private/mobitech` — admins may write it, **no client can read it**, only
+the service accounts of the NUC and the function — and a non-secret line to
+`farms/<farm>/mobitech_status` (name, username, last four digits, when).
+The number and the code are never stored.
+
+Both consumers take the signed-in token first and the old hand-set value
+(`dcon_command_auth` / `DCON_COMMAND_AUTH`) only as a fallback; with
+neither, a command is refused "not signed in to Mobitech". An expired
+session now reads "an admin signs in to Mobitech again".
+`scripts/set-mobitech-command-token.sh` stays as the manual fallback.
+Unproven until the first sign-in: whether Mobitech keeps one session per
+account (signing in here would then sign the phone's Mobitech app out, and
+the other way round).

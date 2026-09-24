@@ -22,6 +22,11 @@ Architecture and data shape are in README.md.
 
 ## Hard rules
 
+- **The Mobitech command session comes from signing in** (2026-09-24):
+  admins sign in to Mobitech with an SMS code from Admin (web) or Account
+  (iOS); the token goes to `/private/mobitech` (admins write, no client
+  reads) and consumers prefer it over the hand-set option. Never show or log
+  it. Details: docs/irrigation-control.md.
 - **No second valve change until the first is confirmed** (owner,
   2026-09-24): Mobitech accepts anything and its server cannot handle
   conflicts. `irrigation_lock` is taken before sending and held until the

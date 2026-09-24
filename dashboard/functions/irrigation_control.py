@@ -47,6 +47,7 @@ from typing import Any
 
 import dcon
 
+TOKEN_PATH = "private/mobitech/token"
 QUEUE = "irrigation_commands"
 RESULTS = "irrigation_command_results"
 META = "meta/irrigationControl"
@@ -164,6 +165,14 @@ def confirmed(action: str, valves: list[int], state: dict) -> bool:
     return not state.get("manual")
 
 
+def pick_token(signed_in: Any, fallback: str | None) -> str:
+    """The session from signing in to Mobitech wins; the secret is the fallback."""
+    for cand in (signed_in, fallback):
+        if isinstance(cand, str) and cand.strip().endswith("@ios") and len(cand.strip()) >= 40:
+            return cand.strip()
+    return ""
+
+
 def lock_live(lock: Any, now_ms: float) -> bool:
     return isinstance(lock, dict) and isinstance(lock.get("until"), (int, float)) and lock["until"] > now_ms
 
@@ -196,8 +205,10 @@ class Commander:
     Kept out of dcon.py on purpose: the report path has no way to write."""
 
     def __init__(self, base: str, device_id: str, command_auth: str, session=None):
-        if not (device_id and command_auth):
+        if not device_id:
             raise Refused("irrigation control is not configured")
+        if not command_auth:
+            raise Refused("not signed in to Mobitech — an admin signs in from Admin (web) or Account (app)")
         import requests
 
         self._url = base.rstrip("/") + "/v1/command/"
@@ -285,7 +296,7 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
             # Mobitech answers a dead app session token with a bare "Bad
             # request" — identical to a fake one (proven 2026-09-24). Say so.
             if status == 400 and message.strip().lower() == "bad request":
-                message = "the Mobitech app token has expired — refresh it (scripts/set-mobitech-command-token.sh)"
+                message = "the Mobitech session has expired — an admin signs in to Mobitech again (Admin on the web, Account in the app)"
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),
                           valves=", ".join(allowed.get(v, f"valve {v}") for v in valves), minutes=minutes)
             _count(store, root, "sent" if ok else "failed")

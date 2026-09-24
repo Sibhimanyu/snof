@@ -233,6 +233,7 @@ function enter(user) {
   watch('meta', 'meta');
   watch('areas', 'areas');
   watch('devices', 'devices');
+  watch('mobitech_status', 'mobitechStatus');
   watch('entities', 'entities');
   // The irrigation cache is whatever the last report left behind; the
   // reports list is the last 20 results, newest last from RTDB.
@@ -1582,6 +1583,109 @@ function adminRow(uid, person) {
   </div>`;
 }
 
+/* ---- Mobitech sign-in (admins) ----
+ * Valve commands need a Mobitech *session*. The app creates one exactly the
+ * way Mobitech's own iOS app does (captured 2026-09-24): ask for an SMS code
+ * (POST /v1/otp/), then log in with it and a device token of our own making
+ * (POST /v1/http/ action=login type=otp). Mobitech answers `state: ok` and
+ * echoes the token as `id`; that is what commands are sent with. The browser
+ * talks to Mobitech directly (it allows any origin; it refuses Google Cloud,
+ * so a function could not), then stores the token where no client can read
+ * it (/private/mobitech) and a non-secret line for everyone to see
+ * (farms/<farm>/mobitech_status). The number and the code are never stored. */
+const MOBITECH = 'https://dcon.mobitechwireless.com';
+let mbStep = 'mobile';   // mobile | code
+let mbMobile = '', mbCode = '', mbBusy = false, mbError = '', mbInfo = '';
+let mbToken = '';
+
+/** A device token shaped like the Mobitech app's (an FCM registration token
+ *  with "@ios"): 22 url-safe characters, ":APA91b", 134 more. */
+function mobitechDeviceToken() {
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const pick = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => abc[b % 64]).join('');
+  return `${pick(22)}:APA91b${pick(134)}@ios`;
+}
+
+const mobitechDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+
+async function mobitechSendCode() {
+  const mobile = mobitechDigits(mbMobile);
+  if (!/^\d{10}$/.test(mobile)) { mbError = 'Enter the 10-digit mobile number on the Mobitech account.'; render(); return; }
+  mbBusy = true; mbError = ''; mbInfo = ''; render();
+  try {
+    // Byte for byte what the app sends: a JSON object as the whole
+    // form-encoded body.
+    const r = await fetch(`${MOBITECH}/v1/otp/`, { method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: JSON.stringify({ mobile: `91${mobile}` }) });
+    if (!r.ok) throw new Error(`Mobitech answered ${r.status}`);
+    mbStep = 'code'; mbCode = ''; mbToken = mobitechDeviceToken();
+    mbInfo = `Mobitech sent a code to the number ending ${mobile.slice(-4)}.`;
+  } catch (err) {
+    mbError = `Could not ask Mobitech for a code: ${err.message}`;
+  }
+  mbBusy = false; render();
+}
+
+async function mobitechSignIn() {
+  const mobile = mobitechDigits(mbMobile);
+  const otp = String(mbCode || '').replace(/\D/g, '');
+  if (!/^\d{4,8}$/.test(otp)) { mbError = 'Enter the code from the SMS.'; render(); return; }
+  mbBusy = true; mbError = ''; render();
+  try {
+    const body = new URLSearchParams({ action: 'login', type: 'otp', otp, mobile,
+      token: mbToken || mobitechDeviceToken(), product: 'DCON', app_id: 'com.mobitech.drip' });
+    const r = await fetch(`${MOBITECH}/v1/http/?`, { method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
+    const text = await r.text();
+    let who = {};
+    try { who = JSON.parse(text); } catch { /* not JSON */ }
+    if (!r.ok || who.state !== 'ok') {
+      throw new Error(who.msg || who.message || who.reason || 'the code was not accepted');
+    }
+    const token = String(who.id || body.get('token'));
+    if (!token.endsWith('@ios')) throw new Error('Mobitech did not return a session');
+    const db = firebase.database();
+    const at = firebase.database.ServerValue.TIMESTAMP;
+    await db.ref('private/mobitech').set({ token, at, uid: currentUser.uid });
+    await db.ref(`farms/${FARM}/mobitech_status`).set({ at, uid: currentUser.uid,
+      name: String(who.name || '').slice(0, 64), user: String(who.uname || '').slice(0, 64),
+      mobileLast4: mobile.slice(-4) });
+    mbStep = 'mobile'; mbMobile = ''; mbCode = ''; mbToken = ''; mbInfo = '';
+    toast('ok', `Signed in to Mobitech as ${who.name || who.uname || 'the farm account'}. Valve commands use this session.`);
+  } catch (err) {
+    mbError = `Not signed in: ${err.message}`;
+  }
+  mbBusy = false; render();
+}
+
+function mobitechPanel() {
+  const st = state.mobitechStatus || {};
+  const since = st.at ? new Date(st.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const now = st.at
+    ? `<p class="more-note">Signed in as <strong>${escapeHtml(st.name || st.user || 'the farm account')}</strong>` +
+      `${st.user ? ` (${escapeHtml(st.user)})` : ''} · number ending ${escapeHtml(st.mobileLast4 || '····')} · ${escapeHtml(since)}. ` +
+      `Valve commands are sent with this session. Sign in again if they report an expired token.</p>`
+    : `<p class="more-note note-off">Not signed in yet: valve commands need a Mobitech session.</p>`;
+  const form = mbStep === 'mobile'
+    ? `<div class="rep-builder" data-key="mobitech">
+        <label class="rep-field"><span>Mobitech mobile number</span>
+          <input id="mb-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
+                 value="${escapeHtml(mbMobile)}" data-act="mb-mobile"></label>
+        <button class="btn btn-primary" data-act="mb-send"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Sending…' : 'Send code'}</button>
+      </div>`
+    : `<div class="rep-builder" data-key="mobitech">
+        <label class="rep-field"><span>Code from the SMS</span>
+          <input id="mb-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
+                 value="${escapeHtml(mbCode)}" data-act="mb-code"></label>
+        <button class="btn btn-primary" data-act="mb-signin"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Signing in…' : 'Sign in'}</button>
+        <button class="btn btn-ghost" data-act="mb-back"${mbBusy ? ' disabled' : ''}>Use another number</button>
+      </div>`;
+  return sectionHead('n-admin', 'Mobitech account') + now + form +
+    (mbInfo ? `<p class="more-note">${escapeHtml(mbInfo)}</p>` : '') +
+    (mbError ? `<p class="more-note note-off">${escapeHtml(mbError)}</p>` : '');
+}
+
 function adminView() {
   const acl = state.acl || {};
   const directory = acl.directory || {};
@@ -1624,6 +1728,7 @@ function adminView() {
     : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
 
   return head('Admin', 'Add people and grant or revoke dashboard access.', '', 'Access') +
+    mobitechPanel() +
     sectionHead('n-admin', 'Add a person') + addForm +
     sectionHead('n-admin', 'People') + list +
     `<p class="more-note">Admin status is granted from the command line ` +
@@ -1790,6 +1895,22 @@ function wire(all) {
   view.querySelectorAll('[data-act="acl-none"]').forEach((btn) => {
     btn.onclick = () => aclSet(btn.dataset.uid, 'none');
   });
+  // Mobitech sign-in. Typing holds live rebuilds (as a slider drag does), so
+  // a half-typed number or code is never wiped by a sensor update.
+  view.querySelectorAll('[data-act="mb-mobile"],[data-act="mb-code"]').forEach((input) => {
+    input.onfocus = beginInteract;
+    // Released a beat later: a click on "Send code" blurs the field first,
+    // and an immediate rebuild would swap the button out from under it.
+    input.onblur = () => setTimeout(endInteract, 300);
+    input.oninput = () => { if (input.dataset.act === 'mb-mobile') mbMobile = input.value; else mbCode = input.value; };
+    input.onkeydown = (e) => { if (e.key === 'Enter') { input.blur(); (input.dataset.act === 'mb-mobile' ? mobitechSendCode : mobitechSignIn)(); } };
+  });
+  view.querySelectorAll('[data-act="mb-send"]').forEach((btn) => { btn.onclick = () => mobitechSendCode(); });
+  view.querySelectorAll('[data-act="mb-signin"]').forEach((btn) => { btn.onclick = () => mobitechSignIn(); });
+  view.querySelectorAll('[data-act="mb-back"]').forEach((btn) => {
+    btn.onclick = () => { mbStep = 'mobile'; mbCode = ''; mbToken = ''; mbInfo = ''; mbError = ''; render(); };
+  });
+
   view.querySelectorAll('[data-act="admin-invite"]').forEach((btn) => {
     btn.onclick = () => sendInvite();
   });

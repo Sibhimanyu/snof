@@ -211,8 +211,12 @@ def irrigation_command(event: db_fn.Event[Any]) -> None:
 
     result = irrigation_control.handle(
         store, root, cmd_id, event.data, reads=_LazyReads(),
+        # The session an admin created by signing in to Mobitech wins over the
+        # secret, whose hand-copied session ends and cannot be renewed.
         commander_factory=lambda: irrigation_control.Commander(
-            DCON_BASE.value, DCON_DEVICE_ID.value.strip(), DCON_COMMAND_AUTH.value.strip()),
+            DCON_BASE.value, DCON_DEVICE_ID.value.strip(),
+            irrigation_control.pick_token(store.reference(irrigation_control.TOKEN_PATH).get(),
+                                          DCON_COMMAND_AUTH.value)),
         slot=DCON_USER_SLOT.value.strip(), max_minutes=max_minutes)
     if result is not None:
         _LOG.info("Irrigation command %s: %s %s", cmd_id,
