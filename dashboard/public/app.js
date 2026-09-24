@@ -34,6 +34,10 @@ let search = '';
 let domainFilter = null;
 let statusFilter = 'all';   // all | active | offline
 const openDevices = new Set();   // device ids expanded on All devices
+/* Report cards open one at a time. The newest opens by default (so the one
+ * you just generated is visible when it lands); a card you open or close
+ * yourself stays that way across the once-a-second rebuilds. */
+const reportOpen = new Map();    // report key -> true/false, only once toggled
 let refs = [];
 let clockSkewMs = 0;
 let statusTimer = null;
@@ -1257,11 +1261,12 @@ function irrLegacyBody(rep, label) {
     moreNote(rows.length, 6, 'rows') : '');
 }
 
-function irrReportCard(key, rep) {
+function irrReportCard(key, rep, open = true) {
   const label = rep.label || rep.type || 'Report';
-  const when = rep.at ? new Date(rep.at).toLocaleString() : '';
-  const params = [rep.params && rep.params.from, rep.params && rep.params.to]
-    .filter(Boolean).join(' → ');
+  const when = rep.at ? new Date(rep.at).toLocaleString('en-GB',
+    { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const from = rep.params && rep.params.from, to = rep.params && rep.params.to;
+  const params = from && to && from === to ? from : [from, to].filter(Boolean).join(' → ');
   // Three outcomes, three tags: a report where one vendor answered and one
   // did not is not "Ready", and must not read as if it were.
   const statusTag = rep.status === 'ok' ? `<span class="tag tag-on">Ready</span>`
@@ -1273,15 +1278,25 @@ function irrReportCard(key, rep) {
   const body = sections.length
     ? sections.map((s) => irrSection(s, withTitles)).join('')
     : irrLegacyBody(rep, label);
-  return `<div class="rep-card" data-rep="${escapeHtml(key)}">
-    <div class="rep-head">
+  // The function appends the date range to the summary; the header already
+  // shows it, so it is not said twice. Mirrors ReportListRow on iOS.
+  let summary = rep.summary || '';
+  if (params) for (const r of [params, from && to ? `${from} → ${to}` : null].filter(Boolean)) {
+    if (summary.endsWith(' · ' + r)) summary = summary.slice(0, -(r.length + 3));
+    else if (summary === r) summary = '';
+  }
+  // The header is the toggle; closed, a card is one line plus its summary.
+  // The body stays in the page, hidden, so nothing re-lays-out on open.
+  return `<section class="rep-card${open ? ' open' : ''}" data-rep="${escapeHtml(key)}">
+    <button class="rep-head" data-act="rep-open" data-rep="${escapeHtml(key)}" aria-expanded="${open}">
       <span class="rep-title">${escapeHtml(label)}</span>${statusTag}
       <span class="rep-when">${escapeHtml([params, when].filter(Boolean).join(' · '))}</span>
-    </div>
-    ${rep.summary ? `<p class="rep-summary">${escapeHtml(rep.summary)}</p>` : ''}
+      <svg viewBox="0 0 24 24" class="ico rep-chev" aria-hidden="true"><use href="#i-chevron"/></svg>
+    </button>
+    ${summary ? `<p class="rep-summary">${escapeHtml(summary)}</p>` : ''}
     ${rep.status === 'error' && rep.error ? `<p class="rep-summary rep-err">${escapeHtml(rep.error)}</p>` : ''}
-    ${body}
-  </div>`;
+    <div class="rep-body"${open ? '' : ' hidden'}>${body}</div>
+  </section>`;
 }
 
 /* The sidebar badge. It counted running motors until the Livesky and Niagara
@@ -1361,7 +1376,7 @@ function irrigationView() {
   const reports = irrReports();
   const repsSec = sectionHead('i-menu', 'Reports') +
     (reports.length
-      ? reports.slice().reverse().map(([k, r]) => irrReportCard(k, r)).join('')
+      ? reports.slice().reverse().map(([k, r], i) => irrReportCard(k, r, reportOpen.has(k) ? reportOpen.get(k) : i === 0)).join('')
       : emptyBlock('No reports yet',
           !canControl ? 'No reports have been run yet.'
           : blocked ? reachable.why
@@ -1692,6 +1707,13 @@ function wire(all) {
     input.onpointercancel = endInteract;
     input.onkeyup = endInteract;
     input.onblur = endInteract;
+  });
+
+  view.querySelectorAll('[data-act="rep-open"]').forEach((btn) => {
+    btn.onclick = () => {
+      reportOpen.set(btn.dataset.rep, btn.getAttribute('aria-expanded') !== 'true');
+      render();
+    };
   });
 
   view.querySelectorAll('[data-act="dev-open"]').forEach((btn) => {
