@@ -1,0 +1,762 @@
+/* SNOF live farm dashboard — design system: "Area workspace".
+ *
+ * The owner picked this direction on 2026-09-24 (design option C): a cool
+ * slate canvas, white panels on 1px hairlines, one tinted "farm pulse" panel,
+ * big tabular numerals, uppercase eyebrows and a single typeface, Manrope.
+ * Colour still only ever means something: brand green for on / live / the
+ * current tab, muted brick for unavailable, amber for a stale bridge. Green
+ * is a fill (toggle, dot, underline) or text, never a wash behind anything.
+ *
+ * Two themes, one palette logic. Light is the mockup, pixel-sampled. Dark is
+ * its complement: the same slate hue at low chroma, the same hierarchy of
+ * canvas < panel < tint, every text pair re-checked for 4.5:1.
+ * Theme resolution:
+ *   no [data-theme]  -> follow the OS
+ *   [data-theme=...] -> the user's explicit choice, persisted in localStorage
+ * Every colour below is a token. Nothing outside the token blocks hardcodes a
+ * hex, except the white of a toggle knob and the Google button. */
+@font-face{font-family:"Manrope";font-style:normal;font-weight:400 800;font-display:swap;
+  src:url(/fonts/manrope-latin.woff2) format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,
+    U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+/* --- light: the mockup ("slate daylight") --- */
+:root{
+  --bg:#f5f7f7; --bar:#ffffff;
+  --panel:#ffffff; --panel-2:#f0f4f4; --panel-3:#e6eced;
+  --tint:#eaf0ef; --tint-line:#d2e0df;
+  --line:#dce4e4; --line-2:#c9d4d5; --line-soft:#e7eded;
+  --text:#17252a; --ink:#25393d; --muted:#56696e; --faint:#5b6e73;
+
+  /* Brand green (the logo's #018843): --brand fills, --accent is green text
+     shaded to clear 4.5:1 on every surface, the tint included. */
+  --brand:#018843; --on-brand:#ffffff; --accent:#017a3c;
+  --accent-soft:var(--panel-2); --accent-line:var(--line-2);
+  --accent-glow:rgba(1,136,67,.26); --accent-flash:rgba(23,37,42,.06);
+  --warn:#7a5a12; --warn-soft:rgba(122,90,18,.09); --warn-line:rgba(122,90,18,.3);
+  --bad:#a0504a;  --bad-soft:rgba(160,80,74,.08);  --bad-line:rgba(160,80,74,.32);
+  --off-soft:rgba(86,105,110,.08); --track:#dfe6e7; --knob:#ffffff;
+
+  --shadow:none; --shadow-lg:0 18px 40px -24px rgba(23,37,42,.35);
+  --r:3px; --r-sm:3px; --r-md:3px; --r-lg:4px; --r-xl:6px;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  --ease:cubic-bezier(.32,.72,0,1);
+  --bar-h:76px; --gutter:clamp(16px,2.9vw,42px); --maxw:1440px;
+  --font:"Manrope",ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  color-scheme:light;
+}
+/* --- dark: the complement ("slate night"). Repeated for "follow the OS" and
+   "user picked dark"; keep the two blocks identical. --- */
+@media (prefers-color-scheme: dark){ :root:not([data-theme]){
+  --bg:#0e1314; --bar:#121819;
+  --panel:#141b1d; --panel-2:#1a2325; --panel-3:#212c2f;
+  --tint:#192326; --tint-line:#2a3a3d;
+  --line:#233033; --line-2:#314145; --line-soft:#1d282a;
+  --text:#e3ebec; --ink:#d2e0e2; --muted:#8c9fa4; --faint:#82969b;
+  --brand:#018843; --on-brand:#ffffff; --accent:#01ae56;
+  --accent-soft:var(--panel-2); --accent-line:var(--line-2);
+  --accent-glow:rgba(1,174,86,.32); --accent-flash:rgba(227,235,236,.06);
+  --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
+  --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
+  --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
+  --shadow-lg:0 20px 44px -22px rgba(0,0,0,.7);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0e1314; --bar:#121819;
+  --panel:#141b1d; --panel-2:#1a2325; --panel-3:#212c2f;
+  --tint:#192326; --tint-line:#2a3a3d;
+  --line:#233033; --line-2:#314145; --line-soft:#1d282a;
+  --text:#e3ebec; --ink:#d2e0e2; --muted:#8c9fa4; --faint:#82969b;
+  --brand:#018843; --on-brand:#ffffff; --accent:#01ae56;
+  --accent-soft:var(--panel-2); --accent-line:var(--line-2);
+  --accent-glow:rgba(1,174,86,.32); --accent-flash:rgba(227,235,236,.06);
+  --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
+  --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
+  --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
+  --shadow-lg:0 20px 44px -22px rgba(0,0,0,.7);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+/* Author display rules would otherwise beat the UA [hidden] rule. */
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 var(--font);
+  font-feature-settings:"tnum" 0;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0;text-align:inherit}
+h1,h2,h3,p{margin:0}
+a{color:inherit;text-decoration:none}
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.ico{width:19px;height:19px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;display:block}
+.ico-sm{width:15px;height:15px}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- view switching (the fix for the stacked sign-in page) ---------- */
+#boot,#gate,#app{display:none}
+body[data-view="boot"] #boot{display:grid}
+body[data-view="gate"] #gate{display:grid}
+body[data-view="app"]  #app{display:block;min-height:100dvh}
+body[data-view="gate"],body[data-view="boot"]{overflow:hidden}
+
+/* ---------- type ---------- */
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+  line-height:1.3}
+.wordmark{font-weight:800;font-size:22px;letter-spacing:-.06em;line-height:1;color:var(--text)}
+.wordmark-sub{font-size:14px;font-weight:600;color:var(--muted);letter-spacing:-.005em;white-space:nowrap}
+
+/* ---------- shared interaction vocabulary ---------- */
+.btn,.chip,.icon-btn,.topnav-item,.tab-item,.acct-btn,#search,.toggle,.area-card,.panel-link,
+.stat,.acct-item,.att-row{
+  transition:background-color .16s,border-color .16s,color .16s,box-shadow .16s,
+             transform .14s var(--ease),opacity .16s}
+:is(.btn,.chip,.icon-btn,.topnav-item,.tab-item,.acct-btn,#search,.toggle,.area-card,.panel-link,
+   .stat,.acct-item,.att-row,.brand,.back,input[type=range]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:active,.chip:active,.icon-btn:active{transform:translateY(1px)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;
+  padding:0 18px;border-radius:var(--r);font-weight:700;letter-spacing:-.005em}
+.btn-block{width:100%}
+.btn-ghost{border:1px solid var(--line-2);color:var(--muted);background:var(--panel)}
+.btn-ghost:hover{color:var(--text);border-color:var(--muted)}
+.btn-google{background:#fff;color:#1f2328;border:1px solid #d8dde0}
+.btn-google:hover{background:#f4f6f7}
+.btn-google .g{width:19px;height:19px;flex:none}
+.icon-btn{position:relative;display:grid;place-items:center;width:40px;height:40px;
+  border-radius:var(--r);color:var(--muted);border:1px solid transparent}
+.icon-btn::before{content:"";position:absolute;left:50%;top:50%;translate:-50% -50%;width:44px;height:44px;z-index:1}
+.icon-btn:hover{color:var(--text);background:var(--panel-2);border-color:var(--line)}
+
+/* The farm's roundel. Its centre is transparent and its lettering is the
+   brand green, so it always sits on a white disc, in both themes. */
+.logo{display:block;flex:none;width:30px;height:30px;border-radius:50%;background:#fff;padding:2px;object-fit:contain;
+  box-shadow:0 0 0 1px var(--line)}
+
+/* ---------- boot ---------- */
+.boot{place-items:center;min-height:100dvh;background:var(--bg)}
+.boot-mark{width:30px;height:30px;border-radius:50%;border:2.5px solid var(--line-2);
+  border-top-color:var(--brand);animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- sign-in page ---------- */
+.gate{place-items:center;min-height:100dvh;padding:24px;background:var(--bg)}
+.gate-card{width:100%;max-width:440px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:34px 34px 26px;animation:rise .45s var(--ease) both}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.gate-brand{display:flex;align-items:center;gap:10px;margin-bottom:34px}
+.gate-brand .wordmark-sub{font-size:13px}
+.gate-title{margin:10px 0 12px;font-size:clamp(32px,6vw,40px);font-weight:750;letter-spacing:-.05em;line-height:1.02}
+.gate-tag{color:var(--muted);font-size:14px;line-height:1.6}
+.gate-msg{margin:24px 0 14px;padding:12px 14px;border-radius:var(--r);font-size:13px;
+  color:var(--muted);background:var(--tint);border:1px solid var(--tint-line)}
+.gate-msg strong{color:var(--text)}
+.gate-msg code{display:inline-block;margin-top:8px;padding:6px 9px;border-radius:var(--r);
+  background:var(--panel);color:var(--accent);font-size:12px;word-break:break-all;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.gate-card .btn-ghost{margin-top:10px}
+.gate-foot{margin-top:18px;font-size:12.5px;color:var(--faint)}
+
+/* ---------- top bar ---------- */
+.topbar{position:sticky;top:0;z-index:30;background:var(--bar);border-bottom:1px solid var(--line);
+  padding-top:var(--sat)}
+.topbar-in{max-width:var(--maxw);margin:0 auto;height:var(--bar-h);padding:0 var(--gutter);
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px}
+.brand{display:inline-flex;align-items:baseline;gap:18px;min-width:0;justify-self:start;border-radius:var(--r)}
+.topnav{display:flex;align-items:stretch;gap:4px;height:100%}
+.topnav-item{position:relative;display:flex;align-items:center;padding:0 16px;font-size:14px;font-weight:650;
+  color:var(--muted);letter-spacing:-.005em;white-space:nowrap}
+.topnav-item::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:3px;
+  background:transparent;transition:background-color .16s}
+.topnav-item:hover{color:var(--text)}
+.topnav-item.on{color:var(--text)}
+.topnav-item.on::after{background:var(--brand)}
+.topnav-item:focus-visible{outline-offset:-6px}
+.topbar-right{display:flex;align-items:center;gap:6px;justify-self:end;min-width:0}
+
+.pill{display:inline-flex;align-items:center;gap:9px;padding:9px 17px;border-radius:999px;white-space:nowrap;
+  font-size:13px;font-weight:700;border:1px solid var(--line-2);background:var(--panel);color:var(--muted)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.pill-online{color:var(--accent)}
+.pill-online .dot{background:var(--brand);animation:pulse 2.4s infinite}
+.pill-stale{color:var(--warn);border-color:var(--warn-line)}
+.pill-offline{color:var(--bad);border-color:var(--bad-line)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 var(--accent-glow)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+/* ---------- account ---------- */
+.acct{position:relative}
+.acct-btn{display:flex;align-items:center;gap:10px;padding:4px 4px 4px 10px;border-radius:999px;min-height:44px;
+  border:1px solid transparent}
+.acct-btn:hover,.acct-btn[aria-expanded="true"]{background:var(--panel-2);border-color:var(--line)}
+.acct-name{font-size:14px;font-weight:700;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.avatar{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;flex:none;
+  border:1.5px solid var(--line-2);color:var(--muted);font-weight:800;font-size:12px;text-transform:uppercase}
+.acct-menu{position:absolute;right:0;top:calc(100% + 10px);width:270px;padding:8px;z-index:40;
+  background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-lg);
+  box-shadow:var(--shadow-lg);animation:rise .16s var(--ease) both}
+.acct-who{display:flex;flex-direction:column;padding:8px 10px 0;font-weight:700;font-size:14px}
+.acct-role{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-top:2px}
+.acct-email{font-size:12.5px;color:var(--muted);padding:4px 10px 10px;word-break:break-all;border-bottom:1px solid var(--line);margin-bottom:6px}
+.acct-item{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px;border-radius:var(--r);
+  font-size:13.5px;font-weight:650;color:var(--text)}
+.acct-item:hover{background:var(--panel-2)}
+.acct-item .ico{color:var(--muted)}
+
+/* ---------- main / view ---------- */
+.main{min-height:calc(100dvh - var(--bar-h));display:flex;flex-direction:column}
+.view{flex:1;width:100%;max-width:var(--maxw);margin:0 auto;padding:40px var(--gutter) 28px}
+.view:focus{outline:none}
+
+/* Search sits between the bar and the view, and only on pages it filters. */
+.searchbar{display:none;position:relative;width:100%;max-width:var(--maxw);margin:0 auto;padding:26px var(--gutter) 0}
+body[data-route="areas"] .searchbar,body[data-route="devices"] .searchbar,
+body[data-route="area"] .searchbar{display:block}
+/* Wide screens: the search takes the empty right end of the title row, so
+   the page still opens on where you are, not on a text box. */
+@media (min-width:901px){
+  .main{position:relative}
+  .searchbar{position:absolute;z-index:2;right:max(var(--gutter),calc((100% - var(--maxw)) / 2 + var(--gutter)));
+    top:94px;width:min(360px,34vw);max-width:none;margin:0;padding:0}
+  .search-icon{left:14px!important;top:22px!important}
+  body[data-route] .view .page-head{padding-right:min(380px,36vw)}
+  body[data-route="overview"] .view .page-head,body[data-route="irrigation"] .view .page-head,
+  body[data-route="admin"] .view .page-head{padding-right:0}
+}
+@media (max-width:900px){
+  body[data-route="areas"] .view,body[data-route="devices"] .view,body[data-route="area"] .view{padding-top:22px}
+}
+.search-icon{position:absolute;left:calc(var(--gutter) + 14px);top:calc(26px + 22px);transform:translateY(-50%);
+  width:17px;height:17px;stroke:var(--faint);pointer-events:none}
+#search{width:100%;max-width:520px;min-height:44px;padding:0 14px 0 42px;border-radius:var(--r);
+  border:1px solid var(--line-2);background:var(--panel);color:var(--text);font-size:14px;font-weight:500}
+#search::placeholder{color:var(--faint)}
+#search:hover{border-color:var(--muted)}
+#search:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--off-soft);outline:none}
+
+/* ---------- page head ---------- */
+.page-head{display:flex;align-items:flex-end;gap:16px 24px;flex-wrap:wrap;margin-bottom:26px}
+.page-head .spacer{flex:1}
+.page-title{margin-top:8px;font-size:clamp(34px,3.35vw,48px);font-weight:750;letter-spacing:-.05em;line-height:1.02;
+  color:var(--text);overflow-wrap:anywhere}
+.page-sub{font-size:14px;color:var(--muted);margin-top:10px}
+.back{display:inline-flex;align-items:center;gap:7px;min-height:32px;margin:-6px 0 -6px;padding:6px 0;
+  font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);border-radius:var(--r)}
+.back .ico{width:14px;height:14px}
+.back:hover{color:var(--text)}
+
+/* ---------- panels ---------- */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:62px;padding:12px 22px;border-bottom:1px solid var(--line)}
+.panel-title{font-size:16.5px;font-weight:700;letter-spacing:-.025em;color:var(--text)}
+.panel-title .n{margin-left:8px;font-size:13px;font-weight:650;color:var(--faint);letter-spacing:0}
+.panel-link{display:inline-flex;align-items:center;gap:5px;min-height:44px;margin:-10px 0;padding:0 2px;
+  font-size:13.5px;font-weight:700;color:var(--accent);border-radius:var(--r);white-space:nowrap}
+.panel-link .ico{width:15px;height:15px;transition:transform .16s var(--ease)}
+.panel-link:hover .ico{transform:translateX(3px)}
+.panel-body{padding:12px}
+.area-sec + .area-sec{margin-top:16px}
+.stats + .list,.stats + .grid,.list + .list{margin-top:12px}
+
+.section-head{display:flex;align-items:center;gap:10px;margin:30px 0 12px}
+.section-head:first-child{margin-top:0}
+.section-title{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.section-rule{flex:1;height:1px;background:var(--line)}
+
+/* ---------- overview ---------- */
+.ov{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,494px);gap:20px;align-items:start}
+.ov-main,.ov-side{display:flex;flex-direction:column;gap:16px;min-width:0}
+
+.pulse{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px 28px;padding:34px 30px 36px;
+  background:var(--tint);border:1px solid var(--tint-line);border-radius:var(--r)}
+.pulse-title{margin:12px 0 14px;font-size:clamp(26px,2.3vw,33px);font-weight:750;letter-spacing:-.045em;
+  line-height:1.1;max-width:17ch;color:var(--text);text-wrap:balance}
+.pulse-body{font-size:14.5px;line-height:1.62;color:var(--muted);max-width:52ch}
+.pulse-fig{text-align:right;align-self:start}
+.pulse-n{display:block;font-size:clamp(64px,6.6vw,96px);font-weight:800;letter-spacing:-.065em;line-height:.9;
+  color:var(--ink);font-variant-numeric:tabular-nums}
+.pulse-fig .eyebrow{display:block;margin-top:16px}
+.pulse.is-quiet .pulse-n{color:var(--warn)}
+
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.stat{display:flex;flex-direction:column;gap:10px;padding:22px 22px 20px;min-height:92px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+a.stat:hover{border-color:var(--line-2)}
+.stat-value{font-size:31px;font-weight:750;letter-spacing:-.05em;line-height:1;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.stat-of{margin-left:2px;font-size:13px;font-weight:650;letter-spacing:0;color:var(--faint)}
+.stat-label{font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.stat-bad .stat-value{color:var(--bad)}
+.stat-on .stat-value{color:var(--ink)}
+
+/* Attention: the one number that should make you act. */
+.att{padding:0}
+.att-top{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px 26px;padding:26px 24px}
+.att-n{font-size:clamp(46px,4vw,58px);font-weight:750;letter-spacing:-.06em;line-height:.9;color:var(--bad);
+  font-variant-numeric:tabular-nums}
+.att.is-clear .att-n{color:var(--faint)}
+.att-title{font-size:15.5px;font-weight:700;letter-spacing:-.015em;color:var(--text)}
+.att-sub{display:inline-flex;align-items:center;gap:6px;margin-top:4px;font-size:13.5px;color:var(--muted);
+  min-width:0;max-width:100%}
+.att-sub span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+a.att-sub:hover{color:var(--text)}
+.att-sub .ico{width:14px;height:14px;flex:none}
+.att-list{border-top:1px solid var(--line)}
+.att-row{display:flex;align-items:center;gap:14px;min-height:54px;padding:9px 24px;border-bottom:1px solid var(--line-soft)}
+.att-row:last-child{border-bottom:0}
+.att-row:hover{background:var(--panel-2)}
+.att-main{display:flex;flex-direction:column;min-width:0;flex:1}
+.att-name{font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-meta{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-count{flex:none;font-size:13px;font-weight:700;color:var(--bad);font-variant-numeric:tabular-nums}
+.att-more{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 24px;
+  border-top:1px solid var(--line);font-size:13px;font-weight:700;color:var(--accent)}
+.att-more:hover{background:var(--panel-2)}
+
+/* ---------- area cards ---------- */
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.area-card{position:relative;display:flex;flex-direction:column;min-height:122px;padding:20px 18px 16px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.area-card:hover{border-color:var(--line-2)}
+.area-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.area-name{font-size:16px;font-weight:700;letter-spacing:-.025em;line-height:1.25;overflow-wrap:anywhere}
+.area-arrow{width:21px;height:21px;margin:-1px -1px 0 0;color:var(--muted);stroke-width:1.5;
+  transition:transform .16s var(--ease),color .16s}
+.area-card:hover .area-arrow{color:var(--text);transform:translate(2px,-2px)}
+.area-count{margin-top:3px;font-size:12.5px;color:var(--muted)}
+.area-meta{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;margin-top:auto;padding-top:22px;
+  font-size:12.5px;font-weight:700}
+.area-meta .on{color:var(--accent)}
+.area-meta .bad{color:var(--bad)}
+.area-meta .quiet{color:var(--muted);font-weight:600}
+
+/* Status words in running text: coloured, never pill-shaped washes. */
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.tag-on{color:var(--accent)}
+.tag-on::before{background:var(--brand)}
+.tag-bad{color:var(--bad)}
+.tag-warn{color:var(--warn)}
+.tag-plain::before{display:none}
+
+/* ---------- device rows (controls) ----------
+   One component for Quick controls and every operable row in an area: name
+   first, context under it, the control on the right. The old tile grid put
+   one toggle in a 285px card; a list is denser and reads top to bottom. */
+.dev-list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.dev-list.cols{column-width:420px;column-gap:0}
+.panel .dev-list,.panel .list{border:0;border-radius:0;background:transparent}
+.dev-card{display:flex;flex-direction:column;gap:4px;padding:8px 22px;border-bottom:1px solid var(--line-soft);
+  break-inside:avoid}
+.dev-card:last-child{border-bottom:0}
+.dev-top{display:flex;align-items:center;gap:14px;min-height:44px}
+.dev-text{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.dev-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  font-size:14px;font-weight:650;letter-spacing:-.01em;line-height:1.3;overflow-wrap:anywhere}
+.dev-meta{display:block;min-width:0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dev-card.is-bad .dev-name{color:var(--muted)}
+.dev-state{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px;padding:4px 11px;border-radius:999px;
+  color:var(--muted);border:1px solid var(--line)}
+.dev-state.on{color:var(--accent);border-color:var(--line-2)}
+.dev-state.alert{color:var(--bad);border-color:var(--bad-line)}
+.dev-state.unavail{color:var(--faint);font-style:italic;border-style:dashed}
+.flash{animation:flash 1s ease-out}
+@keyframes flash{from{background-color:var(--accent-flash)}to{background-color:transparent}}
+
+/* ---------- toggle (role=switch) ---------- */
+/* 40x23 as drawn, 44px tall as a target: ::before pads the hit area without
+   moving a pixel of layout. ::after is the knob. */
+.toggle::before{content:"";position:absolute;left:50%;top:50%;translate:-50% -50%;width:100%;height:44px;z-index:1}
+.toggle{position:relative;flex:none;width:42px;height:24px;border-radius:999px;
+  background:var(--track);box-shadow:inset 0 0 0 1px var(--line-2)}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+  background:var(--knob);box-shadow:0 1px 2px rgba(0,0,0,.28);transition:transform .2s var(--ease)}
+.toggle[aria-checked="true"]{background:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
+.toggle[aria-checked="true"]::after{transform:translateX(18px);background:#fff}
+.toggle[disabled]{opacity:.42;cursor:not-allowed}
+.toggle.busy{opacity:.6;cursor:progress}
+
+/* ---------- range ---------- */
+.ctl-row{display:flex;align-items:center;gap:12px;padding-bottom:2px}
+.ctl-row .ctl-label{font-size:12px;font-weight:650;color:var(--faint);min-width:48px}
+.ctl-row .ctl-val{font-size:12.5px;font-weight:650;color:var(--muted);font-variant-numeric:tabular-nums;min-width:40px;text-align:right}
+/* 44px of hit area, 22px of layout: the input grows and margin pulls it back. */
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:0;
+  height:44px;margin-block:-11px;background:none;position:relative;z-index:1}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:999px;
+  background:linear-gradient(var(--brand),var(--brand)) 0/var(--fill,0%) 100% no-repeat,var(--track)}
+input[type=range]::-moz-range-track{height:4px;border-radius:999px;background:var(--track)}
+input[type=range]::-moz-range-progress{height:4px;border-radius:999px;background:var(--brand)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-7px;
+  border-radius:50%;background:var(--knob);box-shadow:0 1px 3px rgba(0,0,0,.3),0 0 0 1px var(--line-2)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radius:50%;background:var(--knob);
+  box-shadow:0 1px 3px rgba(0,0,0,.3),0 0 0 1px var(--line-2)}
+input[type=range][disabled]{opacity:.42}
+
+/* ---------- read-only rows (sensors, the all-devices list) ---------- */
+.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.list.cols{column-width:420px;column-gap:0;padding:0}
+.row{display:flex;align-items:center;gap:13px;min-height:56px;padding:9px 20px;
+  border-bottom:1px solid var(--line-soft);break-inside:avoid}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--panel-2)}
+.row-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:var(--r);flex:none;
+  color:var(--muted);border:1px solid var(--line)}
+.row.is-on .row-icon{color:var(--accent)}
+.row.is-bad .row-icon{color:var(--bad);border-color:var(--bad-line)}
+.row-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.row-name{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;font-weight:600}
+.row-meta{display:block;min-width:0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- all devices: one line per device, opening to its readings ---------- */
+.dgroups{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.dgroup{border-bottom:1px solid var(--line)}
+.dgroup:last-child{border-bottom:0}
+.dgroup-head{display:flex;align-items:center;gap:16px;width:100%;min-height:64px;padding:10px 22px;text-align:left}
+.dgroup-head:hover{background:var(--panel-2)}
+.dgroup-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.dgroup-main{display:flex;flex-direction:column;min-width:0;flex:1}
+.dgroup-name{font-size:14.5px;font-weight:700;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dgroup-meta{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dgroup-chev{width:16px;height:16px;color:var(--faint);transition:transform .18s var(--ease)}
+.dgroup.open .dgroup-chev{transform:rotate(90deg)}
+.dgroup-body{border-top:1px solid var(--line-soft);background:var(--bg);column-width:420px;column-gap:0}
+.dgroup-body .row{padding-left:22px}
+.dgroup-body .row:hover{background:var(--panel-2)}
+.dgroup-solo{border:0;border-radius:0;border-bottom:1px solid var(--line)}
+.dgroup-solo:last-child{border-bottom:0}
+
+/* ---------- admin ---------- */
+.acl-row{flex-wrap:wrap;row-gap:8px}
+.acl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.acl-actions .btn{padding:0 14px;font-size:12.5px;min-height:38px}
+
+/* ---------- chips and segments ---------- */
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px}
+/* 32px visual pill, 44px hit box: the 6px transparent border belongs to the
+   button itself, so hit testing really is 44px (a pseudo-element would not be). */
+.chip{padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:650;color:var(--muted);
+  background:var(--panel);background-clip:padding-box;border:6px solid transparent;margin:-6px 0;
+  box-shadow:inset 0 0 0 1px var(--line-2);text-transform:capitalize}
+.chip:hover{color:var(--text);box-shadow:inset 0 0 0 1px var(--muted)}
+.chip:focus-visible{outline-offset:-4px}
+/* Selected is the ink colour, not green: green means on, not "picked". */
+.chip.on{background-color:var(--text);color:var(--panel);box-shadow:inset 0 0 0 1px var(--text)}
+.chip .n{opacity:.65;margin-left:6px;font-variant-numeric:tabular-nums}
+
+.seg{display:inline-flex;padding:3px;border-radius:var(--r-lg);background:var(--panel-2);border:1px solid var(--line);gap:2px}
+.seg button{position:relative;padding:7px 14px;border-radius:var(--r);font-size:13px;
+  font-weight:650;color:var(--muted);min-height:38px;white-space:nowrap}
+.seg button::before{content:"";position:absolute;left:0;top:50%;translate:0 -50%;width:100%;height:44px}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--text);box-shadow:0 0 0 1px var(--line-2)}
+.seg .n{margin-left:4px;color:var(--faint);font-variant-numeric:tabular-nums}
+.toolbar-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+
+.more-note{font-size:13px;color:var(--muted);margin:0 0 14px}
+.more-note a{color:var(--accent);font-weight:700}
+.panel .more-note{margin:0;padding:12px 22px;border-bottom:1px solid var(--line)}
+/* A switched-off capability is not an error: warn-coloured, so a dead control
+   has a visible reason next to it without crying failure. */
+.more-note.note-off{color:var(--warn)}
+.qc-more{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 22px;
+  border-top:1px solid var(--line);font-size:13px;font-weight:700;color:var(--accent)}
+.qc-more:hover{background:var(--panel-2)}
+
+/* ---------- irrigation report builder ---------- */
+.rep-builder{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px}
+.rep-field{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.rep-field select,.rep-field input[type=date]{min-height:42px;padding:0 12px;border-radius:var(--r);
+  border:1px solid var(--line-2);background:var(--panel);color:var(--text);
+  font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;}
+.rep-field select:hover,.rep-field input[type=date]:hover{border-color:var(--muted)}
+.rep-field select:focus,.rep-field input[type=date]:focus{border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft);outline:none}
+.btn-primary{background:var(--brand);color:var(--on-brand);box-shadow:var(--shadow)}
+.btn-primary:hover{filter:brightness(1.07)}
+.btn-primary[disabled]{opacity:.55;cursor:progress}
+.rep-card{padding:18px 20px;border-radius:var(--r);background:var(--panel);
+  border:1px solid var(--line);box-shadow:var(--shadow);margin-bottom:12px}
+.rep-card:last-child{margin-bottom:0}
+.rep-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.rep-title{font-size:14px;font-weight:700;letter-spacing:-.01em}
+.rep-when{margin-left:auto;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.rep-summary{margin-top:6px;font-size:13px;color:var(--muted)}
+.rep-summary.rep-err{color:var(--bad)}
+.rep-card .list{margin-top:10px}
+
+/* ---------- inline report charts (irrigation: readings + valve runtime) ---------- */
+.spark{margin-top:10px}
+.spark-svg{width:100%;height:44px;display:block;overflow:visible}
+.spark-area{fill:var(--accent-soft);stroke:none}
+.spark-line{fill:none;stroke:var(--brand);stroke-width:2;stroke-linecap:round;
+  stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.spark-dot{fill:var(--brand)}
+.spark-labels{display:flex;justify-content:space-between;margin-top:4px;
+  font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.spark-last{color:var(--text);font-weight:600}
+
+.bars{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.bar-row{display:grid;grid-template-columns:22px minmax(76px,1fr) 2fr auto;align-items:center;gap:10px}
+.bar-label{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{height:8px;border-radius:999px;background:var(--off-soft);overflow:hidden}
+.bar-fill{display:block;height:100%;border-radius:999px;background:var(--muted)}
+.bar-fill.is-on{background:var(--brand)}
+/* Farm illustrations (DCON assets) beside valves, bars and log rows. Full
+   colour on purpose: they say what a valve waters, which the name alone
+   often does not. Never used for state — the tag beside them does that. */
+.row-icon-art{background:transparent}
+.row-art{width:28px;height:28px;object-fit:contain;display:block}
+.bar-art{width:22px;height:22px;object-fit:contain;flex:none}
+.tl-art{width:20px;height:20px;object-fit:contain;flex:none}
+.bar-value{flex:none;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* Multi-series line chart (voltage per phase, inlet vs outlet). Series are
+   told apart by weight and dash, not by hue: the accent for the first, the
+   page's text and muted greys for the rest. Shaded windows mark where the
+   pump was running. */
+.chart{position:relative;margin-top:2px}
+.chart-plot{position:relative;padding-bottom:18px}
+.chart-svg{width:100%;height:150px;display:block;overflow:visible}
+.ln-ax{position:absolute;font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums;
+  line-height:1;white-space:nowrap;pointer-events:none}
+.ln-ay{left:0;width:30px;text-align:right;transform:translateY(-50%)}
+.ln-xs{position:absolute;left:0;right:0;bottom:0;height:14px}
+.ln-ax-s{transform:none}.ln-ax-m{transform:translateX(-50%)}.ln-ax-e{transform:translateX(-100%)}
+.ln{fill:none;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round;
+  vector-effect:non-scaling-stroke}
+.ln-0{stroke:var(--brand);stroke-width:2.2}
+.ln-1{stroke:var(--text);opacity:.62}
+.ln-2{stroke:var(--muted);stroke-dasharray:5 4}
+.ln-3{stroke:var(--faint);stroke-dasharray:2 3}
+.ln-grid{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+.ln-on{fill:var(--accent-soft)}
+.ln-hit{fill:transparent}
+.ln-hit:hover{fill:var(--off-soft)}
+.chart-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:11.5px;color:var(--muted)}
+.lg{display:inline-flex;align-items:center;gap:6px}
+.lg i{display:inline-block;width:16px;height:0;border-top:2px solid var(--muted)}
+.lg i.ln-0{border-top:2.5px solid var(--brand)}
+.lg i.ln-1{border-top-color:var(--text);opacity:.62}
+.lg i.ln-2{border-top:2px dashed var(--muted)}
+.lg i.ln-3{border-top:2px dotted var(--faint)}
+.lg-note{color:var(--faint)}
+
+/* Stacked day bars: the whole is power available, the part inside it is
+   the pump's share of that. */
+.stk{display:flex;align-items:flex-end;gap:3px;height:120px;padding-bottom:16px;position:relative}
+.stk-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;
+  align-items:stretch;position:relative}
+.stk-whole{display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px 4px 2px 2px;
+  background:var(--track);overflow:hidden;min-height:2px}
+.stk-part{display:block;background:var(--brand);border-radius:3px 3px 0 0}
+.stk-at{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-size:10px;
+  color:var(--faint);font-variant-numeric:tabular-nums}
+.lg i.stk-k-whole{width:10px;height:10px;border:0;border-radius:2px;background:var(--track)}
+.lg i.stk-k-part{width:10px;height:10px;border:0;border-radius:2px;background:var(--brand)}
+
+/* Every valve at a glance. One that got nothing stays in the grid, dimmed
+   with the word "none": an idle valve is the thing to notice, not hide. */
+.vgrid{display:grid;gap:7px;grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+.vg{display:grid;grid-template-columns:24px 1fr;grid-template-rows:auto auto;column-gap:8px;
+  align-items:center;padding:8px 10px;border-radius:var(--r);background:var(--off-soft)}
+.vg-art{grid-row:1 / 3;width:24px;height:24px;object-fit:contain}
+.vg-name{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vg-val{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+.vg-idle{background:transparent;box-shadow:inset 0 0 0 1px var(--line-2)}
+.vg-idle .vg-val{color:var(--faint);font-weight:600}
+.vg-idle .vg-art{opacity:.45;filter:grayscale(1)}
+
+/* Valve × day. Heat is the accent at an opacity proportional to minutes. */
+.mx-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--r);
+  box-shadow:inset 0 0 0 1px var(--line)}
+.mx{border-collapse:collapse;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums}
+.mx th,.mx td{padding:5px 7px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line)}
+.mx tr:last-child th,.mx tr:last-child td{border-bottom:0}
+.mx th{font-weight:600;color:var(--muted);font-size:10.5px}
+.mx .mx-name{position:sticky;left:0;text-align:left;background:var(--panel);color:var(--text);
+  font-weight:550;font-size:11.5px;z-index:1}
+.mx td{color:var(--text);background:rgb(1 136 67 / var(--heat,0))}
+.mx td.mx-zero{color:var(--faint)}
+.mx .mx-total{font-weight:700;color:var(--text);background:var(--panel)}
+
+/* ---------- report sections ----------
+   One block per vendor call, drawn by the kind the bridge declared: tiles for
+   headline numbers, a key/value grid for a controller, a day-grouped timeline
+   for logs. Everything reuses the page's existing weights and hues — a report
+   should read like the rest of the dashboard, not like a vendor's app. */
+.rep-sec{margin-top:11px}
+.rep-sec:first-of-type{margin-top:9px}
+.sec-title{display:flex;align-items:baseline;gap:8px;margin-bottom:7px;font-size:11px;
+  font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.sec-src{font-size:10.5px;font-weight:600;letter-spacing:.04em;color:var(--faint);
+  text-transform:none}
+.rep-note{margin:7px 0 0;font-size:12.5px;color:var(--faint)}
+.rep-note.rep-err{color:var(--bad)}
+.rep-sec .list,.rep-sec .bars,.rep-sec .spark,.rep-sec .chart{margin-top:0}
+
+/* auto-fill, not auto-fit: a section with one reading gets a tile the size of
+   every other tile, instead of one stretched across the card. */
+.tiles{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
+.tile{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--r);
+  background:var(--off-soft)}
+.tile-label{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted)}
+.tile-value{font-size:21px;font-weight:700;letter-spacing:-.03em;line-height:1.2;
+  font-variant-numeric:tabular-nums}
+.tile-unit{margin-left:3px;font-size:12px;font-weight:600;color:var(--muted)}
+.tile-note{font-size:11.5px;color:var(--faint)}
+
+.facts{display:grid;gap:1px;border-radius:var(--r);overflow:hidden;background:var(--line)}
+.fact{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding:9px 12px;background:var(--panel)}
+.fact-label{flex:none;font-size:12px;color:var(--muted)}
+.fact-value{font-size:13px;font-weight:600;text-align:right;overflow-wrap:anywhere}
+
+.tl{display:flex;flex-direction:column;gap:2px}
+.tl-day{margin:7px 0 3px;font-size:11px;font-weight:700;letter-spacing:.06em;
+  color:var(--faint);font-variant-numeric:tabular-nums}
+.tl-day:first-child{margin-top:0}
+.tl-row{display:flex;align-items:baseline;gap:10px;padding:5px 0}
+.tl-at{flex:none;width:44px;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.tl-main{display:block;min-width:0;flex:1}
+.tl-main .row-name,.tl-main .row-meta{display:block;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+/* Scoped to the timeline: a bare .chip here silently restyled every filter chip
+   on All devices, which is defined further up with the same name. */
+.tl-chip{flex:none;font-size:10.5px;font-weight:650;letter-spacing:.04em;padding:2px 7px;
+  border-radius:999px;color:var(--muted);background:var(--off-soft)}
+
+/* ---------- skeleton / empty ---------- */
+.sk-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.sk-card{height:122px;border-radius:var(--r);border:1px solid var(--line);
+  background:linear-gradient(90deg,var(--panel),var(--panel-2),var(--panel));
+  background-size:220% 100%;animation:shimmer 1.5s linear infinite}
+@keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+
+.empty{display:flex;flex-direction:column;align-items:center;gap:12px;padding:56px 20px;
+  color:var(--muted);text-align:center}
+.empty-mark{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;
+  background:var(--panel);border:1px solid var(--line);color:var(--faint)}
+.empty h3{font-size:16px;font-weight:700;letter-spacing:-.02em;color:var(--text)}
+.empty p{font-size:13.5px;max-width:36ch}
+.panel .empty{padding:36px 20px}
+
+.foot{width:100%;max-width:var(--maxw);margin:0 auto;padding:18px var(--gutter) calc(22px + var(--sab));
+  font-size:12.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* ---------- toasts ---------- */
+.toasts{position:fixed;right:18px;bottom:calc(18px + var(--sab));z-index:80;
+  display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:min(380px,calc(100vw - 32px))}
+.toast{display:flex;align-items:center;gap:10px;padding:12px 15px;border-radius:var(--r-lg);font-size:13px;font-weight:600;
+  background:var(--panel);border:1px solid var(--line-2);box-shadow:var(--shadow-lg);
+  animation:toast-in .26s var(--ease) both}
+.toast .ico{width:16px;height:16px}
+.toast.ok{color:var(--accent)}
+.toast.err{border-color:var(--bad-line);color:var(--bad)}
+.toast.out{animation:toast-out .22s var(--ease) both}
+@keyframes toast-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes toast-out{to{opacity:0;transform:translateY(6px)}}
+
+/* The theme control offers the theme you are not in: a moon while light, a
+   sun while dark. Only ever one glyph. */
+.ico-sun{display:none}
+:root[data-theme="dark"] .ico-sun{display:block}
+:root[data-theme="dark"] .ico-moon{display:none}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme]) .ico-sun{display:block}
+  :root:not([data-theme]) .ico-moon{display:none}
+}
+
+/* ---------- bottom tab bar (phones) ---------- */
+.tabbar{display:none}
+.only-narrow{display:none}
+
+/* ---------- responsive ---------- */
+@media (max-width:1180px){
+  .topnav-item{padding:0 11px}
+  .brand{gap:12px}
+  .acct-name{display:none}
+  .acct-btn{padding:4px}
+}
+@media (max-width:1080px){
+  .ov{grid-template-columns:minmax(0,1fr) minmax(300px,400px)}
+}
+/* Phones and small tablets: the destinations move to the bottom, the bridge
+   state moves up, and the overview becomes one column in the order you need
+   it — what is wrong, how the farm is, the numbers, what you can switch,
+   then the rooms. */
+@media (max-width:900px){
+  :root{--bar-h:60px}
+  .topbar-in{grid-template-columns:1fr auto;gap:10px}
+  .topnav,.only-wide{display:none}
+  .only-narrow{display:inline-flex}
+  .brand .wordmark-sub{display:none}
+  .wordmark{font-size:20px}
+  #m-bridge{padding:7px 12px;font-size:12.5px;gap:7px}
+  .page-head .pill-head{display:none}
+  .main{padding-bottom:calc(60px + var(--sab))}
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;
+    padding:0 6px var(--sab);background:var(--bar);border-top:1px solid var(--line)}
+  .tab-item{position:relative;flex:1;display:flex;align-items:center;justify-content:center;
+    min-height:60px;color:var(--muted);font-size:13px;font-weight:650;letter-spacing:-.005em}
+  .tab-item::before{content:"";position:absolute;top:-1px;left:22%;right:22%;height:3px;background:transparent}
+  .tab-item:hover{color:var(--text)}
+  .tab-item.on{color:var(--text)}
+  .tab-item.on::before{background:var(--brand)}
+  .tab-item:focus-visible{outline-offset:-6px}
+
+  .view{padding-top:30px}
+  .ov{display:flex;flex-direction:column;align-items:stretch;gap:14px}
+  .ov-main,.ov-side{display:contents}
+  .att{order:1} .pulse{order:2} .stats{order:3} .qc{order:4} .ov-areas{order:5}
+  .toasts{left:16px;right:16px;bottom:calc(76px + var(--sab));max-width:none}
+}
+@media (max-width:620px){
+  .page-title{font-size:34px}
+  .page-head{margin-bottom:20px}
+  .pulse{padding:22px 18px 22px;gap:10px 14px}
+  .pulse-title{font-size:24px;margin:10px 0 10px}
+  .pulse-body{font-size:13.5px}
+  .pulse-n{font-size:58px}
+  .pulse-fig .eyebrow{margin-top:10px}
+  .stats{gap:8px}
+  .stat{padding:18px 14px 16px;min-height:0}
+  .stat-value{font-size:26px}
+  .stat-label{font-size:10.5px;letter-spacing:.1em}
+  .att-top{padding:22px 18px;gap:4px 20px}
+  .att-row,.att-more{padding-left:18px;padding-right:18px}
+  .panel-head{padding:10px 18px;min-height:58px}
+  .panel-body{padding:10px}
+  .dev-card{padding:8px 18px}
+  .row{padding:9px 16px}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .area-card{min-height:112px;padding:16px 14px 14px}
+  .area-name{font-size:15px}
+  .area-meta{padding-top:18px;gap:4px 10px;font-size:12px}
+  .area-meta .quiet{display:none}
+  .dev-list.cols,.list.cols,.dgroup-body{column-width:auto}
+  .chips{flex-wrap:nowrap;overflow-x:auto;margin:0 calc(-1 * var(--gutter)) 14px;padding:6px var(--gutter);
+    scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none}
+  .dgroup-head{padding:10px 18px;gap:12px}
+  .dgroup-body .row{padding-left:18px}
+  .gate-card{padding:28px 22px 22px}
+}
+@media (max-width:360px){
+  .grid{grid-template-columns:1fr}
+  .stat-label{font-size:10px;letter-spacing:.06em}
+}
+
+/* The bridge dot pulse, the change flash and card lifts are motivated motion,
+   but they still yield to the OS setting. Colour and words carry meaning. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important;scroll-behavior:auto!important}
+  .boot-mark{animation:spin 1s linear infinite!important}
+}

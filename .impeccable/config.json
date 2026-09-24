@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "clipped-overflow-container",
+        "value": "*",
+        "files": [
+          "dashboard/public/index.html"
+        ],
+        "createdAt": "2026-09-22T08:43:48.198Z",
+        "reason": "gate-bg decorative blurred blobs clipped by .gate{overflow:hidden} on the sign-in screen — intentional ambience, not a tooltip/menu/popover; pre-existing, unrelated to the admin-nav edit"
+      }
+    ]
+  }
+}

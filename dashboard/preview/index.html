@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>SNOF Live Farm State</title>
+<link rel="icon" type="image/png" href="/art/logo.png">
+<link rel="apple-touch-icon" href="/art/logo.png">
+<link rel="preload" href="/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+</head>
+<!-- data-view mounts exactly one screen: boot, gate or app. The previous build
+     relied on the [hidden] attribute alone, which .gate{display:grid} silently
+     outranked — so the sign-in card stayed on screen with the dashboard
+     rendering underneath it. Display now has a single source of truth. -->
+<body data-view="boot">
+
+<!-- Icon set: one <symbol> per HA domain / UI affordance, drawn by <use>. Symbols carry their own viewBox so the 24-grid artwork scales into the 19px .ico box instead of clipping. -->
+<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-sensor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
+  <symbol id="i-binary_sensor" viewBox="0 0 24 24"><path d="M4 8h10a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Z"/><circle cx="14" cy="12" r="2.2"/></symbol>
+  <symbol id="i-switch" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.2 6.2a8 8 0 1 0 11.6 0"/></symbol>
+  <symbol id="i-light" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.5.7.5 1.1h6c0-.4.1-.8.5-1.1A6 6 0 0 0 12 3Z"/></symbol>
+  <symbol id="i-climate" viewBox="0 0 24 24"><path d="M12 3v11"/><circle cx="12" cy="17" r="4"/><path d="M15 6h3M15 9.5h3"/></symbol>
+  <symbol id="i-cover" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 7h11v10H3z"/><path d="m14 11 7-4v10l-7-4"/></symbol>
+  <symbol id="i-media_player" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="m10 8.5 5 2.5-5 2.5z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-device_tracker" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-fan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 10V3.5M13.7 13l5.6 3.2M10.3 13l-5.6 3.2"/><path d="M12 10a4 4 0 0 1 4-4M13.7 13a4 4 0 0 1 1.5 5.5M10.3 13a4 4 0 0 0-5.5-1.5"/></symbol>
+  <symbol id="i-number" viewBox="0 0 24 24"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 11 3 3 3-3"/></symbol>
+  <symbol id="i-button" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-input_boolean" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="2.6"/></symbol>
+  <symbol id="i-update" viewBox="0 0 24 24"><path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M4 18h16"/></symbol>
+  <symbol id="i-event" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></symbol>
+  <symbol id="i-automation" viewBox="0 0 24 24"><path d="M4 12h4l2-5 4 10 2-5h4"/></symbol>
+  <symbol id="i-water_heater" viewBox="0 0 24 24"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M6 20h12"/></symbol>
+  <symbol id="i-valve" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M2 12h6M16 12h6M12 2v6"/></symbol>
+  <symbol id="i-scene" viewBox="0 0 24 24"><path d="m12 3 2.6 5.6 6.4.8-4.7 4.3 1.2 6.3L12 17l-5.5 3 1.2-6.3L3 9.4l6.4-.8Z"/></symbol>
+  <symbol id="i-script" viewBox="0 0 24 24"><path d="M8 4h9a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V6"/><path d="M5 6a2 2 0 1 0-4 0v0h4M9 9h6M9 13h6"/></symbol>
+  <symbol id="i-default" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="2"/></symbol>
+
+  <symbol id="n-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  <symbol id="n-areas" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
+  <symbol id="n-devices" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1.5"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></symbol>
+  <symbol id="n-irrigation" viewBox="0 0 24 24"><path d="M12 3c3 3.5 4.5 6 4.5 8.4A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.6C7.5 9 9 6.5 12 3Z"/><path d="M4 20h16"/></symbol>
+  <symbol id="n-admin" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="n-signout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-ne" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2M4.6 4.6 6 6M18 18l1.4 1.4M19.4 4.6 18 6M6 18l-1.4 1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12.5 5 5L20 6.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+</defs></svg>
+
+<!-- ---------- boot ---------- -->
+<div id="boot" class="boot" role="status" aria-label="Loading"><span class="boot-mark"></span></div>
+
+<!-- ---------- sign-in: its own full-screen page ---------- -->
+<div id="gate" class="gate">
+  <main class="gate-card">
+    <div class="gate-brand">
+      <img class="logo" src="/art/logo.png" alt="">
+      <span class="wordmark">SNOF</span>
+      <span class="wordmark-sub">Natural Orchards</span>
+    </div>
+    <p class="eyebrow">Sibhi Natural Orchards &amp; Farms</p>
+    <h1 class="gate-title">Your farm, right&nbsp;now.</h1>
+    <p class="gate-tag">Every room, sensor and switch on the farm — live, and operable from here.</p>
+    <p id="gate-msg" class="gate-msg" role="status">Sign in with the Google account on the farm allowlist.</p>
+    <button id="signin" class="btn btn-google btn-block">
+      <svg class="g" viewBox="0 0 48 48" aria-hidden="true">
+        <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-2.8-.4-4H24v7.3h12.1c-.2 2-1.6 5-4.5 7l-.1.3 6.5 5 .4.1c4.2-3.8 6.7-9.5 6.7-15.7"/>
+        <path fill="#34A853" d="M24 46c5.9 0 10.9-1.9 14.5-5.3l-6.9-5.3c-1.8 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-.3.1-6.7 5.2-.1.3C8 40.4 15.4 46 24 46"/>
+        <path fill="#FBBC05" d="M11.5 28.5c-.5-1.4-.7-2.9-.7-4.5s.3-3.1.7-4.5v-.3l-6.8-5.3-.2.1a22 22 0 0 0 0 20l7-5.5"/>
+        <path fill="#EA4335" d="M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.4 29.9 1 24 1 15.4 1 8 6.6 4.5 14l7 5.5c1.8-5.3 6.7-9 12.5-9"/>
+      </svg>
+      <span>Continue with Google</span>
+    </button>
+    <button id="signout-gate" class="btn btn-ghost btn-block" hidden>Use a different account</button>
+    <p class="gate-foot">Control is limited to lights, switches and fans on the allowlist.</p>
+  </main>
+</div>
+
+<!-- ---------- app shell ----------
+     One top bar on every width: wordmark, the five destinations, and the
+     account. Below 900px the destinations move to the bottom tab bar and the
+     bridge state takes their place up top, because on a phone "is this live?"
+     is the first question. Both navs carry data-nav; render() marks both. -->
+<div id="app">
+  <header class="topbar">
+    <div class="topbar-in">
+      <a class="brand" href="#/" aria-label="SNOF overview">
+        <span class="wordmark">SNOF</span>
+        <span class="wordmark-sub" id="brand-sub">Natural Orchards</span>
+      </a>
+
+      <nav class="topnav" aria-label="Main">
+        <a class="topnav-item" href="#/" data-nav="overview">Overview</a>
+        <a class="topnav-item" href="#/areas" data-nav="areas">Areas</a>
+        <a class="topnav-item" href="#/devices" data-nav="devices">All devices</a>
+        <a class="topnav-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
+        <a class="topnav-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
+      </nav>
+
+      <div class="topbar-right">
+        <span id="m-bridge" class="pill pill-unknown only-narrow" role="status">
+          <span class="dot"></span><span id="m-bridge-text">Connecting</span>
+        </span>
+        <button id="theme-btn" class="icon-btn only-wide" aria-label="Switch theme">
+          <svg viewBox="0 0 24 24" class="ico ico-sun"><use href="#i-sun"/></svg>
+          <svg viewBox="0 0 24 24" class="ico ico-moon"><use href="#i-moon"/></svg>
+        </button>
+        <div class="acct">
+          <button id="acct-btn" class="acct-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Account">
+            <span class="acct-name" id="acct-name">Signed in</span>
+            <span class="avatar" id="acct-initial">·</span>
+          </button>
+          <div id="acct-menu" class="acct-menu" role="menu" hidden>
+            <p class="acct-who"><span id="acct-full"></span><span class="acct-role" id="acct-role">Viewer</span></p>
+            <p class="acct-email" id="acct-email"></p>
+            <button id="theme-menu" class="acct-item" role="menuitem">
+              <svg viewBox="0 0 24 24" class="ico ico-sm ico-sun"><use href="#i-sun"/></svg>
+              <svg viewBox="0 0 24 24" class="ico ico-sm ico-moon"><use href="#i-moon"/></svg>
+              <span id="theme-menu-text">Switch theme</span>
+            </button>
+            <button id="signout-menu" class="acct-item" role="menuitem">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Outside #view on purpose: #view is rebuilt on every live update, and
+         an input inside it would lose focus and caret mid-word. -->
+    <div class="searchbar" id="searchbar">
+      <svg viewBox="0 0 24 24" class="ico search-icon"><use href="#i-search"/></svg>
+      <input id="search" type="search" aria-label="Search devices and areas" placeholder="Search devices, rooms, states…" autocomplete="off" spellcheck="false">
+    </div>
+    <main id="view" class="view" tabindex="-1"></main>
+    <footer class="foot"><span id="stats" role="status">Connecting…</span></footer>
+  </div>
+
+  <nav class="tabbar" aria-label="Main">
+    <a class="tab-item" href="#/" data-nav="overview">Overview</a>
+    <a class="tab-item" href="#/areas" data-nav="areas">Areas</a>
+    <a class="tab-item" href="#/devices" data-nav="devices">Devices</a>
+    <a class="tab-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
+    <a class="tab-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
+  </nav>
+</div>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<!-- Config is injected by Firebase Hosting; nothing project-specific is committed. -->
+<script>
+(function(){
+  const params=new URLSearchParams(location.search);
+  const now=Date.now();
+  const A={pump_house:'Pump House',packing_shed:'Packing Shed',orchard_east:'East Orchard',
+           farmhouse:'Farmhouse',cold_store:'Cold Store',nursery:'Nursery'};
+  const data={
+    meta:{name:'Sibhi Natural Orchards', bridge:{status:'online', lastSeen: now-(params.get('stale')?400000:5000),
+      heartbeatSeconds:30, control:!params.get('controloff')},
+      // What the report Cloud Function publishes. ?reportsoff=1 is the kill
+      // switch thrown: meta/reports.enabled false, set by the service account.
+      reports:{runtime:'cloud-functions', lastSeen: now-60000,
+        ...(params.get('reportsoff') ? {enabled:false} : {})}},
+    areas:Object.fromEntries(Object.entries(A).map(([k,v])=>[k,{name:v}])),
+    entities:{
+      sensor:{
+        tank_level:{name:'Main tank level',entity_id:'sensor.tank_level',state:'71',area:'pump_house',attrs:{unit_of_measurement:'%',device_class:'moisture'}},
+        soil_e1:{name:'Soil moisture row 1',entity_id:'sensor.soil_e1',state:'34.2',area:'orchard_east',attrs:{unit_of_measurement:'%',battery_level:82}},
+        soil_e2:{name:'Soil moisture row 2',entity_id:'sensor.soil_e2',state:'unavailable',area:'orchard_east',attrs:{battery_level:12}},
+        temp_out:{name:'Outdoor temperature',entity_id:'sensor.temp_out',state:'31.4',area:'farmhouse',attrs:{unit_of_measurement:'°C',device_class:'temperature'}},
+        power:{name:'Grid import',entity_id:'sensor.power',state:'1840',attrs:{unit_of_measurement:'W',device_class:'power'}},
+        humidity:{name:'Shed humidity',entity_id:'sensor.humidity',state:'58',area:'packing_shed',attrs:{unit_of_measurement:'%',device_class:'humidity'}},
+        cold_temp:{name:'Cold store temperature',entity_id:'sensor.cold_temp',state:'3.8',area:'cold_store',attrs:{unit_of_measurement:'°C',device_class:'temperature'}},
+        flow:{name:'Bore flow rate',entity_id:'sensor.flow',state:'42.5',area:'pump_house',attrs:{unit_of_measurement:'L/min'}},
+        nursery_lux:{name:'Nursery light level',entity_id:'sensor.nursery_lux',state:'12400',area:'nursery',attrs:{unit_of_measurement:'lx',device_class:'illuminance'}}
+      },
+      switch:{
+        pump_main:{name:'Bore pump',entity_id:'switch.pump_main',state:'on',area:'pump_house',attrs:{}},
+        pump_drip:{name:'Drip line pump',entity_id:'switch.pump_drip',state:'off',area:'pump_house',attrs:{}},
+        shed_lights:{name:'Shed lights',entity_id:'switch.shed_lights',state:'off',area:'packing_shed',attrs:{}},
+        compressor:{name:'Cold room compressor',entity_id:'switch.compressor',state:'on',area:'cold_store',attrs:{}},
+        fence:{name:'Fence energiser',entity_id:'switch.fence',state:'on',area:'orchard_east',attrs:{}},
+        mister:{name:'Nursery misters',entity_id:'switch.mister',state:'off',area:'nursery',attrs:{}}
+      },
+      light:{
+        porch:{name:'Porch light',entity_id:'light.porch',state:'on',area:'farmhouse',attrs:{brightness:196}},
+        packing_bay:{name:'Packing bay light',entity_id:'light.packing_bay',state:'on',area:'packing_shed',attrs:{brightness:128}},
+        grow_1:{name:'Grow light bank 1',entity_id:'light.grow_1',state:'off',area:'nursery',attrs:{brightness:0}}
+      },
+      fan:{
+        shed_extract:{name:'Shed extractor',entity_id:'fan.shed_extract',state:'on',area:'packing_shed',attrs:{percentage:66}},
+        cold_circ:{name:'Cold store circulation',entity_id:'fan.cold_circ',state:'on',area:'cold_store',attrs:{percentage:40}},
+        nursery_fan:{name:'Nursery fan',entity_id:'fan.nursery_fan',state:'off',area:'nursery',attrs:{percentage:0}}
+      },
+      binary_sensor:{
+        gate:{name:'Front gate',entity_id:'binary_sensor.gate',state:'off',area:'farmhouse',attrs:{device_class:'opening'}},
+        cold_room_door:{name:'Cold room door',entity_id:'binary_sensor.cold_room_door',state:'on',area:'cold_store',attrs:{device_class:'door',battery_level:64}},
+        motion_yard:{name:'Yard motion',entity_id:'binary_sensor.motion_yard',state:'off',attrs:{device_class:'motion'}},
+        leak:{name:'Pump house leak',entity_id:'binary_sensor.leak',state:'unavailable',area:'pump_house',attrs:{device_class:'moisture'}}
+      },
+      lock:{ gate_lock:{name:'Gate lock',entity_id:'lock.gate_lock',state:'locked',area:'farmhouse',attrs:{}} }
+    },
+    irrigation:{
+      dcon:{device:'SibhiSump',serial:'MCON874Q000568',lastPacket:'2026-02-22 09:00:43',
+            serverTime:'2026-02-22 09:04:04',timeZone:'+05:30'},
+      valveNames:[{id:'4',name:'4 Veg',type:'Irrigation'},{id:'6',name:'6 Kulam',type:'Irrigation'},
+                  {id:'2',name:'2 BPump',type:'Booster Pump'}],
+      valves:[{id:'4',name:'4 Veg',status:'on',runtime:'1h 20m',type:'Irrigation'},
+              {id:'2',name:'2 BPump',status:'off',runtime:'',type:'Booster Pump'},
+              {id:'10',name:'10 Spring',status:'off',runtime:'40m',type:'Irrigation'}],
+      timerLog:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      motorLog:[{at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped'}],
+      electricity:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}],
+      pressure:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}],
+      meta:{sources:{dcon:'ok'},error:''}
+    }
+  };
+  // ?real=1 is the 698-entity snapshot from 2026-09-22 (before the room
+  // filter); ?live=1 is production on 2026-09-24: 297 entities on 21 roomed
+  // devices, with the device ids and names the bridge now publishes.
+  if(params.get('real')||params.get('live')){
+    const req=new XMLHttpRequest(); req.open('GET',params.get('live')?'farm-live.json':'farm-real.json',false); req.send(null);
+    const f=JSON.parse(req.responseText);
+    data.areas=f.areas; data.entities=f.entities; data.devices=f.devices||{};
+    data.meta.name='Sibhi Natural Orchards and Farms';
+  }
+  if(params.get('noirrig')) delete data.irrigation;
+  const M=(label,value,unit,note)=>({label,value,unit:unit||'',note:note||''});
+  const SEC=(kind,title,rows,extra)=>({kind,title,note:'',source:'dcon',status:'ok',error:'',rows:rows||[],...(extra||{})});
+  const PRESS=[{at:'2026-02-20 06:00',value:'1.8',unit:'bar'},{at:'2026-02-20 12:00',value:'2.4',unit:'bar'},
+    {at:'2026-02-20 18:00',value:'2.0',unit:'bar'},{at:'2026-02-22 06:00',value:'1.6',unit:'bar'},
+    {at:'2026-02-22 12:00',value:'2.6',unit:'bar'},{at:'2026-02-22 18:00',value:'2.1',unit:'bar'}];
+  // The controller's own valve names, so the farm illustrations (/art) match.
+  const VALVE_BARS=[{name:'12 Coco 1',value:125,unit:'min',status:'off'},
+    {name:'4 Veg',value:80,unit:'min',status:'on'},
+    {name:'13 Gova 1',value:40,unit:'min',status:'off'}];
+  data.irrigation_reports={
+    // A pre-sections report, kept on purpose: the card must still render
+    // history written before the section contract existed.
+    rep_seed1:{type:'timer_log',label:'Timer log',params:{from:'2026-02-20',to:'2026-02-22'},
+      status:'ok',summary:'1 entries · 2026-02-20 → 2026-02-22',
+      rows:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      at:now-3600000},
+    rep_seed2:{type:'performance',label:'Valve runtime against pressure',
+      params:{from:'2026-02-20',to:'2026-02-22'},status:'ok',
+      summary:'4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22',
+      sections:[
+        SEC('metrics','Valves',[M('Valves run',3,'','of 3 in 2026-02-20 → 2026-02-22'),
+          M('Total runtime','4h 5m','','longest 2h 5m'),M('Open now',1,'','at the time of the pull')]),
+        SEC('bars','Runtime per valve',VALVE_BARS),
+        SEC('metrics','Pressure',[M('Average',2.08,'bar','6 readings'),
+          M('Low',1.6,'bar','2026-02-20 → 2026-02-22'),M('High',2.6,'bar','2026-02-20 → 2026-02-22')]),
+        SEC('series','Pressure over time',PRESS)],
+      rows:[],at:now-7200000},
+    // One leg down: the card has to say "Partly ready", not "Ready".
+    rep_seed3:{type:'session_log',label:'Irrigation session log',
+      params:{from:'2026-02-20',to:'2026-02-22'},status:'partial',
+      summary:'1 entries · 2026-02-20 → 2026-02-22',error:'DCON logs: POST -> 500',
+      sections:[
+        SEC('metrics','Entries',[M('Timer entries',1,'','2026-02-20 → 2026-02-22'),
+          M('Motor entries',0,'','DCON logs: POST -> 500')],{source:''}),
+        SEC('timeline','Combined log',[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed',source:'timer'}]),
+        {kind:'timeline',title:'Motor log',note:'',source:'dcon',status:'error',
+         error:'DCON logs: POST -> 500',rows:[]}],
+      rows:[],at:now-10800000}
+  };
+  if(params.get('noirrig')) delete data.irrigation_reports;
+  // ?realreports=1 swaps in reports the Cloud Function built from real
+  // controller payloads (reports-real.json, generated locally, not committed).
+  if(params.get('realreports')){
+    const req=new XMLHttpRequest(); req.open('GET','reports-real.json',false); req.send(null);
+    data.irrigation_reports=JSON.parse(req.responseText);
+  }
+  if(params.get('big')){    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
+    const names=['Zone valve','Soil probe','Fence energiser','Water meter','Tank float','Weather station','Frost alarm','Irrigation controller','Solar inverter','Battery bank'];
+    for(let i=0;i<1350;i++){
+      const d=doms[i%doms.length]; const n=names[i%names.length]+' '+(Math.floor(i/names.length)+1);
+      const st=d==='sensor'?String((i*7.3%100).toFixed(1)):(d==='binary_sensor'||d==='switch'||d==='light')?(i%3?'off':'on'):d==='event'?'unknown':String(i%50);
+      const attrs=d==='sensor'?{unit_of_measurement:i%4?'%':'°C'}:{};
+      if(i%7===0) attrs.battery_level=(i*13)%100;
+      data.entities[d]=data.entities[d]||{};
+      data.entities[d]['gen_'+i]={name:n,entity_id:d+'.gen_'+i,state:st,attrs};
+    }
+  }
+  const user=params.get('gate')?null:{uid:'u1',email:'sibhi@example.com',displayName:'Sibhi Govindasamy'};
+  const denied=params.get('denied');
+  const controller=params.get('viewer')?false:true;
+  const isAdmin=params.get('admin')==='0'?false:!params.get('viewer');
+  const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0};
+  // A couple of other accounts, so the Admin page has something to list.
+  data.acl={
+    admins:{u1:true},
+    viewers:{u1:true,u2:true,u3:true},
+    controllers:{u1:true,u2:true},
+    directory:{
+      u1:{email:'sibhi@example.com',name:'Sibhi Govindasamy',at:now-90*864e5},
+      u2:{email:'field.lead@example.com',name:'Field Lead',at:now-20*864e5},
+      u3:{email:'guest.viewer@example.com',name:'',at:now-3600000}
+    },
+    invites:{
+      'new,hire@example,com':{tier:'view',at:now-1800000}
+    }
+  };
+  // Stand-in for the bridge: answering an irrigation_requests push with a
+  // canned report, so Generate round-trips without vendor credentials.
+  const listeners={};
+  const fire=(p,val)=>{(listeners[p]||[]).forEach(cb=>{try{cb({val:()=>val});}catch(e){}});};
+  const irrLabels={live_readings:'Power and pressure now',session_log:'Irrigation session log',
+    performance:'Valve runtime against pressure',controller:'Controller dashboard',
+    electricity:'Electricity snapshot',pressure:'Pressure snapshot',valves:'Valve runtime',
+    timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range',
+    power_range:'Power over time',pressure_hour:'Pressure, last hour'};
+  // Stands in for the bridge's section builders: same kinds, same row shapes,
+  // so what renders here is what renders against the NUC.
+  const irrCanned=(type,from,to)=>{
+    const win=(from&&to)?`${from} → ${to}`:'';
+    const range=win?' · '+win:'';
+    const base={type,label:irrLabels[type]||type,params:{},status:'ok',rows:[],at:Date.now()};
+    if(from&&to) base.params={from,to};
+    const facts=[{label:'Device',value:'SibhiSump'},{label:'Serial',value:'MCON874Q000568'},
+      {label:'Last packet',value:'2026-02-22 09:00:43'},
+      {label:'Controller clock',value:'2026-02-22 09:04:04'}];
+    const logRows=[{at:'2026-02-21 06:00',event:'timer',detail:'Timer 11 completed',source:'timer'},
+      {at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed',source:'timer'},
+      {at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped',source:'motor'}];
+    const valveSecs=[SEC('metrics','Valves',[M('Valves run',3,'','of 3'+(win?' in '+win:'')),
+        M('Total runtime','4h 5m','','longest 2h 5m'),M('Open now',1,'','at the time of the pull')]),
+      SEC('bars','Runtime per valve',VALVE_BARS)];
+    const pressSecs=[SEC('metrics','Pressure',[M('Average',2.08,'bar','6 readings'),
+        M('Low',1.6,'bar',win),M('High',2.6,'bar',win)]),
+      SEC('series','Pressure over time',PRESS)];
+    if(type==='controller') return {...base,summary:'SibhiSump · 3 valves',
+      sections:[SEC('facts','Controller',facts),
+        SEC('status','Valves on this controller',
+          [{name:'4 Veg',status:'unknown',meta:'Irrigation',source:'dcon'},
+           {name:'6 Kulam',status:'unknown',meta:'Irrigation',source:'dcon'},
+           {name:'2 BPump',status:'unknown',meta:'Booster Pump',source:'dcon'}])]};
+    if(type==='electricity') return {...base,summary:'4.2 kWh',
+      sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')])]};
+    if(type==='pressure') return {...base,summary:'2.1 bar',
+      sections:[SEC('metrics','Pressure',[M('Pressure',2.1,'bar','2026-02-22 06:00')])]};
+    if(type==='live_readings') return {...base,summary:'4.2 kWh · 2.1 bar',
+      sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')]),
+        SEC('metrics','Pressure',[M('Pressure',2.1,'bar','2026-02-22 06:00')])]};
+    if(type==='valves') return {...base,summary:'3 valves · 1 open'+range,sections:valveSecs};
+    if(type==='pressure_range') return {...base,summary:'1.6–2.6 bar'+range,sections:pressSecs};
+    if(type==='performance') return {...base,
+      summary:'4h 5m of valve runtime · pressure 1.6–2.6 bar'+range,
+      sections:[...valveSecs,...pressSecs]};
+    if(type==='session_log') return {...base,summary:`${logRows.length} entries`+range,
+      sections:[SEC('metrics','Entries',[M('Timer entries',2,'',win),M('Motor entries',1,'',win)],{source:''}),
+        SEC('timeline','Combined log',logRows)]};
+    const kind=type==='motor_log'?'motor':'timer';
+    const rows=logRows.filter(r=>r.source===kind);
+    return {...base,summary:`${rows.length} entries`+range,
+      sections:[SEC('timeline',kind[0].toUpperCase()+kind.slice(1)+' log',rows)]};
+  };
+  const onImpl=(path,cb,err)=>{
+    if(path.endsWith('/entities')) window.__push=(u)=>{
+      data.entities[u.domain][u.id].state=u.state; cb({val:()=>data.entities}); };
+    if(path in store){cb({val:()=>store[path]});return cb;}
+    (listeners[path]=listeners[path]||[]).push(cb);
+    if(params.get('nodata')) return cb;             // never delivers: the loading state
+    if(denied){ err&&err({code:'PERMISSION_DENIED'}); return cb; }
+    const key=path.split('/').pop();
+    const val=path.includes('/irrigation_reports/')
+      ? (key==='irrigation_reports'?data.irrigation_reports:data.irrigation_reports?.[key])
+      : data[key];
+    cb({val:()=>val}); return cb;
+  };
+  // One-shot read (used by enter()'s invite-claim check). Same resolution
+  // rule as onImpl, minus subscribing a listener.
+  const getImpl=(path)=>{
+    if(path in store) return Promise.resolve({val:()=>store[path]});
+    const key=path.split('/').pop();
+    const parts=path.split('/');
+    let val;
+    if(parts[0]==='acl'&&parts[1]) val=(data.acl||{})[parts[1]];
+    if(parts.length>2&&val) val=val[parts[2]];
+    return Promise.resolve({val:()=>(val===undefined?null:val)});
+  };
+  window.firebase={
+    app:()=>({options:{databaseURL:'https://mock'}}),
+    auth:Object.assign(()=>({
+      onAuthStateChanged:(cb)=>cb(denied?{uid:'u2',email:'guest@example.com'}:user),
+      signInWithPopup:()=>Promise.resolve(), signOut:()=>Promise.resolve()
+    }),{GoogleAuthProvider:function(){this.setCustomParameters=()=>{}}}),
+    database:Object.assign(()=>({ref:(path)=>({
+      push:()=>{ const k='req_'+Math.random().toString(36).slice(2,9);
+        return {key:k, set:(v,done)=>{console.log('COMMAND',JSON.stringify(v));
+          if(path.endsWith('/irrigation_requests')&&data.irrigation_reports){
+            setTimeout(()=>{ const rep=irrCanned(v.type,v.from,v.to);
+              data.irrigation_reports[k]=rep;
+              fire('farms/snof/irrigation_reports',data.irrigation_reports);
+              fire(`farms/snof/irrigation_reports/${k}`,rep); },400);
+          }
+          if(done) setTimeout(()=>done(null),0);
+          return Promise.resolve(); }};},
+      // Directory self-registration and the Admin page's grant/revoke writes:
+      // a plain path (not a push), so log it and resolve rather than
+      // reimplementing the RTDB rules engine here.
+      set:(v,done)=>{ console.log('WRITE',path,JSON.stringify(v));
+        if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
+      remove:(done)=>{ console.log('REMOVE',path);
+        if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
+      get:()=>getImpl(path),
+      limitToLast:()=>({on:(ev,cb,err)=>onImpl(path,cb,err),off:()=>{}}),
+      on:(ev,cb,err)=>onImpl(path,cb,err),
+      off:()=>{}
+    })}),{ServerValue:{TIMESTAMP:{'.sv':'timestamp'}}})
+  };
+})();
+</script>
+<script src="app.js"></script>
+</body>
+</html>

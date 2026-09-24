@@ -90,6 +90,11 @@ class StateMapper:
             return False
         if self.cfg.include_domains and domain not in self.cfg.include_domains:
             return False
+        # Users see rooms and what is in them, nothing else. An entity with no
+        # area in Home Assistant is never mirrored, so to every client it simply
+        # does not exist - and the command consumer uses this same check.
+        if not self.registry.is_assigned(entity_id):
+            return False
         return True
 
     def to_node(self, state: dict) -> tuple[str, str, dict]:
@@ -104,6 +109,7 @@ class StateMapper:
             "name": (attrs.get("friendly_name") or object_id.replace("_", " ").title())[:MAX_STRING_LEN],
             "state": _clean_value(state.get("state")),
             "area": self.registry.area_for(entity_id),
+            "device": self.registry.device_for(entity_id),
             # Deliberately no lastUpdated: Home Assistant bumps it on every
             # update including attribute-only ones, so including it would make
             # every node differ every time and force a redundant write.

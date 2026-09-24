@@ -9,10 +9,49 @@ Home Assistant (NUC, HA OS)
         │  ws://supervisor/core/websocket   (SUPERVISOR_TOKEN, never leaves the box)
         │  filter → group by area → coalesce → rate-limit
         ▼
-   Realtime Database   /farms/snof/…      ← service account writes; clients cannot
-        ▼
-   Firebase Hosting dashboard             ← Google sign-in, UID allowlist, read-only
+   Realtime Database   /farms/snof/…      ← service account writes the mirror
+        ▼                ▲
+   Firebase Hosting dashboard             ← Google sign-in, UID allowlist
+                         │
+                  /farms/snof/commands    ← the one client-writable path:
+                                            append-only, controllers only,
+                                            four domains, four services
 ```
+
+The dashboard is an app, not a page: **Overview** (live totals, quick controls,
+anything unavailable), **Areas** (a card per room), an **area detail** view
+grouped by domain with toggles and brightness/speed sliders, and **All devices**
+for search across everything.
+
+## Controlling devices
+
+Off by default, and gated three times over:
+
+1. `allow_control: true` in the add-on options (plus `control_domains`).
+2. `npm run grant -- someone@example.com --control` — a tier above `viewers`.
+3. RTDB rules and `bridge/commands.py` both allow-list the same four domains
+   (`switch`, `light`, `fan`, `input_boolean`) and four services
+   (`turn_on`, `turn_off`, `toggle`, `set_percentage`).
+
+`cover`, `lock` and `alarm_control_panel` are excluded on purpose. The dashboard
+never reaches Home Assistant itself — it appends a command, and the bridge on the
+NUC is the only thing holding a credential that can act on one. Commands older
+than `control_max_age_seconds` (default 120) are dropped rather than run, so a
+queue that builds up while the bridge is down does not fire all at once when it
+returns.
+
+## Documentation
+
+| Document | Covers |
+|---|---|
+| [docs/HANDOFF.md](docs/HANDOFF.md) | **Start here** — current state and open items |
+| [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) | SSH to the NUC; §6a deploys the add-on with no UI |
+| [docs/device-control.md](docs/device-control.md) | The command path, its three gates, arming it |
+| [docs/irrigation.md](docs/irrigation.md) | Irrigation reports from the Mobitech DCON controller and the Irrigation view |
+| [docs/dashboard.md](docs/dashboard.md) | Front-end architecture and design system |
+| [docs/firebase-deploy.md](docs/firebase-deploy.md) | Hosting, rules, the two-tier allowlist |
+| [docs/testing-and-preview.md](docs/testing-and-preview.md) | Every suite and the fixture that matters |
+| [docs/ios-app.md](docs/ios-app.md) | The native iOS app: build, demo mode, connecting it to Firebase |
 
 ## Layout
 
@@ -20,6 +59,7 @@ Home Assistant (NUC, HA OS)
 |---|---|
 | `addon/snof_bridge/` | The Home Assistant add-on (Python). Deploy to `/addons` on the NUC. |
 | `dashboard/` | Hosting site + RTDB security rules. |
+| `ios/` | Native SwiftUI app, a second client of the same database. |
 | `tools/` | `grant-access.js` — manage the viewer allowlist. |
 | `scripts/` | `setup-firebase.sh`, `deploy-addon.sh`. |
 
@@ -130,10 +170,20 @@ cd dashboard && firebase deploy --only hosting,database
 ```
 /farms/snof/
   meta/    name, slug, entityCount, haVersion, updatedAt
-           bridge/ { status, lastSeen, heartbeatSeconds, pending, writes }
+            bridge/ { status, lastSeen, heartbeatSeconds, pending, writes }
   areas/   <area_id>/ { name, icon, floor }
+  devices/ <ha_device_id>/ { name }   roomed devices only (0.9.3)
   entities/<domain>/<object_id>/
-           { entity_id, domain, name, state, area, attrs{}, lastChanged, lastUpdated }
+            { entity_id, domain, name, state, area, device, attrs{}, lastChanged }
+  irrigation/  last results cache, refreshed by each fulfilled report:
+            { dcon{}, valves[], timerLog[], motorLog[], electricity[],
+              pressure[], meta{ lastUpdated, lastType, lastError } }
+  irrigation_requests/  controller-appended report requests (bridge consumes)
+  irrigation_reports/<id>/  sanitized results, bridge-written only:
+            { type, label, params{from,to}, status: ok|partial|error, summary,
+              sections[ { kind: metrics|status|series|bars|timeline|facts,
+                          title, note, source, status, error, rows[] } ],
+              rows[], at, error }
 ```
 
 `entity_id` is split on the dot because RTDB keys cannot contain `.`, `$`, `#`,
@@ -141,8 +191,16 @@ cd dashboard && firebase deploy --only hosting,database
 always legal — there is a test pinning this.
 
 Rooms are resolved the way HA itself does: the entity's own `area_id` wins,
-otherwise it inherits its device's, otherwise `unassigned`. The dashboard groups
-client-side, so there is no second index to keep consistent.
+otherwise it inherits its device's, otherwise `unassigned`. **Unassigned
+entities are not published at all** (since add-on 0.9.0; since 0.9.2 an entity
+is published only if its *device* is in a room — a room on the entity alone
+does not count): users see rooms and
+what is in them, and nothing else exists for them. An entity that loses its
+room is deleted from the mirror on the next registry resync; one that gains a
+room appears. `unassigned` is never written to `areas`. The dashboard and the
+iOS app also drop anything whose area is not a current room, and both the RTDB
+rules and the bridge refuse a command for an entity that is not published. The
+dashboard groups client-side, so there is no second index to keep consistent.
 
 ## What is deliberately not exported
 

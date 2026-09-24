@@ -1,0 +1,263 @@
+<script>
+(function(){
+  const params=new URLSearchParams(location.search);
+  const now=Date.now();
+  const A={pump_house:'Pump House',packing_shed:'Packing Shed',orchard_east:'East Orchard',
+           farmhouse:'Farmhouse',cold_store:'Cold Store',nursery:'Nursery'};
+  const data={
+    meta:{name:'Sibhi Natural Orchards', bridge:{status:'online', lastSeen: now-(params.get('stale')?400000:5000),
+      heartbeatSeconds:30, control:!params.get('controloff')},
+      // What the report Cloud Function publishes. ?reportsoff=1 is the kill
+      // switch thrown: meta/reports.enabled false, set by the service account.
+      reports:{runtime:'cloud-functions', lastSeen: now-60000,
+        ...(params.get('reportsoff') ? {enabled:false} : {})}},
+    areas:Object.fromEntries(Object.entries(A).map(([k,v])=>[k,{name:v}])),
+    entities:{
+      sensor:{
+        tank_level:{name:'Main tank level',entity_id:'sensor.tank_level',state:'71',area:'pump_house',attrs:{unit_of_measurement:'%',device_class:'moisture'}},
+        soil_e1:{name:'Soil moisture row 1',entity_id:'sensor.soil_e1',state:'34.2',area:'orchard_east',attrs:{unit_of_measurement:'%',battery_level:82}},
+        soil_e2:{name:'Soil moisture row 2',entity_id:'sensor.soil_e2',state:'unavailable',area:'orchard_east',attrs:{battery_level:12}},
+        temp_out:{name:'Outdoor temperature',entity_id:'sensor.temp_out',state:'31.4',area:'farmhouse',attrs:{unit_of_measurement:'°C',device_class:'temperature'}},
+        power:{name:'Grid import',entity_id:'sensor.power',state:'1840',attrs:{unit_of_measurement:'W',device_class:'power'}},
+        humidity:{name:'Shed humidity',entity_id:'sensor.humidity',state:'58',area:'packing_shed',attrs:{unit_of_measurement:'%',device_class:'humidity'}},
+        cold_temp:{name:'Cold store temperature',entity_id:'sensor.cold_temp',state:'3.8',area:'cold_store',attrs:{unit_of_measurement:'°C',device_class:'temperature'}},
+        flow:{name:'Bore flow rate',entity_id:'sensor.flow',state:'42.5',area:'pump_house',attrs:{unit_of_measurement:'L/min'}},
+        nursery_lux:{name:'Nursery light level',entity_id:'sensor.nursery_lux',state:'12400',area:'nursery',attrs:{unit_of_measurement:'lx',device_class:'illuminance'}}
+      },
+      switch:{
+        pump_main:{name:'Bore pump',entity_id:'switch.pump_main',state:'on',area:'pump_house',attrs:{}},
+        pump_drip:{name:'Drip line pump',entity_id:'switch.pump_drip',state:'off',area:'pump_house',attrs:{}},
+        shed_lights:{name:'Shed lights',entity_id:'switch.shed_lights',state:'off',area:'packing_shed',attrs:{}},
+        compressor:{name:'Cold room compressor',entity_id:'switch.compressor',state:'on',area:'cold_store',attrs:{}},
+        fence:{name:'Fence energiser',entity_id:'switch.fence',state:'on',area:'orchard_east',attrs:{}},
+        mister:{name:'Nursery misters',entity_id:'switch.mister',state:'off',area:'nursery',attrs:{}}
+      },
+      light:{
+        porch:{name:'Porch light',entity_id:'light.porch',state:'on',area:'farmhouse',attrs:{brightness:196}},
+        packing_bay:{name:'Packing bay light',entity_id:'light.packing_bay',state:'on',area:'packing_shed',attrs:{brightness:128}},
+        grow_1:{name:'Grow light bank 1',entity_id:'light.grow_1',state:'off',area:'nursery',attrs:{brightness:0}}
+      },
+      fan:{
+        shed_extract:{name:'Shed extractor',entity_id:'fan.shed_extract',state:'on',area:'packing_shed',attrs:{percentage:66}},
+        cold_circ:{name:'Cold store circulation',entity_id:'fan.cold_circ',state:'on',area:'cold_store',attrs:{percentage:40}},
+        nursery_fan:{name:'Nursery fan',entity_id:'fan.nursery_fan',state:'off',area:'nursery',attrs:{percentage:0}}
+      },
+      binary_sensor:{
+        gate:{name:'Front gate',entity_id:'binary_sensor.gate',state:'off',area:'farmhouse',attrs:{device_class:'opening'}},
+        cold_room_door:{name:'Cold room door',entity_id:'binary_sensor.cold_room_door',state:'on',area:'cold_store',attrs:{device_class:'door',battery_level:64}},
+        motion_yard:{name:'Yard motion',entity_id:'binary_sensor.motion_yard',state:'off',attrs:{device_class:'motion'}},
+        leak:{name:'Pump house leak',entity_id:'binary_sensor.leak',state:'unavailable',area:'pump_house',attrs:{device_class:'moisture'}}
+      },
+      lock:{ gate_lock:{name:'Gate lock',entity_id:'lock.gate_lock',state:'locked',area:'farmhouse',attrs:{}} }
+    },
+    irrigation:{
+      dcon:{device:'SibhiSump',serial:'MCON874Q000568',lastPacket:'2026-02-22 09:00:43',
+            serverTime:'2026-02-22 09:04:04',timeZone:'+05:30'},
+      valveNames:[{id:'4',name:'4 Veg',type:'Irrigation'},{id:'6',name:'6 Kulam',type:'Irrigation'},
+                  {id:'2',name:'2 BPump',type:'Booster Pump'}],
+      valves:[{id:'4',name:'4 Veg',status:'on',runtime:'1h 20m',type:'Irrigation'},
+              {id:'2',name:'2 BPump',status:'off',runtime:'',type:'Booster Pump'},
+              {id:'10',name:'10 Spring',status:'off',runtime:'40m',type:'Irrigation'}],
+      timerLog:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      motorLog:[{at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped'}],
+      electricity:[{at:'2026-02-22 06:00',value:'4.2',unit:'kWh'}],
+      pressure:[{at:'2026-02-22 06:00',value:'2.1',unit:'bar'}],
+      meta:{sources:{dcon:'ok'},error:''}
+    }
+  };
+  // ?real=1 is the 698-entity snapshot from 2026-09-22 (before the room
+  // filter); ?live=1 is production on 2026-09-24: 297 entities on 21 roomed
+  // devices, with the device ids and names the bridge now publishes.
+  if(params.get('real')||params.get('live')){
+    const req=new XMLHttpRequest(); req.open('GET',params.get('live')?'farm-live.json':'farm-real.json',false); req.send(null);
+    const f=JSON.parse(req.responseText);
+    data.areas=f.areas; data.entities=f.entities; data.devices=f.devices||{};
+    data.meta.name='Sibhi Natural Orchards and Farms';
+  }
+  if(params.get('noirrig')) delete data.irrigation;
+  const M=(label,value,unit,note)=>({label,value,unit:unit||'',note:note||''});
+  const SEC=(kind,title,rows,extra)=>({kind,title,note:'',source:'dcon',status:'ok',error:'',rows:rows||[],...(extra||{})});
+  const PRESS=[{at:'2026-02-20 06:00',value:'1.8',unit:'bar'},{at:'2026-02-20 12:00',value:'2.4',unit:'bar'},
+    {at:'2026-02-20 18:00',value:'2.0',unit:'bar'},{at:'2026-02-22 06:00',value:'1.6',unit:'bar'},
+    {at:'2026-02-22 12:00',value:'2.6',unit:'bar'},{at:'2026-02-22 18:00',value:'2.1',unit:'bar'}];
+  // The controller's own valve names, so the farm illustrations (/art) match.
+  const VALVE_BARS=[{name:'12 Coco 1',value:125,unit:'min',status:'off'},
+    {name:'4 Veg',value:80,unit:'min',status:'on'},
+    {name:'13 Gova 1',value:40,unit:'min',status:'off'}];
+  data.irrigation_reports={
+    // A pre-sections report, kept on purpose: the card must still render
+    // history written before the section contract existed.
+    rep_seed1:{type:'timer_log',label:'Timer log',params:{from:'2026-02-20',to:'2026-02-22'},
+      status:'ok',summary:'1 entries · 2026-02-20 → 2026-02-22',
+      rows:[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed'}],
+      at:now-3600000},
+    rep_seed2:{type:'performance',label:'Valve runtime against pressure',
+      params:{from:'2026-02-20',to:'2026-02-22'},status:'ok',
+      summary:'4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22',
+      sections:[
+        SEC('metrics','Valves',[M('Valves run',3,'','of 3 in 2026-02-20 → 2026-02-22'),
+          M('Total runtime','4h 5m','','longest 2h 5m'),M('Open now',1,'','at the time of the pull')]),
+        SEC('bars','Runtime per valve',VALVE_BARS),
+        SEC('metrics','Pressure',[M('Average',2.08,'bar','6 readings'),
+          M('Low',1.6,'bar','2026-02-20 → 2026-02-22'),M('High',2.6,'bar','2026-02-20 → 2026-02-22')]),
+        SEC('series','Pressure over time',PRESS)],
+      rows:[],at:now-7200000},
+    // One leg down: the card has to say "Partly ready", not "Ready".
+    rep_seed3:{type:'session_log',label:'Irrigation session log',
+      params:{from:'2026-02-20',to:'2026-02-22'},status:'partial',
+      summary:'1 entries · 2026-02-20 → 2026-02-22',error:'DCON logs: POST -> 500',
+      sections:[
+        SEC('metrics','Entries',[M('Timer entries',1,'','2026-02-20 → 2026-02-22'),
+          M('Motor entries',0,'','DCON logs: POST -> 500')],{source:''}),
+        SEC('timeline','Combined log',[{at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed',source:'timer'}]),
+        {kind:'timeline',title:'Motor log',note:'',source:'dcon',status:'error',
+         error:'DCON logs: POST -> 500',rows:[]}],
+      rows:[],at:now-10800000}
+  };
+  if(params.get('noirrig')) delete data.irrigation_reports;
+  // ?realreports=1 swaps in reports the Cloud Function built from real
+  // controller payloads (reports-real.json, generated locally, not committed).
+  if(params.get('realreports')){
+    const req=new XMLHttpRequest(); req.open('GET','reports-real.json',false); req.send(null);
+    data.irrigation_reports=JSON.parse(req.responseText);
+  }
+  if(params.get('big')){    const doms=['sensor','binary_sensor','switch','light','number','select','update','event'];
+    const names=['Zone valve','Soil probe','Fence energiser','Water meter','Tank float','Weather station','Frost alarm','Irrigation controller','Solar inverter','Battery bank'];
+    for(let i=0;i<1350;i++){
+      const d=doms[i%doms.length]; const n=names[i%names.length]+' '+(Math.floor(i/names.length)+1);
+      const st=d==='sensor'?String((i*7.3%100).toFixed(1)):(d==='binary_sensor'||d==='switch'||d==='light')?(i%3?'off':'on'):d==='event'?'unknown':String(i%50);
+      const attrs=d==='sensor'?{unit_of_measurement:i%4?'%':'°C'}:{};
+      if(i%7===0) attrs.battery_level=(i*13)%100;
+      data.entities[d]=data.entities[d]||{};
+      data.entities[d]['gen_'+i]={name:n,entity_id:d+'.gen_'+i,state:st,attrs};
+    }
+  }
+  const user=params.get('gate')?null:{uid:'u1',email:'sibhi@example.com',displayName:'Sibhi Govindasamy'};
+  const denied=params.get('denied');
+  const controller=params.get('viewer')?false:true;
+  const isAdmin=params.get('admin')==='0'?false:!params.get('viewer');
+  const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0};
+  // A couple of other accounts, so the Admin page has something to list.
+  data.acl={
+    admins:{u1:true},
+    viewers:{u1:true,u2:true,u3:true},
+    controllers:{u1:true,u2:true},
+    directory:{
+      u1:{email:'sibhi@example.com',name:'Sibhi Govindasamy',at:now-90*864e5},
+      u2:{email:'field.lead@example.com',name:'Field Lead',at:now-20*864e5},
+      u3:{email:'guest.viewer@example.com',name:'',at:now-3600000}
+    },
+    invites:{
+      'new,hire@example,com':{tier:'view',at:now-1800000}
+    }
+  };
+  // Stand-in for the bridge: answering an irrigation_requests push with a
+  // canned report, so Generate round-trips without vendor credentials.
+  const listeners={};
+  const fire=(p,val)=>{(listeners[p]||[]).forEach(cb=>{try{cb({val:()=>val});}catch(e){}});};
+  const irrLabels={live_readings:'Power and pressure now',session_log:'Irrigation session log',
+    performance:'Valve runtime against pressure',controller:'Controller dashboard',
+    electricity:'Electricity snapshot',pressure:'Pressure snapshot',valves:'Valve runtime',
+    timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range',
+    power_range:'Power over time',pressure_hour:'Pressure, last hour'};
+  // Stands in for the bridge's section builders: same kinds, same row shapes,
+  // so what renders here is what renders against the NUC.
+  const irrCanned=(type,from,to)=>{
+    const win=(from&&to)?`${from} → ${to}`:'';
+    const range=win?' · '+win:'';
+    const base={type,label:irrLabels[type]||type,params:{},status:'ok',rows:[],at:Date.now()};
+    if(from&&to) base.params={from,to};
+    const facts=[{label:'Device',value:'SibhiSump'},{label:'Serial',value:'MCON874Q000568'},
+      {label:'Last packet',value:'2026-02-22 09:00:43'},
+      {label:'Controller clock',value:'2026-02-22 09:04:04'}];
+    const logRows=[{at:'2026-02-21 06:00',event:'timer',detail:'Timer 11 completed',source:'timer'},
+      {at:'2026-02-22 06:00',event:'timer',detail:'Timer 12 completed',source:'timer'},
+      {at:'2026-02-22 06:05',event:'motor',detail:'Well motor stopped',source:'motor'}];
+    const valveSecs=[SEC('metrics','Valves',[M('Valves run',3,'','of 3'+(win?' in '+win:'')),
+        M('Total runtime','4h 5m','','longest 2h 5m'),M('Open now',1,'','at the time of the pull')]),
+      SEC('bars','Runtime per valve',VALVE_BARS)];
+    const pressSecs=[SEC('metrics','Pressure',[M('Average',2.08,'bar','6 readings'),
+        M('Low',1.6,'bar',win),M('High',2.6,'bar',win)]),
+      SEC('series','Pressure over time',PRESS)];
+    if(type==='controller') return {...base,summary:'SibhiSump · 3 valves',
+      sections:[SEC('facts','Controller',facts),
+        SEC('status','Valves on this controller',
+          [{name:'4 Veg',status:'unknown',meta:'Irrigation',source:'dcon'},
+           {name:'6 Kulam',status:'unknown',meta:'Irrigation',source:'dcon'},
+           {name:'2 BPump',status:'unknown',meta:'Booster Pump',source:'dcon'}])]};
+    if(type==='electricity') return {...base,summary:'4.2 kWh',
+      sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')])]};
+    if(type==='pressure') return {...base,summary:'2.1 bar',
+      sections:[SEC('metrics','Pressure',[M('Pressure',2.1,'bar','2026-02-22 06:00')])]};
+    if(type==='live_readings') return {...base,summary:'4.2 kWh · 2.1 bar',
+      sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')]),
+        SEC('metrics','Pressure',[M('Pressure',2.1,'bar','2026-02-22 06:00')])]};
+    if(type==='valves') return {...base,summary:'3 valves · 1 open'+range,sections:valveSecs};
+    if(type==='pressure_range') return {...base,summary:'1.6–2.6 bar'+range,sections:pressSecs};
+    if(type==='performance') return {...base,
+      summary:'4h 5m of valve runtime · pressure 1.6–2.6 bar'+range,
+      sections:[...valveSecs,...pressSecs]};
+    if(type==='session_log') return {...base,summary:`${logRows.length} entries`+range,
+      sections:[SEC('metrics','Entries',[M('Timer entries',2,'',win),M('Motor entries',1,'',win)],{source:''}),
+        SEC('timeline','Combined log',logRows)]};
+    const kind=type==='motor_log'?'motor':'timer';
+    const rows=logRows.filter(r=>r.source===kind);
+    return {...base,summary:`${rows.length} entries`+range,
+      sections:[SEC('timeline',kind[0].toUpperCase()+kind.slice(1)+' log',rows)]};
+  };
+  const onImpl=(path,cb,err)=>{
+    if(path.endsWith('/entities')) window.__push=(u)=>{
+      data.entities[u.domain][u.id].state=u.state; cb({val:()=>data.entities}); };
+    if(path in store){cb({val:()=>store[path]});return cb;}
+    (listeners[path]=listeners[path]||[]).push(cb);
+    if(params.get('nodata')) return cb;             // never delivers: the loading state
+    if(denied){ err&&err({code:'PERMISSION_DENIED'}); return cb; }
+    const key=path.split('/').pop();
+    const val=path.includes('/irrigation_reports/')
+      ? (key==='irrigation_reports'?data.irrigation_reports:data.irrigation_reports?.[key])
+      : data[key];
+    cb({val:()=>val}); return cb;
+  };
+  // One-shot read (used by enter()'s invite-claim check). Same resolution
+  // rule as onImpl, minus subscribing a listener.
+  const getImpl=(path)=>{
+    if(path in store) return Promise.resolve({val:()=>store[path]});
+    const key=path.split('/').pop();
+    const parts=path.split('/');
+    let val;
+    if(parts[0]==='acl'&&parts[1]) val=(data.acl||{})[parts[1]];
+    if(parts.length>2&&val) val=val[parts[2]];
+    return Promise.resolve({val:()=>(val===undefined?null:val)});
+  };
+  window.firebase={
+    app:()=>({options:{databaseURL:'https://mock'}}),
+    auth:Object.assign(()=>({
+      onAuthStateChanged:(cb)=>cb(denied?{uid:'u2',email:'guest@example.com'}:user),
+      signInWithPopup:()=>Promise.resolve(), signOut:()=>Promise.resolve()
+    }),{GoogleAuthProvider:function(){this.setCustomParameters=()=>{}}}),
+    database:Object.assign(()=>({ref:(path)=>({
+      push:()=>{ const k='req_'+Math.random().toString(36).slice(2,9);
+        return {key:k, set:(v,done)=>{console.log('COMMAND',JSON.stringify(v));
+          if(path.endsWith('/irrigation_requests')&&data.irrigation_reports){
+            setTimeout(()=>{ const rep=irrCanned(v.type,v.from,v.to);
+              data.irrigation_reports[k]=rep;
+              fire('farms/snof/irrigation_reports',data.irrigation_reports);
+              fire(`farms/snof/irrigation_reports/${k}`,rep); },400);
+          }
+          if(done) setTimeout(()=>done(null),0);
+          return Promise.resolve(); }};},
+      // Directory self-registration and the Admin page's grant/revoke writes:
+      // a plain path (not a push), so log it and resolve rather than
+      // reimplementing the RTDB rules engine here.
+      set:(v,done)=>{ console.log('WRITE',path,JSON.stringify(v));
+        if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
+      remove:(done)=>{ console.log('REMOVE',path);
+        if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
+      get:()=>getImpl(path),
+      limitToLast:()=>({on:(ev,cb,err)=>onImpl(path,cb,err),off:()=>{}}),
+      on:(ev,cb,err)=>onImpl(path,cb,err),
+      off:()=>{}
+    })}),{ServerValue:{TIMESTAMP:{'.sv':'timestamp'}}})
+  };
+})();
+</script>

@@ -18,6 +18,8 @@ import aiohttp
 from aiohttp import web
 
 from . import config
+from .commands import CommandConsumer
+from .relay import DconRelay
 from .ha_client import REGISTRY_EVENTS, HAClient
 from .mapper import StateMapper
 from .registry import Registry
@@ -37,11 +39,19 @@ class Bridge:
         self.mapper = StateMapper(cfg, self.registry)
         self.rtdb = RTDBWriter(cfg, session)
         self.ha: HAClient | None = None
+        # `lambda` rather than passing self.ha: the client is replaced on every
+        # reconnect, and the consumer must always get the live one.
+        # `is_visible` is the mapper's own publish check, so a command can only
+        # ever reach an entity a user could have seen: one in a room.
+        self.commands = CommandConsumer(cfg, self.rtdb, lambda: self.ha if self.connected else None, session,
+                                        is_visible=self.mapper.should_publish)
+        self.relay = DconRelay(cfg, self.rtdb, session)
         self.connected = False
         # entity_id -> digest of the last node we published, so an event that
         # changes nothing visible costs no write at all.
         self._fingerprints: dict[str, str] = {}
         self._areas_digest: str | None = None
+        self._devices_digest: str | None = None
         self.skipped = 0
         self.ha_version = "unknown"
         self._registry_reload = asyncio.Event()
@@ -65,6 +75,14 @@ class Bridge:
         self.rtdb.queue(entity_id, f"{self.cfg.root}/entities/{domain}/{object_id}", node)
         return True
 
+    def _unpublish(self, entity_id: str) -> None:
+        """Remove an entity from the mirror: deleted in HA, or no longer in a room."""
+        if "." not in entity_id:
+            return
+        domain, object_id = entity_id.split(".", 1)
+        self.rtdb.queue(entity_id, f"{self.cfg.root}/entities/{domain}/{object_id}", None)
+        self._fingerprints.pop(entity_id, None)
+
     def _build_tree(self, states: list[dict]) -> dict[str, dict]:
         tree: dict[str, dict] = {}
         for state in states:
@@ -86,6 +104,8 @@ class Bridge:
         root = self.cfg.root
         await self.rtdb.put(f"{root}/areas", self.registry.areas_payload())
         self._areas_digest = self._digest(self.registry.areas_payload())
+        await self.rtdb.put(f"{root}/devices", self.registry.devices_payload())
+        self._devices_digest = self._digest(self.registry.devices_payload())
         await self.rtdb.put(f"{root}/entities", tree)
         count = sum(len(v) for v in tree.values())
         _LOGGER.info("Published snapshot: %d entities across %d domains", count, len(tree))
@@ -101,6 +121,12 @@ class Bridge:
         an event that changes nothing costs zero writes."""
         tree = self._build_tree(states)
         changed = 0
+        # An entity taken out of its room (or deleted) must vanish, not linger
+        # with a stale area: anything published before and absent now goes.
+        live = {n["entity_id"] for objs in tree.values() for n in objs.values()}
+        for entity_id in [e for e in self._fingerprints if e not in live]:
+            self._unpublish(entity_id)
+            changed += 1
         for domain, objs in tree.items():
             for object_id, node in objs.items():
                 if self._queue_if_changed(domain, object_id, node):
@@ -112,6 +138,13 @@ class Bridge:
             await self.rtdb.put(f"{self.cfg.root}/areas", areas)
             self._areas_digest = areas_digest
             _LOGGER.info("Areas changed; republished")
+
+        devices = self.registry.devices_payload()
+        devices_digest = self._digest(devices)
+        if devices_digest != self._devices_digest:
+            await self.rtdb.put(f"{self.cfg.root}/devices", devices)
+            self._devices_digest = devices_digest
+            _LOGGER.info("Devices changed; republished")
 
         if changed:
             _LOGGER.info("Registry resync: %d of %d entities changed", changed,
@@ -132,17 +165,15 @@ class Bridge:
     def on_state_changed(self, data: dict) -> None:
         new_state = data.get("new_state")
         entity_id = data.get("entity_id", "")
-        root = self.cfg.root
 
         if new_state is None:
             # Entity was removed from HA; drop it from the mirror too.
-            if "." in entity_id:
-                domain, object_id = entity_id.split(".", 1)
-                self.rtdb.queue(entity_id, f"{root}/entities/{domain}/{object_id}", None)
-                self._fingerprints.pop(entity_id, None)
+            self._unpublish(entity_id)
             return
 
         if not self.mapper.should_publish(entity_id):
+            if entity_id in self._fingerprints:
+                self._unpublish(entity_id)
             return
         domain, object_id, node = self.mapper.to_node(new_state)
         # Home Assistant fires state_changed for attribute-only updates too, so
@@ -178,6 +209,14 @@ class Bridge:
                     "pending": self.rtdb.pending_count(),
                     "writes": self.rtdb.writes,
                     "skippedNoop": self.skipped,
+                    "control": self.cfg.allow_control,
+                    "commandsRun": self.commands.executed,
+                    "commandsRefused": self.commands.refused,
+                    # Irrigation reports moved to a Cloud Function in 0.8.0
+                    # (dashboard/functions). null clears the old status so
+                    # nothing reads a stale "enabled" off this heartbeat.
+                    "irrigation": None,
+                    "relay": self.relay.status(),
                 })
             except Exception:
                 _LOGGER.exception("Heartbeat write failed")
@@ -290,6 +329,8 @@ async def amain() -> None:
             asyncio.create_task(bridge._flush_loop(), name="flush"),
             asyncio.create_task(bridge._heartbeat_loop(), name="heartbeat"),
             asyncio.create_task(bridge._registry_loop(), name="registry"),
+            asyncio.create_task(bridge.commands.run(), name="commands"),
+            asyncio.create_task(bridge.relay.run(), name="relay"),
         ]
 
         stop = asyncio.Event()

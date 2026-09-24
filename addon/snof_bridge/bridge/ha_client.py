@@ -63,6 +63,19 @@ class HAClient:
         entities = await self._command({"type": "config/entity_registry/list"})
         return areas, devices, entities
 
+    async def call_service(self, domain: str, service: str, entity_id: str,
+                           data: dict | None = None) -> Any:
+        """Operate one entity. The caller is responsible for having checked the
+        domain and service against an allow-list first — this issues whatever it
+        is given."""
+        return await self._command({
+            "type": "call_service",
+            "domain": domain,
+            "service": service,
+            "service_data": dict(data or {}),
+            "target": {"entity_id": entity_id},
+        })
+
     async def subscribe(self, event_type: str) -> None:
         await self._command({"type": "subscribe_events", "event_type": event_type})
 

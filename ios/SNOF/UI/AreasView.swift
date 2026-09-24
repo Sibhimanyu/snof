@@ -1,0 +1,79 @@
+import SwiftUI
+import SNOFCore
+
+struct AreasView: View {
+    @Environment(FarmStore.self) private var store
+    @State private var search = ""
+
+    var body: some View {
+        let matching = store.entities.filter { $0.matches(search, areaName: store.areaName($0.area)) }
+        let areas = Sorting.groupByArea(matching, name: store.areaName)
+        let devices = store.devices
+        let bad = devices.filter(\.isOffline).count
+        Page(eyebrow: "Rooms and zones", title: "Areas",
+             subtitle: "\(areas.count) \(areas.count == 1 ? "area" : "areas") · \(devices.count) devices" + (bad > 0 ? " · \(bad) offline" : "")) {
+            if !store.firstSnapshot {
+                LoadingBlock()
+            } else if areas.isEmpty {
+                EmptyBlock(title: "Nothing matches", message: "Try a different search term.")
+            } else {
+                AdaptiveGrid(min: 150) {
+                    ForEach(areas, id: \.id) { a in
+                        NavigationLink(value: AreaRoute(id: a.id)) {
+                            AreaCard(name: store.areaName(a.id), entities: a.entities)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Areas")
+        .searchable(text: $search, prompt: "Search devices, rooms, states")
+    }
+}
+
+/// One area: a titled panel per kind of thing in it, operable kinds first.
+struct AreaDetailView: View {
+    @Environment(FarmStore.self) private var store
+    let areaId: String
+    @State private var search = ""
+
+    var body: some View {
+        let inArea = store.entities.filter { $0.area == areaId }
+        let list = inArea.filter { $0.matches(search, areaName: store.areaName(areaId)) }
+        let devices = Sorting.byDevice(inArea, names: store.deviceNames)
+        let on = devices.filter(\.isActive).count
+        let bad = devices.filter(\.isOffline).count
+        Page(eyebrow: "Area", title: store.areaName(areaId),
+             subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices") · \(on) active" + (bad > 0 ? " · \(bad) unavailable" : "")) {
+            if list.isEmpty {
+                // An empty area and an area whose contents the search hid are
+                // different problems, and only one of them is the user's to fix.
+                if inArea.isEmpty {
+                    EmptyBlock(title: "This area is empty",
+                               message: "Nothing in Home Assistant is assigned to this area yet.")
+                } else {
+                    EmptyBlock(title: "Nothing matches", message: "Nothing here matches that search.")
+                }
+            } else {
+                if store.canControl && !store.gate(.control).ok { ControlNote() }
+                ForEach(Sorting.domainsForArea(list), id: \.domain) { group in
+                    TitledPanel(title: Entity.humanDomain(group.domain).capitalized, count: group.entities.count) {
+                        if Farm.controllable.contains(group.domain) {
+                            ForEach(Array(group.entities.enumerated()), id: \.element.id) { i, e in
+                                if i > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
+                                DeviceCard(entity: e, showArea: false)
+                            }
+                        } else {
+                            RowList(items: group.entities, framed: false) { DeviceRow(entity: $0) }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle(store.areaName(areaId))
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
+        .searchable(text: $search, prompt: "Search this area")
+    }
+}

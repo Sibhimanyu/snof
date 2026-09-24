@@ -2,6 +2,14 @@
   "database": {
     "rules": "database.rules.json"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "reports",
+      "runtime": "python311",
+      "ignore": ["venv", "tests", "__pycache__", ".git", "*.local"]
+    }
+  ],
   "hosting": {
     "public": "public",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
@@ -17,8 +25,13 @@
         ]
       },
       {
-        "source": "/index.html",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache, max-age=0" }]
+        "source": "**/*.@(html|js|css)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      },
+      {
+        "// note": "Headers match the REQUEST path, not the rewritten file. The app is served at / , which has no extension, so the glob above never sees it and the bare root kept a 1-hour cache. That is how a browser ran an hour-old bundle after a deploy.",
+        "source": "/",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       }
     ]
   }

@@ -12,3 +12,6 @@ __pycache__/
 # Never commit: the bridge's admin credential
 serviceAccount.json
 *-firebase-adminsdk-*.json
+
+# design-lint session cache: machine-local, absolute paths
+.impeccable/hook.cache.json

@@ -6,8 +6,22 @@
  * string replace), so the allowlist is keyed by UID. This script resolves an
  * email to its UID and writes /acl/viewers/<uid>.
  *
- *   npm run grant  -- someone@example.com
- *   npm run revoke -- someone@example.com
+ * Three tiers. A viewer sees the farm; a controller may also operate lights,
+ * switches and fans from the dashboard; an admin may additionally grant and
+ * revoke the other two tiers for anyone else, from the dashboard's Admin
+ * page. Granting control implies view; granting admin implies both.
+ *
+ * Admin is deliberately the one tier the dashboard itself can never hand
+ * out - RTDB rules refuse a client write to acl/admins no matter who is
+ * asking, so promoting someone to admin always comes back through here,
+ * with the service account credential.
+ *
+ *   npm run grant   -- someone@example.com
+ *   npm run grant   -- someone@example.com --control
+ *   npm run grant   -- someone@example.com --admin
+ *   npm run revoke  -- someone@example.com            (removes every tier)
+ *   npm run revoke  -- someone@example.com --control  (demotes to view-only)
+ *   npm run revoke  -- someone@example.com --admin    (demotes to controller)
  *   npm run list
  *
  * The person must have signed in at least once so a Firebase Auth user exists.
@@ -33,12 +47,20 @@ const db = admin.database();
 const args = process.argv.slice(2);
 const revoke = args.includes('--revoke');
 const list = args.includes('--list');
+const control = args.includes('--control');
+const makeAdmin = args.includes('--admin');
 const email = args.find((a) => !a.startsWith('--'));
 
 async function main() {
   if (list) {
-    const snap = await db.ref('acl/viewers').get();
-    const viewers = snap.val() || {};
+    const [viewSnap, ctlSnap, adminSnap] = await Promise.all([
+      db.ref('acl/viewers').get(),
+      db.ref('acl/controllers').get(),
+      db.ref('acl/admins').get(),
+    ]);
+    const viewers = viewSnap.val() || {};
+    const controllers = ctlSnap.val() || {};
+    const admins = adminSnap.val() || {};
     const uids = Object.keys(viewers).filter((u) => viewers[u] === true);
     if (!uids.length) {
       console.log('No viewers on the allowlist yet.');
@@ -46,11 +68,13 @@ async function main() {
     }
     console.log(`${uids.length} viewer(s):`);
     for (const uid of uids) {
+      const tier = admins[uid] === true ? 'admin'
+        : controllers[uid] === true ? 'control' : 'view';
       try {
         const user = await admin.auth().getUser(uid);
-        console.log(`  ${user.email || '(no email)'}  ${uid}`);
+        console.log(`  ${(user.email || '(no email)').padEnd(34)} ${tier.padEnd(8)} ${uid}`);
       } catch {
-        console.log(`  (deleted user)  ${uid}`);
+        console.log(`  ${'(deleted user)'.padEnd(34)} ${tier.padEnd(8)} ${uid}`);
       }
     }
     return;
@@ -73,12 +97,36 @@ async function main() {
     process.exit(1);
   }
 
-  const ref = db.ref(`acl/viewers/${user.uid}`);
-  if (revoke) {
-    await ref.remove();
-    console.log(`Revoked dashboard access for ${email} (${user.uid}).`);
+  const viewRef = db.ref(`acl/viewers/${user.uid}`);
+  const ctlRef = db.ref(`acl/controllers/${user.uid}`);
+  const adminRef = db.ref(`acl/admins/${user.uid}`);
+
+  if (revoke && makeAdmin) {
+    // Demote, do not lock out: they keep control, they lose the admin page.
+    await adminRef.remove();
+    console.log(`${email} is no longer an admin, but keeps their existing access.`);
+  } else if (revoke && control) {
+    // Demote, do not lock out: they keep the dashboard, they lose the switches.
+    await Promise.all([ctlRef.remove(), adminRef.remove()]);
+    console.log(`${email} can view the dashboard but no longer control devices.`);
+  } else if (revoke) {
+    await Promise.all([viewRef.remove(), ctlRef.remove(), adminRef.remove()]);
+    console.log(`Revoked all dashboard access for ${email} (${user.uid}).`);
+  } else if (makeAdmin) {
+    // Admin without control would be a dashboard they cannot act from, so
+    // grant every tier under it too.
+    await viewRef.set(true);
+    await ctlRef.set(true);
+    await adminRef.set(true);
+    console.log(`${email} (${user.uid}) is now an admin: can view, control, ` +
+      `and grant/revoke access for anyone else from the dashboard's Admin page.`);
+  } else if (control) {
+    // Control without view would be a dashboard they cannot read, so grant both.
+    await viewRef.set(true);
+    await ctlRef.set(true);
+    console.log(`${email} (${user.uid}) can now view AND control farm devices.`);
   } else {
-    await ref.set(true);
+    await viewRef.set(true);
     console.log(`Granted dashboard access to ${email} (${user.uid}).`);
   }
 }

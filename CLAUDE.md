@@ -1,19 +1,71 @@
 # SNOF — Home Assistant → Firebase bridge
 
 Mirrors Home Assistant state from the farm's Intel NUC into Firebase Realtime
-Database and renders it, room by room, at https://snof-live.web.app.
-Architecture, data shape and setup are in README.md — read it first.
+Database and renders it at https://snof-live.web.app, where lights, switches and
+fans can also be operated.
+
+**Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — current state, what is armed
+and what is not, and open items. Then the doc for whatever you are touching:
+
+| Touching | Read |
+|---|---|
+| The NUC or the add-on | [docs/nuc-access-and-deploy.md](docs/nuc-access-and-deploy.md) |
+| Anything that can operate hardware | [docs/device-control.md](docs/device-control.md) |
+| `dashboard/public/` | [docs/dashboard.md](docs/dashboard.md) |
+| Irrigation reports (Mobitech DCON) | [docs/irrigation.md](docs/irrigation.md) |
+| Hosting, rules, the allowlist | [docs/firebase-deploy.md](docs/firebase-deploy.md) |
+| Tests or the preview harness | [docs/testing-and-preview.md](docs/testing-and-preview.md) |
+| `ios/` (native app) | [docs/ios-app.md](docs/ios-app.md) |
+
+Architecture and data shape are in README.md.
 
 ## Hard rules
 
 - **Never commit `serviceAccount.json`** or any `*-firebase-adminsdk-*.json`.
   It is a full-admin credential. It lives at `~/.config/snof/serviceAccount.json`
   (mode 0600) and is passed via `GOOGLE_APPLICATION_CREDENTIALS`.
-- The dashboard is **read-only by design**. RTDB rules deny all client writes.
-  Do not add a `/commands` path without an explicit request — it is a path from
-  the internet to farm relays.
+- The dashboard can **operate devices**, added deliberately on 2026-09-21. The
+  one writable path in the whole tree is `/farms/<slug>/commands`, and it is
+  append-only, controller-only, and shape-validated in `database.rules.json`.
+  Everything else still denies client writes. Three gates, all of which must
+  keep holding:
+    1. RTDB rules — only `acl/controllers/<uid> === true` may append, only the
+       four domains, only the four services, `at` must equal server `now`.
+    2. `bridge/commands.py` — re-checks the same things against its own
+       allow-list, drops commands older than `control_max_age_seconds`, and
+       deletes every node whether it ran or was refused.
+    3. `allow_control` in the add-on options, **off by default**.
+  `cover`, `lock` and `alarm_control_panel` are deliberately excluded at every
+  layer. Adding one is a security decision, not a config tweak.
+- **Unassigned entities do not exist to users** (add-on 0.9.0; since 0.9.2
+  the owner's rule is "only devices with assigned rooms" — the entity's
+  *device* must be in a room; an entity-level area alone does not count). An
+  entity failing that is never published (`mapper.should_publish` →
+  `registry.is_assigned`), `unassigned` is never written to `areas`, the RTDB
+  rules refuse a command whose target is not under `entities/`, the bridge
+  refuses it again (`is_visible`), and web/iOS drop any entity whose area is
+  not a current room. Don't reintroduce an "Unassigned" group anywhere.
+- **Counts are in devices, not entities** (add-on 0.9.3, web, iOS 0.1.7).
+  The bridge puts `device` on every entity and publishes `devices/<id>/name`;
+  the Overview tiles, area cards and "Not reporting" group by device
+  (`byDevice()` in app.js, `Sorting.byDevice` in SNOFCore). A device is
+  offline only when *every* entity on it is unavailable. Nav "All devices"
+  and the device list still show entities.
+- Attribute export and control are both **allow-lists**. Never invert either.
 - Attribute export is an **allow-list** (`mapper.py::ALLOWED_ATTRS`). Add fields
   there deliberately; never switch it to a deny-list.
+- Access has three tiers: `acl/viewers` (see), `acl/controllers` (see +
+  operate), `acl/admins` (all of the above + add people and grant/revoke the
+  other two tiers for anyone else, from the dashboard's `#/admin` page).
+  Each implies the ones below it. An admin adds a viewer/controller by
+  email from `#/admin` — that writes `acl/invites`, which the invited
+  person's own first sign-in claims automatically (`enter()` in `app.js`).
+  `npm run grant -- someone@example.com --control` still works and is the
+  bootstrap/fallback path, but is no longer the day-to-day one.
+- `acl/admins` is the one tier the dashboard can never hand out — RTDB rules
+  refuse a client write to it no matter who is asking. Promoting an admin is
+  always a command-line, service-account action
+  (`npm run grant -- someone@example.com --admin`), never a click.
 
 ## Deploying the add-on (easy to get silently wrong)
 
@@ -39,6 +91,14 @@ Bridge logs: `ssh ha-nuc 'sudo docker logs app_local_snof_bridge 2>&1 | tail -30
 - SSH alias `ha-nuc` → user `sibhiorchards` (passwordless sudo), key
   `~/.ssh/snof_ha`. The SSH add-on has `sftp: false`, so **`scp` fails** —
   stream files with `cat f | ssh ha-nuc 'sudo tee dest'`.
+- **Not every machine has that key or alias.** Check before assuming a deploy
+  can run: `ls ~/.ssh/snof_ha` and `ssh -G ha-nuc`. See "Working from a second
+  machine" in the README.
+- Some machines carry a managed, host-wildcard `ProxyCommand` in `~/.ssh/config`
+  (0Helper, `nc -X connect -x 127.0.0.1:3128`). It cannot reach a LAN address
+  and fails with `nc: Proxy error: HTTP/1.0 503`. Work around it per-command
+  with `-o ProxyCommand=none`, or `SSH_OPTS="-o ProxyCommand=none"` for
+  `deploy-addon.sh`. Do not edit that config file; it is generated.
 - macOS tar emits `._AppleDouble` members that busybox tar rejects; the deploy
   script sets `COPYFILE_DISABLE=1` for this.
 - Firebase project `snof-live`, RTDB in `asia-southeast1`. Hosting injects
@@ -47,9 +107,17 @@ Bridge logs: `ssh ha-nuc 'sudo docker logs app_local_snof_bridge 2>&1 | tail -30
 ## Testing
 
 `cd addon/snof_bridge && python3 tests/test_logic.py` — pure-logic tests only
-(mapping, filtering, room resolution, dedup stability). They do **not** cover
-the async websocket/RTDB orchestration in `main.py`, which is where every real
-bug so far has lived. Verify that path against the live NUC.
+(mapping, filtering, room resolution, dedup stability, and the command
+validator's refusal cases). They run with no dependencies installed, so keep
+`aiohttp` imported lazily inside `commands.py`. They do **not** cover the async
+websocket/RTDB orchestration in `main.py` or the command stream, which is where
+every real bug so far has lived. Verify that path against the live NUC.
+
+Dashboard: `dashboard/preview/` mocks Firebase so every screen renders
+headlessly with no credentials. `cd dashboard/preview && npm run all`.
+**Review with `?real=1`** — 698 entities, 373 unavailable, real Home Assistant
+naming. Every bug found on 2026-09-22 was invisible on the clean 26-entity mock
+and obvious on the real one.
 
 When writing verification shell, remember `grep -c` exits 1 on zero matches and
 `if cmd | head` tests `head`'s status — both produced false alarms here.
@@ -60,6 +128,99 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   registry events. The resync path is verified present in the container but had
   not yet fired in production as of 2026-09-21.
 - Most entities are `unassigned` because only ~19 of ~1366 registry entities
-  have an area in HA. Fixing that is an HA-side task; it flows through live.
+  have an area in HA, so from 0.9.0 they are hidden from the app entirely.
+  Fixing that is an HA-side task; it flows through live.
 - The SSH add-on config had a plaintext `password:`; the owner was advised to
   clear it now that key auth works. Confirm before assuming it was done.
+- Add-on **0.6.0 is deployed and running** on the NUC as of 2026-09-23,
+  verified by image tag (`local/amd64-addon-snof_bridge:0.6.0`) and by
+  `REPORT_TYPES` reporting all fifteen types inside the container. It starts
+  clean: 16 areas, 21 devices, 1380 entities, 713 published across 18 domains.
+  0.4.x/0.5.0 were never actually updated in Supervisor — the box ran 0.3.0
+  until this jump, which is exactly the silent-stale failure the deploy
+  runbook warns about.
+- Supervisor can be driven without the UI, which avoids the two-click trap:
+  `sudo docker exec hassio_cli ha store reload` then
+  `... ha apps update local_snof_bridge`, then re-read `ha apps info`. The
+  host's own `/usr/bin/ha` has no token and answers "unauthorized"; the
+  `hassio_cli` container is the one that works. `ha addons` is deprecated in
+  favour of `ha apps`.
+- This machine has **no `ha-nuc` alias** — `ssh -G ha-nuc` falls through to the
+  managed wildcard `ProxyCommand`. Use
+  `ssh -o ProxyCommand=none -i ~/.ssh/snof_ha sibhiorchards@192.168.68.200`,
+  or the same via `SSH_OPTS` for `deploy-addon.sh`.
+- Irrigation is **Mobitech DCON only** as of 2026-09-23. Livesky, Niagara and
+  OpenWeather were removed at the owner's request — parsers, add-on options,
+  report types and RTDB allow-list entries all deleted, not left dormant. Ten
+  report types remain, three of them combining two controller calls.
+- **Reports moved off the NUC on 2026-09-23** into a Python Cloud Function,
+  `irrigation_report` in `dashboard/functions/` (codebase `reports`,
+  asia-southeast1). It is triggered by a create on `irrigation_requests`, and
+  the DCON token and serial are Secret Manager secrets `DCON_TOKEN_ID` /
+  `DCON_SERIAL`. Add-on 0.8.0 removes `irrigation.py`, `vendors.py` and every
+  `irrigation_enabled`/`dcon_*` option. Its heartbeat nulls
+  `meta/bridge.irrigation`. Kill switch: `meta/reports/enabled: false`,
+  service account only. Tests:
+  `cd dashboard/functions && python3 tests/test_reports.py`.
+- **Deployed 2026-09-24:** the Function, rules and hosting, plus add-on 0.9.1
+  on the NUC (image tag verified). **Mobitech 403s every Google Cloud
+  address**, so the Function cannot call it directly. Add-on 0.9.1 relays the
+  eight named reads through `/relay/jobs` → `/relay/results` (`bridge/relay.py`,
+  option `dcon_relay: true`, set by merging into the Supervisor options).
+  Parsing and report building stay in the Function. Reports therefore need
+  the NUC up again. Proven end to end: session_log and power_range both came
+  back Ready from the live controller, and `/relay` refuses unauthenticated
+  access. `DCON_TRANSPORT=direct` in `dashboard/functions/.env` (per machine,
+  gitignored) switches back to direct calls.
+- **The first live pull leaked.** `normalize_dcon_dashboard()` used to mirror a
+  scrubbed dump of the whole node; the DCON dashboard payload carries the
+  farm's phone book and the modem IMEI, and eleven numbers reached Firebase
+  before being purged the same hour. Two defences now: the parser is a
+  five-field allow-list, and `scrub()` redacts any run of ten or more digits
+  anywhere in a string. Never widen a vendor parser to "everything else".
+- Every parser was rewritten against real payloads on 2026-09-23 — all of them
+  were wrong when written blind. `docs/irrigation.md` has the actual shapes
+  and the full endpoint survey. The ones that bite: a timer_log `run_time` is
+  *remaining*-planned, and one run is logged in pieces around a backwash every
+  ~15 min (`join_runs()`). motor_log `ph3_runtime` is HH.MM supply-pump. The
+  energy meter reset on 2026-09-10. Pressure is only sampled while the pump
+  runs. Snapshot stamps must be farm time (+05:30), not the function's UTC.
+  Aggregate over the whole response and cap only what is drawn — the old
+  parsers capped at 32 rows first.
+- Control is **armed** as of 2026-09-23: `allow_control: true`, the log says
+  `Watching command queue for domains: fan, input_boolean, light, switch` and
+  `Command queue stream open`, and `meta/bridge.control` is true. Set through
+  the Supervisor API by merging the one key into the existing options object —
+  never POST a partial options dict, the omitted keys revert to defaults.
+  `commandsRun` was still 0 at the moment of arming, so the first real press is
+  the first time this code has moved physical hardware. To disarm: set
+  `allow_control` false the same way and restart.
+- The dashboard reads `meta/bridge.control` (`bridgeGate()` in `app.js`) and
+  `meta/reports.enabled` (`reportsGate()`). A capability that is switched off
+  renders its controls disabled with the reason, instead of accepting a press
+  and blaming the farm twelve seconds later. Reports no longer need a live
+  bridge. The iOS app mirrors both in `Gate.evaluate`. The bridge still
+  drains `/commands` at startup when control is off. The function deletes
+  every `irrigation_requests` node it is handed.
+- The SSH add-on had a plaintext `password:` in its options; it was still there
+  on 2026-09-22 and should be removed and rotated now that key auth is proven.
+- **iOS app released** on 2026-09-24: `0.1.8 (202609240541)` (the "Area
+  workspace" redesign); before it `0.1.7 (202609240500)` (device counts), and `0.1.6 (202609240428)`, with the report charts (lines, stack, grid, matrix) and the reports gate; earlier `0.1.2 (202609231646)` (first: 0.1.0) at
+  https://snof-ios.web.app (its own Hosting site, separate from the
+  dashboard), installed through SideStore from `source.json`. `snof-live` is
+  on **Blaze**, because Spark refuses `.ipa` files on Hosting. Release with
+  `ios/scripts/release.sh "notes"`. **Proven on the owner's iPhone** (2026-09-23): Google sign-in works
+  under SideStore's renamed bundle ID (`com.sibhiorchards.snof.<TEAMID>`),
+  confirmed in Firebase Auth and by a fresh `acl/directory` write. (An earlier
+  check found no sign-in only because none had been attempted yet.) Still
+  untried from the phone: a device toggle and an irrigation report.
+- **Design: "Area workspace"** (2026-09-24, owner's pick of option C): cool
+  slate light theme + its dark complement, Manrope, eyebrow + large title on
+  every page, tinted farm-pulse panel, device-level counts, All devices as a
+  list of devices. Web deployed and iOS 0.1.8 released, both 2026-09-24. DESIGN.md and docs/dashboard.md
+  describe it; `Theme.swift` mirrors `styles.css` value for value.
+- **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
+  SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
+  0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with
+  `--accent`/`Theme.on` (contrast-shaded). The logo and farm illustrations come from the
+  DCON design-asset export; see DESIGN.md "Brand artwork" and `design/brand/`.

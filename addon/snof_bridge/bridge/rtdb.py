@@ -21,6 +21,8 @@ import aiohttp
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import service_account
 
+from .wire import encode_body
+
 _LOGGER = logging.getLogger(__name__)
 
 SCOPES = [
@@ -73,8 +75,9 @@ class RTDBWriter:
         url = f"{self._cfg.firebase_db_url}/{path.strip('/')}.json?print=silent"
         token = await self._token()
         async with self._session.request(
-            method, url, json=payload,
-            headers={"Authorization": f"Bearer {token}"},
+            method, url, data=encode_body(payload),
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"},
             timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
             if resp.status >= 400:
@@ -82,6 +85,25 @@ class RTDBWriter:
                 raise RuntimeError(f"RTDB {method} {path} -> {resp.status}: {body}")
             # 200 (echo) and 204 (print=silent) are both success.
         self.writes += 1
+
+    async def get(self, path: str, shallow: bool = False) -> Any:
+        """Read a node. The bridge is overwhelmingly a writer; this exists for
+        the few places that have to look before acting, such as draining the
+        client-writable report queue at startup. shallow=true asks RTDB for the
+        keys alone, so checking whether a node is empty never costs its whole
+        payload against the 10 GB/month download quota."""
+        url = f"{self._cfg.firebase_db_url}/{path.strip('/')}.json"
+        if shallow:
+            url += "?shallow=true"
+        token = await self._token()
+        async with self._session.get(
+            url, headers={"Authorization": f"Bearer {token}"},
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            if resp.status >= 400:
+                body = (await resp.text())[:400]
+                raise RuntimeError(f"RTDB GET {path} -> {resp.status}: {body}")
+            return await resp.json(content_type=None)
 
     async def put(self, path: str, value: Any) -> None:
         await self._request("PUT", path, value)

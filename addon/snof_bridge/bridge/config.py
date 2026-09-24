@@ -36,7 +36,20 @@ class Config:
     min_interval_seconds: float = 2.0
     flush_interval_seconds: float = 1.0
     heartbeat_seconds: int = 30
+    # Device control. Off unless the add-on options turn it on, and an
+    # allow-list even then: this is the only inbound path to farm hardware.
+    allow_control: bool = False
+    control_domains: frozenset[str] = frozenset({"switch", "light", "fan", "input_boolean"})
+    control_max_age_seconds: float = 120.0
     log_level: int = logging.INFO
+    # DCON relay (bridge/relay.py). Mobitech refuses Google Cloud addresses, so
+    # the report Function asks the NUC to make its read calls. Off unless
+    # `dcon_relay` is true; the serial and token stay here, in the options.
+    dcon_relay: bool = False
+    dcon_base: str = "https://dcon.mobitechwireless.com"
+    dcon_serial: str = field(default="", repr=False)
+    dcon_token_id: str = field(default="", repr=False)
+    dcon_product: str = "DCON"
 
     # Resolved at construction, not user-facing.
     ha_ws_url: str = field(default="", repr=False)
@@ -103,7 +116,16 @@ def load() -> Config:
         min_interval_seconds=float(opts.get("min_interval_seconds", 2.0)),
         flush_interval_seconds=float(opts.get("flush_interval_seconds", 1.0)),
         heartbeat_seconds=int(opts.get("heartbeat_seconds", 30)),
+        allow_control=bool(opts.get("allow_control", False)),
+        control_domains=frozenset(opts.get("control_domains")
+                                  or ["switch", "light", "fan", "input_boolean"]),
+        control_max_age_seconds=float(opts.get("control_max_age_seconds", 120.0)),
         log_level=_LOG_LEVELS.get(str(opts.get("log_level", "info")).lower(), logging.INFO),
+        dcon_relay=bool(opts.get("dcon_relay", False)),
+        dcon_base=(opts.get("dcon_base") or "https://dcon.mobitechwireless.com").strip().rstrip("/"),
+        dcon_serial=(opts.get("dcon_serial") or "").strip(),
+        dcon_token_id=(opts.get("dcon_token_id") or "").strip(),
+        dcon_product=(opts.get("dcon_product") or "DCON").strip(),
         ha_ws_url=ws_url,
         ha_token=token,
     )
