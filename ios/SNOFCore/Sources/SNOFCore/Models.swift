@@ -202,6 +202,15 @@ public struct IrrigationCache: Hashable, Sendable {
     }
 }
 
+public struct NextProgram: Hashable, Sendable {
+    public var name: String
+    public var valves: String
+    public var plannedMin: Int?
+    public init(name: String, valves: String = "", plannedMin: Int? = nil) {
+        self.name = name; self.valves = valves; self.plannedMin = plannedMin
+    }
+}
+
 /// `irrigation/program`: the controller dashboard's current timer, as the
 /// report function caches it (`program_cache` in dashboard/functions).
 public struct CurrentProgram: Hashable, Sendable {
@@ -215,6 +224,10 @@ public struct CurrentProgram: Hashable, Sendable {
     public var remainingMin: Int?
     /// Farm time the controller last reported the timer — what remainingMin is as of.
     public var lastSeen: String = ""
+    /// Valves of the running program that did not answer: "6 Kulam no signal".
+    public var faults: [String] = []
+    /// What the controller starts next.
+    public var next: NextProgram?
     /// Server milliseconds of the pull.
     public var at: Double?
 

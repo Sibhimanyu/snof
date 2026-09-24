@@ -400,10 +400,16 @@ def test_relay_strips_the_phone_book_before_anything_leaves():
                         "sim": "vi-9876543210", "users": {"A1": {"mobile": "919876543210"}},
                         "device_id": "12043",
                         "packets": {"live": "##,DCON-MCONTEST,0-0-0!x,V68,SibhiSump",
-                                    "4": "##,DCON,919876543210", "5": "##,IMEI,490154203237518"}}}
+                                    "4": "##,DCON,919876543210", "5": "##,IMEI,490154203237518",
+                                    "6": "##,DCON-MCONTEST,6-0-0!2026-09-24 14:29:06+05:30,,228-223-264,"
+                                         "390-421-426,9.8-9.5-9.7,1.0-0-1.0,13.06-06.38,919876543210,",
+                                    "1": "##,DCON,1-0-0!x,919876543210", "8": "##,DCON,919876543210"}}}
     out = json.dumps(relay.trim_dashboard(raw))
     assert "9876543210" not in out and "490154203237518" not in out and "12043" not in out
     assert "SibhiSump" in out and "server_time" in out
+    kept = relay.trim_dashboard(raw)["MCONTEST"]["packets"]
+    assert set(kept) == {"live", "6"}, kept
+    assert "228-223-264" in kept["6"] and "13.06-06.38" in kept["6"]
 
 
 def test_relay_packs_round_trip():

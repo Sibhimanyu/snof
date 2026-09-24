@@ -231,6 +231,19 @@ private struct WaterNow: View {
                 Text(s.detail).font(Theme.font(14, .regular, relativeTo: .subheadline)).lineSpacing(2)
                     .foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
             }
+            if s.running, let faults = cache.program?.faults, !faults.isEmpty {
+                ForEach(faults, id: \.self) { Tag(text: $0, kind: .bad) }
+            }
+            if let next = cache.program?.next {
+                Rectangle().fill(Theme.tintLine).frame(height: 1).padding(.vertical, 2)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Next").eyebrowStyle()
+                    Text([next.name, next.valves, next.plannedMin.map(Format.minutes)]
+                            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(Theme.font(14, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .tintPanel(padding: 16)
@@ -342,6 +355,9 @@ private struct SupplyRow: View {
                 HStack(spacing: 14) {
                     if !supply.powerOn { Tag(text: "No power", kind: .bad) }
                     else if supply.missingPhase { Tag(text: "Phase missing — \(supply.livePhases) of 3 live", kind: .bad) }
+                    else if let imb = supply.imbalancePct, imb >= Supply.imbalanceWarn {
+                        Tag(text: "\(imb.formatted(.number.precision(.fractionLength(0...1))))% phase imbalance", kind: .warn)
+                    }
                     else if supply.hasVoltage { Tag(text: "All three phases", kind: .on) }
                     if let drawing = supply.pumpDrawing {
                         Tag(text: drawing ? "Pump drawing current" : "Pump off", kind: drawing ? .on : .plain)

@@ -105,6 +105,10 @@ public struct Supply: Hashable, Sendable {
     public let currentA: [Double]
     /// "22:24", when the packet said.
     public let at: String?
+    /// Spread of the phase voltages, as the function worked it out.
+    public var imbalancePct: Double? = nil
+    /// Above this an induction motor runs hot; a figure worth a look, not an alarm.
+    public static let imbalanceWarn = 5.0
 
     /// Below this a phase is not really there.
     static let deadVolts = 120.0
@@ -206,7 +210,10 @@ public enum Irrigation {
         guard !v.isEmpty || !a.isEmpty else { return nil }
         let note = [volts?["note"], amps?["note"]].compactMap { $0 }.joined(separator: " ")
         let at = note.range(of: #"\d{2}:\d{2}"#, options: .regularExpression).map { String(note[$0]) }
-        return Supply(phaseV: v, currentA: a, at: at)
+        let imb = (volts?["note"]).flatMap { n in
+            n.range(of: #"[\d.]+(?=% imbalance)"#, options: .regularExpression).flatMap { Double(n[$0]) }
+        }
+        return Supply(phaseV: v, currentA: a, at: at, imbalancePct: imb)
     }
 
     /// The last inlet reading: value with unit, and its farm timestamp.

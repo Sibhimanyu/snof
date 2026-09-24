@@ -274,6 +274,14 @@ def controller_sections(dash: Any, nodes: list[dict] | None,
     facts += _program_facts(current, names, "Running now" if running else "Last program")
     if running:
         facts += _program_facts(timers["previous"], names, "Before that")
+        for v, label in timers.get("faults") or []:
+            facts.append({"label": "Valve fault", "value": f"{names.get(v, f'valve {v}')} {label}"})
+    nxt = timers.get("next")
+    if nxt:
+        bits = [nxt["name"], _valve_list(nxt["valves"], names)]
+        if nxt["plannedMin"] is not None:
+            bits.append(V.fmt_minutes(nxt["plannedMin"]))
+        facts.append({"label": "Next program", "value": " · ".join(bits)})
     sections = [section("facts", "Controller", facts)]
     if nodes_err:
         sections.append(section("status", "Valves", error=nodes_err))
@@ -299,21 +307,38 @@ def report_controller(src, params: dict) -> tuple[list, str, list, dict]:
     dash = src.dashboard()
     nodes, nodes_err = leg(lambda: V.normalize_dcon_nodes(src.nodes()))
     sections, info, summary = controller_sections(dash, nodes, nodes_err)
-    patch = {"dcon": info, "program": program_cache(V.dcon_timers(dash or {})["current"],
-                                                    _names(nodes))}
+    names = _names(nodes)
+    timers = V.dcon_timers(dash or {})
+    patch = {"dcon": info, "program": program_cache(timers, names)}
     if nodes is not None:
         patch["valveNames"] = nodes
+    packet = V.dashboard_electricity(dash or {})
+    if packet:
+        esec, erows = electricity_sections(packet, "")
+        sections += esec
+        if erows:
+            patch["electricity"] = erows
     return sections, summary, list(nodes or []), patch
 
 
-def program_cache(prog: dict | None, names: dict[str, str]) -> dict:
-    """The controller's current (or last) program, for the app's Overview:
-    "watering now" is the first thing anyone asks. An allow-list of fields,
-    like every other patch — nothing else from the dashboard payload."""
+def program_cache(timers: dict, names: dict[str, str]) -> dict:
+    """The controller's current (or last) program, what it starts next, and
+    any valve that did not answer, for the app's Overview: "watering now" is
+    the first thing anyone asks. An allow-list of fields, like every other
+    patch — nothing else from the dashboard payload."""
+    prog, nxt = timers.get("current"), timers.get("next")
+    out: dict[str, Any] = {"at": SERVER_TIMESTAMP}
+    if nxt:
+        out["next"] = {"name": nxt["name"], "plannedMin": nxt["plannedMin"],
+                       "valves": _valve_list(nxt["valves"], names) if nxt["valves"] else ""}
     if not prog:
-        return {"running": False, "at": SERVER_TIMESTAMP}
+        return {**out, "running": False}
+    running = not prog["completed"]
+    faults = [f"{names.get(v, f'valve {v}')} {label}" for v, label in timers.get("faults") or []]
+    if faults and running:
+        out["faults"] = faults
     return {
-        "at": SERVER_TIMESTAMP, "name": prog["name"], "kind": prog["kind"],
+        **out, "name": prog["name"], "kind": prog["kind"],
         "running": not prog["completed"],
         "valves": _valve_list(prog["valves"], names) if prog["valves"] else "",
         "start": prog["start"], "lastSeen": prog["lastSeen"],

@@ -270,13 +270,56 @@ def dcon_program(entry: Any) -> dict | None:
     }
 
 
+def program_faults(entry: Any) -> list[tuple[str, str]]:
+    """[(valve id, "no signal" | "did not open" | "did not close")] for one
+    timer record: the three flag lists line up slot for slot with on_valves."""
+    if not isinstance(entry, dict):
+        return []
+    on = _slots(entry.get("on_valves"))
+    out = []
+    for field, label in (("valve_comm_error", "no signal"),
+                         ("valve_not_on", "did not open"),
+                         ("valve_not_off", "did not close")):
+        for i, flag in enumerate(_slots(entry.get(field))):
+            if flag not in ("", "0") and i < len(on) and on[i] not in ("", "0"):
+                out.append((on[i], label))
+    return out
+
+
+def dcon_next(entry: Any) -> dict | None:
+    """timers.next: the program the controller will start next. A smaller
+    record than current — valves under `valves`, the length as `on_time`."""
+    if not isinstance(entry, dict) or not entry.get("timer_name"):
+        return None
+    valves = [v for v in _slots(entry.get("valves") or entry.get("on_valves")) if v and v != "0"]
+    return {"name": _text(entry.get("timer_name")), "number": _text(entry.get("timer_no") or ""),
+            "valves": valves[:10], "plannedMin": hhmm_minutes(entry.get("on_time"))}
+
+
 def dcon_timers(payload: Any) -> dict:
-    """The dashboard's "what is it doing" block: the program running now and
-    the one before it. `next` has always been null on this farm."""
+    """The dashboard's "what is it doing" block: the program running now,
+    the one before it, and the next one (null until 2026-09-24, then set)."""
     _, inner = _dashboard_node(payload)
     timers = inner.get("timers") if isinstance(inner.get("timers"), dict) else {}
     return {"current": dcon_program(timers.get("current")),
-            "previous": dcon_program(timers.get("previous"))}
+            "previous": dcon_program(timers.get("previous")),
+            "next": dcon_next(timers.get("next")),
+            "faults": program_faults(timers.get("current"))}
+
+
+def dashboard_electricity(payload: Any) -> dict:
+    """Packet 6 of the dashboard is the same live electricity packet the
+    electricity report returns, so one dashboard call answers "is the power
+    there and is the pump drawing" without a second one."""
+    _, inner = _dashboard_node(payload)
+    packets = inner.get("packets") if isinstance(inner.get("packets"), dict) else {}
+    packet = packets.get("6")
+    if not isinstance(packet, str) or "!" not in packet:
+        return {}
+    stamp = re.search(r"!(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", packet)
+    if not stamp:
+        return {}
+    return electricity_packet({"data": [{"dt": stamp.group(1), "raw_data": packet}]})
 
 
 def normalize_dcon_nodes(payload: Any) -> list[dict]:
@@ -385,15 +428,7 @@ def timer_segments(payload: Any) -> list[dict]:
         start, seen = parse_stamp(prog["start"]), parse_stamp(prog["lastSeen"])
         span = ((seen - start).total_seconds() / 60.0
                 if start and seen and seen >= start else 0.0)
-        faults = []
-        if isinstance(raw, dict):
-            on = _slots(raw.get("on_valves"))
-            for field, label in (("valve_comm_error", "no signal"),
-                                 ("valve_not_on", "did not open"),
-                                 ("valve_not_off", "did not close")):
-                for i, flag in enumerate(_slots(raw.get(field))):
-                    if flag not in ("", "0") and i < len(on) and on[i] not in ("", "0"):
-                        faults.append(f"valve {on[i]} {label}")
+        faults = [f"valve {v} {label}" for v, label in program_faults(raw)]
         out.append({**prog, "spanMin": round(span, 1), "faults": faults})
     out.sort(key=lambda s: s["start"])
     return out
