@@ -28,6 +28,13 @@ What a function cannot keep in memory, the database keeps:
     consuming it until the cut-over. Turn the NUC's allow_irrigation_control
     off *before* turning this on, or a command would be sent twice.
 
+  * **No second change until the first is confirmed** (owner, 2026-09-24:
+    Mobitech accepts anything and its server cannot handle conflicts). The
+    lock at /farms/<farm>/irrigation_lock is taken before sending and held
+    while the controller is re-read every 10 s for up to 2 min, until its own
+    state shows the change; the RTDB rules refuse new commands while it is
+    live, and so does this code. The result records `verified`.
+
 The pure pieces (validate, the two command templates, the valve and controller
 checks) are copied from the add-on verbatim and tested the same way.
 """
@@ -43,11 +50,15 @@ import dcon
 QUEUE = "irrigation_commands"
 RESULTS = "irrigation_command_results"
 META = "meta/irrigationControl"
+LOCK = "irrigation_lock"
 
 MAX_AGE_SECONDS = 60.0
 MIN_GAP_SECONDS = 10.0
 MAX_VALVES = 5
 REQUEST_TIMEOUT_SECONDS = 30
+VERIFY_EVERY_SECONDS = 10.0
+VERIFY_WINDOW_SECONDS = 120.0
+LOCK_SECONDS = 180.0
 
 _SLOT = re.compile(r"^A[0-9A-Z]$")
 _VALVES = re.compile(r"^[0-9]{1,2}(,[0-9]{1,2}){0,4}$")
@@ -140,8 +151,21 @@ def controller_state(dashboard: Any) -> dict:
     if not cur:
         return {"running": False, "manual": False, "name": ""}
     running = str(cur.get("completed")) != "1"
+    valves = [int(v) for v in re.split(r"[-,]", str(cur.get("on_valves") or "")) if v.strip().isdigit() and int(v)]
     return {"running": running, "manual": running and str(cur.get("timer_type")) == "3",
-            "name": str(cur.get("timer_name") or "")}
+            "name": str(cur.get("timer_name") or ""), "valves": valves}
+
+
+def confirmed(action: str, valves: list[int], state: dict) -> bool:
+    """Does the controller's own state show the change took? A run: a manual
+    run is going on exactly these valves. A stop: no manual run is going."""
+    if action == "run":
+        return bool(state.get("manual")) and set(valves) <= set(state.get("valves") or [])
+    return not state.get("manual")
+
+
+def lock_live(lock: Any, now_ms: float) -> bool:
+    return isinstance(lock, dict) and isinstance(lock.get("until"), (int, float)) and lock["until"] > now_ms
 
 
 def check_against(action: str, valves: list[int], state: dict, allowed: dict[int, str]) -> None:
@@ -221,7 +245,7 @@ class _Duplicate(Exception):
 
 
 def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
-           slot: str, max_minutes: int, now=time.time) -> dict | None:
+           slot: str, max_minutes: int, now=time.time, sleep=time.sleep) -> dict | None:
     """Run one command end to end. Returns the result written, or None when the
     function is switched off (and the queue must be left alone for the NUC).
     `reads` is a dcon.Dcon; `commander_factory()` builds a Commander."""
@@ -231,16 +255,23 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
 
     result: dict[str, Any] = {"ok": False, "runtime": "cloud-functions",
                               "action": cmd.get("action") if isinstance(cmd, dict) else None}
+    lock_ref = store.reference(f"{root}/{LOCK}")
+    locked = False
     try:
         try:
             action, valves, minutes = validate(cmd, max_minutes, now())
             if not _SLOT.match(slot or ""):
                 raise Refused("irrigation control is not configured")
+            if lock_live(lock_ref.get(), now() * 1000):
+                raise Refused("the last valve change is still being confirmed")
             claim(store, root, cmd_id, now() * 1000)
             allowed = irrigation_valves(reads.nodes()) if action == "run" else {}
             state = controller_state(reads.dashboard())
             check_against(action, valves, state, allowed)
             command = run_command(valves, minutes, slot) if action == "run" else stop_command(slot)
+            lock_ref.set({"cmd": cmd_id, "action": action,
+                          "until": int((now() + LOCK_SECONDS) * 1000)})
+            locked = True
             status, text = commander_factory().send(command)
             ok = status < 400
             try:
@@ -250,6 +281,13 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),
                           valves=", ".join(allowed.get(v, f"valve {v}") for v in valves), minutes=minutes)
             _count(store, root, "sent" if ok else "failed")
+            if ok:
+                # Sent is not done: tell the app we are confirming, then read
+                # the controller until its own state shows the change.
+                result.update(verified=False, confirming=True)
+                store.reference(f"{root}/{RESULTS}/{cmd_id}").set({**result, "at": SERVER_TIMESTAMP})
+                result["verified"] = _confirm(reads, action, valves, now, sleep)
+                result["confirming"] = False
         except _Duplicate:
             return None
         except Refused as why:
@@ -264,9 +302,28 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
         store.reference(f"{root}/{RESULTS}/{cmd_id}").set({**result, "at": SERVER_TIMESTAMP})
         return result
     finally:
+        if locked:
+            try:
+                lock_ref.delete()
+            except Exception:             # noqa: BLE001 — the lock expires by itself
+                pass
         # Switched on, the node always goes — ran, refused or failed — so a
         # bad one cannot loop. (Switched off we returned above, untouched.)
         store.reference(f"{root}/{QUEUE}/{cmd_id}").delete()
+
+
+def _confirm(reads, action: str, valves: list[int], now, sleep) -> bool:
+    """At most VERIFY_WINDOW / VERIFY_EVERY dashboard reads: gentle on a weak
+    server, and long enough for a GSM controller to report in."""
+    deadline = now() + VERIFY_WINDOW_SECONDS
+    while now() < deadline:
+        sleep(VERIFY_EVERY_SECONDS)
+        try:
+            if confirmed(action, valves, controller_state(reads.dashboard())):
+                return True
+        except Exception:                 # noqa: BLE001 — one failed read is not a verdict
+            continue
+    return False
 
 
 def _count(store, root: str, key: str) -> None:

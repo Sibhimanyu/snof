@@ -327,7 +327,11 @@ private struct IrrigationControls: View {
             }
             .font(Theme.font(15, .semibold, relativeTo: .body))
             if let refusal, !waiting { Note(text: refusal, tone: .warn) }
-            else if waiting { Note(text: "Sent to the farm — waiting for the controller to answer.") }
+            else if waiting {
+                Note(text: store.irrigationConfirming
+                     ? "Sent — confirming with the controller. Run and Stop unlock when it shows the change."
+                     : "Sent to the farm — waiting for the controller to answer.")
+            }
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
         .sheet(isPresented: $picking) { RunValvesSheet(cache: cache) }

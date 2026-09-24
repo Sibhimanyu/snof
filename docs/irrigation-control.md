@@ -65,3 +65,19 @@ Restart the add-on; the log says
 and `meta/bridge.irrigationControl` becomes true. First test: one valve for
 5 minutes, watch it open, press Stop, watch it close. To disarm, set
 `allow_irrigation_control: false` the same way and restart.
+
+## No second change until the first is confirmed (2026-09-24)
+
+Owner's rule: Mobitech accepts every command and its server cannot handle
+conflicts, so nothing may change a valve again until the controller's own
+state shows the last change took. Enforced at every layer:
+
+| Layer | What it does |
+|---|---|
+| RTDB rules | Refuse any new `irrigation_commands` node while `irrigation_lock/until` is in the future. Clients cannot write the lock. |
+| Consumer (add-on 0.10.1 today, the `irrigation_command` function after cut-over) | Refuses while the lock is live; takes the lock before sending (`until` = send + 3 min); after a successful send writes the result with `confirming: true`, re-reads the dashboard every 10 s for up to 2 min (at most 12 reads, gentle on a weak server) until `timers.current` shows it — a run: a Manual Mode run on the requested valves (`on_valves`); a stop: no Manual Mode run — then writes `verified: true/false` and releases the lock. |
+| iOS 0.4.0 | Run and Stop stay locked while its own command is pending or confirming, or while the farm's lock is live; says "Confirmed" only on `verified: true`, and "not confirmed after 2 minutes — check before trying again" on `false`. |
+
+Consequence to know: Stop is locked too while a change is being confirmed
+(usually well under 2 minutes). The lock expires by itself after 3 minutes,
+so a crash mid-confirmation cannot block control for ever.

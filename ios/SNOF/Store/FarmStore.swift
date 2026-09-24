@@ -183,6 +183,8 @@ final class FarmStore {
             reports = Parse.reports(v)
             settleReports()
         case .irrigationResults(let v): settleIrrigation(v)
+        case .irrigationLock(let v):
+            irrigationLockUntil = Parse.double((v as? [String: Any])?["until"])
         case .controller(let b): canControl = b
         case .admin(let b): isAdmin = b
         case .serverTimeOffset(let s): skewMs = s
@@ -426,6 +428,18 @@ final class FarmStore {
     /// The Run/Stop the NUC has not answered yet.
     private(set) var irrigationPending: String?
     private var irrigationTask: Task<Void, Never>?
+    /// The farm's lock: until when no valve change may be made (server ms).
+    private(set) var irrigationLockUntil: Double?
+    /// Our own command was sent and the controller is being re-read.
+    private(set) var irrigationConfirming = false
+
+    /// No second change until the first is confirmed (owner, 2026-09-24):
+    /// Mobitech accepts anything and cannot handle conflicts. The RTDB rules
+    /// and the consumer enforce this too; this only says so before a press.
+    var irrigationLocked: Bool {
+        guard let until = irrigationLockUntil else { return false }
+        return until > Date().timeIntervalSince1970 * 1000 + skewMs
+    }
 
     var canRunIrrigation: Bool { isAdmin }
 
@@ -435,7 +449,11 @@ final class FarmStore {
         let g = gate(.irrigationControl)
         if !g.ok { return g.why }
         if !connected { return BackendError.notConnected.localizedDescription }
-        if irrigationPending != nil { return "Waiting for the farm to answer the last command." }
+        if irrigationPending != nil {
+            return irrigationConfirming ? "Confirming the last change with the controller — controls unlock when it answers."
+                : "Waiting for the farm to answer the last command."
+        }
+        if irrigationLocked { return "The last valve change is still being confirmed by the controller." }
         return nil
     }
 
@@ -459,10 +477,14 @@ final class FarmStore {
         do {
             let key = try await backend.sendIrrigation(cmd, uid: uid)
             irrigationPending = key
+            irrigationConfirming = false
+            // Long enough to cover sending plus the farm's 2-minute
+            // confirmation window; the lock itself expires at 3 minutes.
             irrigationTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(200))
                 guard let self, !Task.isCancelled, self.irrigationPending == key else { return }
                 self.irrigationPending = nil
+                self.irrigationConfirming = false
                 self.show(.err, "No answer from the farm. Nothing was confirmed — check the controller before trying again.")
             }
         } catch {
@@ -474,14 +496,28 @@ final class FarmStore {
 
     private func settleIrrigation(_ v: Any?) {
         guard let key = irrigationPending, let node = (v as? [String: Any])?[key] as? [String: Any] else { return }
-        irrigationPending = nil
-        irrigationTask?.cancel()
         let ok = Parse.bool(node["ok"]) ?? false
         let message = Parse.string(node["message"]) ?? ""
+        let action = Parse.string(node["action"]) ?? ""
+        // Sent is not done: while the farm re-reads the controller, stay locked.
+        if ok, Parse.bool(node["confirming"]) == true {
+            irrigationConfirming = true
+            return
+        }
+        irrigationPending = nil
+        irrigationConfirming = false
+        irrigationTask?.cancel()
         if ok {
-            let action = Parse.string(node["action"]) ?? ""
-            show(.ok, action == "stop" ? "Stop sent to the controller."
-                 : "Sent: \(Parse.string(node["valves"]) ?? "valves") for \(Parse.string(node["minutes"]) ?? "?") min.")
+            let verified = Parse.bool(node["verified"])
+            let what = action == "stop" ? "Stopped"
+                : "\(Parse.string(node["valves"]) ?? "Valves") running for \(Parse.string(node["minutes"]) ?? "?") min"
+            if verified == false {
+                show(.err, "Sent, but the controller has not confirmed it after 2 minutes. Check it before trying again.")
+            } else {
+                // A result from an older farm build carries no `verified`: it
+                // was sent, not confirmed, so do not claim more than that.
+                show(.ok, verified == true ? "Confirmed: \(what)." : (action == "stop" ? "Stop sent to the controller." : "Sent: \(what)."))
+            }
             // Let the controller act, then ask it what it is doing.
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(20))

@@ -175,7 +175,8 @@ def _status(store, root: str, ok: bool = False, error: str = "", rtype: str = ""
     region="asia-southeast1",
     secrets=[DCON_TOKEN_ID, DCON_SERIAL, DCON_COMMAND_AUTH, DCON_DEVICE_ID],
     memory=options.MemoryOption.MB_256,
-    timeout_sec=90,
+    # Send, then up to 2 min of confirmation reads (irrigation_control.py).
+    timeout_sec=200,
     # One at a time, ever: this operates valves. The once-only claim in the
     # database covers redelivery; a single instance covers ordering.
     max_instances=1,
