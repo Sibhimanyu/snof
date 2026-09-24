@@ -49,6 +49,11 @@ Architecture and data shape are in README.md.
   active). Stopping or pausing a scheduled program (`@U` slots mean *pause*
   to Mobitech) and starting a program (`ET01-…`) are **not** offered — each
   is a separate decision. The format is in docs/irrigation-control.md.
+  **Armed on 2026-09-24** (add-on 0.10.0, iOS 0.3.0): the four options were
+  merged into the Supervisor options and the log says `Watching irrigation
+  commands (run up to 60 min, stop manual runs) as A8`. `sent` was 0 at
+  arming — the owner's first press is the first command this code sends.
+  Disarm with `allow_irrigation_control: false` (merge, restart).
 - **Unassigned entities do not exist to users** (add-on 0.9.0; since 0.9.2
   the owner's rule is "only devices with assigned rooms" — the entity's
   *device* must be in a room; an entity-level area alone does not count). An
