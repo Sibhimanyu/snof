@@ -25,7 +25,7 @@ const BAD_STATES = new Set(['unavailable', 'unknown']);
 const el = (id) => document.getElementById(id);
 const humanDomain = (d) => String(d).replace(/_/g, ' ');
 
-let state = { meta: {}, areas: {}, entities: {}, irrigation: {}, irrigation_reports: {}, acl: {} };
+let state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, irrigation_reports: {}, acl: {} };
 let canControl = false;
 let isAdmin = false;
 let aclRef = null;
@@ -33,6 +33,7 @@ let currentUser = null;
 let search = '';
 let domainFilter = null;
 let statusFilter = 'all';   // all | active | offline
+const openDevices = new Set();   // device ids expanded on All devices
 let refs = [];
 let clockSkewMs = 0;
 let statusTimer = null;
@@ -47,23 +48,30 @@ let viewDirty = false;
 
 /* ================= theme ================= */
 
+/* Light is the default look; dark is its complement. With no stored choice
+ * the page follows the OS, and keeps following it if the OS flips at dusk. */
+const isDark = () => document.documentElement.matches('[data-theme=dark]') ||
+  (!document.documentElement.hasAttribute('data-theme') &&
+   window.matchMedia('(prefers-color-scheme: dark)').matches);
 const applyTheme = (t) => {
   if (t) document.documentElement.setAttribute('data-theme', t);
   else document.documentElement.removeAttribute('data-theme');
-  const dark = t ? t === 'dark'
-    : !window.matchMedia('(prefers-color-scheme: light)').matches;
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#111111' : '#f4f4f3');
+  const dark = isDark();
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#121819' : '#ffffff');
+  const label = el('theme-menu-text');
+  if (label) label.textContent = dark ? 'Switch to light theme' : 'Switch to dark theme';
 };
 applyTheme(localStorage.getItem('snof-theme'));
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () =>
+  applyTheme(localStorage.getItem('snof-theme')));
 
-el('theme-btn').onclick = () => {
-  const dark = !document.documentElement.matches('[data-theme=light]') &&
-    (document.documentElement.matches('[data-theme=dark]') ||
-     !window.matchMedia('(prefers-color-scheme: light)').matches);
-  const next = dark ? 'light' : 'dark';
+const flipTheme = () => {
+  const next = isDark() ? 'light' : 'dark';
   localStorage.setItem('snof-theme', next);
   applyTheme(next);
 };
+el('theme-btn').onclick = flipTheme;
+el('theme-menu').onclick = flipTheme;
 
 /* ================= auth ================= */
 
@@ -77,7 +85,6 @@ el('signin').onclick = () => {
   });
 };
 const doSignOut = () => firebase.auth().signOut();
-el('signout').onclick = doSignOut;
 el('signout-menu').onclick = doSignOut;
 el('signout-gate').onclick = doSignOut;
 
@@ -91,7 +98,7 @@ function leave() {
   detach();
   irrWaiters.forEach(({ ref, cb, timer }) => { clearTimeout(timer); ref.off('value', cb); });
   irrWaiters.clear();
-  state = { meta: {}, areas: {}, entities: {}, irrigation: {}, acl: {} };
+  state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, acl: {} };
   canControl = false; isAdmin = false; aclRef = null; currentUser = null; firstSnapshot = false;
   statusFilter = 'all'; domainFilter = null;
   interacting = false; viewDirty = false;
@@ -137,7 +144,11 @@ function enter(user) {
   currentUser = user;
   setView('app');
   const name = user.displayName || (user.email || '').split('@')[0] || 'Signed in';
-  el('acct-name').textContent = name;
+  // "Sibhi Govindasamy" -> "Sibhi G.": the bar has room for a name, not a
+  // full one; the menu shows it whole.
+  const parts = name.trim().split(/\s+/);
+  el('acct-name').textContent = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : name;
+  el('acct-full').textContent = name;
   el('acct-initial').textContent = (name[0] || '·');
   el('acct-email').textContent = user.email || '';
 
@@ -217,6 +228,7 @@ function enter(user) {
   };
   watch('meta', 'meta');
   watch('areas', 'areas');
+  watch('devices', 'devices');
   watch('entities', 'entities');
   // The irrigation cache is whatever the last report left behind; the
   // reports list is the last 20 results, newest last from RTDB.
@@ -257,6 +269,23 @@ function flatEntities() {
 }
 
 const areaName = (id) => state.areas?.[id]?.name || id;
+
+/* The farm thinks in devices — "the printer is off" — while Home Assistant
+ * reports entities, dozens per device. Group back into devices for anything
+ * that counts. An entity without a device id (an older bridge) stands alone. */
+function byDevice(ents) {
+  const map = new Map();
+  for (const e of ents) {
+    const id = e.device || e.key;
+    if (!map.has(id)) map.set(id, { id, name: state.devices?.[e.device]?.name || e.name || e.key, area: e.area, ents: [] });
+    map.get(id).ents.push(e);
+  }
+  return [...map.values()];
+}
+/** A device is offline when nothing on it is reporting, and active when
+ *  anything on it is on, open or running. */
+const deviceOffline = (d) => d.ents.every(isBad);
+const deviceActive = (d) => d.ents.some(isOn);
 const isOn = (e) => ON_STATES.has(e.state);
 const isBad = (e) => e.state == null || e.state === '' || BAD_STATES.has(e.state);
 
@@ -363,17 +392,16 @@ const route = () => {
   const [, head, arg] = h.match(/^\/([^/]*)\/?(.*)$/) || [, '', ''];
   return { name: head || 'overview', arg: decodeURIComponent(arg || '') };
 };
-window.addEventListener('hashchange', () => { render(); el('view').focus(); closeNav(); });
+window.addEventListener('hashchange', () => { render(); el('view').focus(); window.scrollTo(0, 0); closeMenu(); });
 
 /* ================= chrome ================= */
 
 el('search').oninput = (e) => { search = e.target.value.trim().toLowerCase(); render(); };
 
-const openNav = () => { document.body.classList.add('nav-open'); el('scrim').hidden = false; };
-const closeNav = () => { document.body.classList.remove('nav-open'); el('scrim').hidden = true; };
-el('nav-open').onclick = openNav;
-el('nav-close').onclick = closeNav;
-el('scrim').onclick = closeNav;
+const closeMenu = () => {
+  el('acct-menu').hidden = true;
+  el('acct-btn').setAttribute('aria-expanded', 'false');
+};
 
 el('acct-btn').onclick = (e) => {
   e.stopPropagation();
@@ -381,18 +409,9 @@ el('acct-btn').onclick = (e) => {
   el('acct-menu').hidden = !open;
   el('acct-btn').setAttribute('aria-expanded', String(open));
 };
-document.addEventListener('click', () => {
-  if (!el('acct-menu').hidden) {
-    el('acct-menu').hidden = true;
-    el('acct-btn').setAttribute('aria-expanded', 'false');
-  }
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  closeNav();
-  el('acct-menu').hidden = true;
-  el('acct-btn').setAttribute('aria-expanded', 'false');
-});
+el('acct-menu').onclick = (e) => e.stopPropagation();
+document.addEventListener('click', () => { if (!el('acct-menu').hidden) closeMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
 /* ================= render ================= */
 
@@ -428,18 +447,16 @@ function render() {
 
   const farmName = state.meta?.name || 'SNOF';
   document.title = `${farmName} · Live`;
-  document.querySelector('.side-brand-sub').textContent =
+  el('brand-sub').textContent =
     farmName.replace(/^Sibhi\s*/i, '').replace(/\s*and Farms$/i, '') || 'Live farm state';
+  // The search bar lives outside #view and shows only where it filters.
+  document.body.dataset.route = r.name;
 
   const areas = groupByArea(all);
-  el('nav-areas-n').textContent = areas.length || '';
-  el('nav-devices-n').textContent = all.length || '';
-  el('nav-irrig-n').textContent = irrigRunning() || '';
   document.querySelectorAll('.nav-admin').forEach((n) => { n.hidden = !isAdmin; });
   document.querySelectorAll('[data-nav]').forEach((n) =>
     n.classList.toggle('on', n.dataset.nav === (r.name === 'area' ? 'areas' : r.name)));
 
-  renderBridgeStatus();
   reconcilePending(all);
 
   // Chrome above stays live regardless; only the view body is held back.
@@ -454,15 +471,17 @@ function render() {
     else if (r.name === 'devices') view.innerHTML = devicesView(all);
     else if (r.name === 'irrigation') view.innerHTML = irrigationView();
     else if (r.name === 'admin') view.innerHTML = isAdmin ? adminView()
-      : head('Admin', 'Grant or revoke dashboard access.') +
+      : head('Admin', 'Grant or revoke dashboard access.', '', 'Access') +
         emptyBlock('Admins only', 'Your account does not have admin access.');
     else view.innerHTML = overviewView(all, areas);
     wire(all);
     restoreFocus(token);
   }
+  // After the view: the overview's own bridge pill is inside it.
+  renderBridgeStatus();
 
   el('stats').textContent = all.length
-    ? `${all.length} entities · ${areas.length} areas · updated ${new Date().toLocaleTimeString()}`
+    ? `${byDevice(all).length} devices · ${areas.length} areas · ${all.length} readings · updated ${new Date().toLocaleTimeString()}`
     : 'Waiting for the bridge to publish its first snapshot…';
 
   flashChanged(all);
@@ -470,110 +489,209 @@ function render() {
 
 /* ---- views ---- */
 
-const head = (title, sub, right = '') =>
-  `<div class="page-head"><div><h1 class="page-title">${escapeHtml(title)}</h1>` +
-  `<p class="page-sub">${escapeHtml(sub)}</p></div><div class="spacer"></div>${right}</div>`;
+/* Every page opens the same way: an uppercase eyebrow that says where you
+ * are, a large title, one line of context, and anything page-level on the
+ * right. */
+const head = (title, sub, right = '', eyebrow = '') =>
+  `<div class="page-head"><div class="page-head-text">` +
+  (eyebrow ? (eyebrow.startsWith('<') ? eyebrow : `<p class="eyebrow">${escapeHtml(eyebrow)}</p>`) : '') +
+  `<h1 class="page-title">${escapeHtml(title)}</h1>` +
+  (sub ? `<p class="page-sub">${escapeHtml(sub)}</p>` : '') +
+  `</div><div class="spacer"></div>${right}</div>`;
 
-const sectionHead = (symbol, title, link = null) =>
-  `<div class="section-head"><svg viewBox="0 0 24 24" class="ico"><use href="#${symbol}"/></svg>` +
-  `<span class="section-title">${escapeHtml(title)}</span><span class="section-rule"></span>` +
-  (link ? `<a class="section-link" href="${link[0]}">See all <svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-chevron"/></svg></a>` : '') + `</div>`;
+const arrow = (name = 'i-arrow', cls = '') =>
+  `<svg viewBox="0 0 24 24" class="ico${cls ? ' ' + cls : ''}" aria-hidden="true"><use href="#${name}"/></svg>`;
+
+const panelHead = (title, link = null, n = null) =>
+  `<div class="panel-head"><h2 class="panel-title">${escapeHtml(title)}` +
+  (n != null ? `<span class="n">${n}</span>` : '') + `</h2>` +
+  (link ? `<a class="panel-link" href="${link[0]}"${link[2] ? ` ${link[2]}` : ''}>${escapeHtml(link[1])}${arrow()}</a>` : '') +
+  `</div>`;
+
+const sectionHead = (_symbol, title, link = null) =>
+  `<div class="section-head"><span class="section-title">${escapeHtml(title)}</span><span class="section-rule"></span>` +
+  (link ? `<a class="panel-link" href="${link[0]}">See all${arrow()}</a>` : '') + `</div>`;
+
+/** 6 -> "06". Two-digit counts read as a dashboard, and line up. */
+const pad2 = (n) => (n >= 0 && n < 10 ? `0${n}` : String(n));
+const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+const inWords = (n) => (n <= 12 ? WORDS[n] : String(n));
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+const plural = (n, one, many) => (n === 1 ? one : many);
+/** ["Cold Store", "East Orchard", "Barn"] -> "Cold Store, East Orchard and Barn". */
+function listWords(items, max = 2) {
+  if (items.length <= max) return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] || '');
+  const rest = items.length - max;
+  return `${items.slice(0, max).join(', ')} and ${rest} ${plural(rest, 'other', 'others')}`;
+}
+const todayLine = () => new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+  .replace(/^(\w+),?\s/, '$1 · ');
 
 function skeletonView() {
-  return head('Overview', 'Connecting to the farm…') +
-    `<div class="sk-grid">${'<div class="sk-card"></div>'.repeat(8)}</div>`;
+  return head('Your farm, right now.', 'Connecting to the farm…', '', todayLine()) +
+    `<div class="sk-grid">${'<div class="sk-card"></div>'.repeat(6)}</div>`;
 }
 
-function statTiles(ents) {
-  const on = ents.filter(isOn).length;
-  const bad = ents.filter(isBad).length;
-  const areas = new Set(ents.map((e) => e.area)).size;
-  // "698 live entities" is a lie when 373 of them are not reporting. Lead with
-  // how many are actually answering, and keep the total as context.
-  return `<div class="stats">
-    <div class="stat"><span class="stat-label">Reporting</span>
-      <span class="stat-value">${ents.length - bad}</span>
-      <span class="stat-note">of ${ents.length} mirrored entities</span></div>
-    <div class="stat"><span class="stat-label">Areas</span>
-      <span class="stat-value">${areas}</span><span class="stat-note">rooms and zones</span></div>
-    <div class="stat stat-on"><span class="stat-label">Active now</span>
-      <span class="stat-value">${on}</span><span class="stat-note">on, open or running</span></div>
-    <div class="stat stat-bad${bad ? '' : ' is-clear'}"><span class="stat-label">Needs a look</span>
-      <span class="stat-value">${bad}</span><span class="stat-note">${bad ? 'unavailable or unknown' : 'everything reporting'}</span></div>
-  </div>`;
+/** Rooms with anything not reporting, worst first. */
+function troubledAreas(devices) {
+  const tally = new Map();
+  for (const d of devices) if (deviceOffline(d)) tally.set(d.area, (tally.get(d.area) || 0) + 1);
+  return [...tally.entries()].sort((a, b) => b[1] - a[1] ||
+    areaName(a[0]).localeCompare(areaName(b[0]), undefined, NATURAL)).map(([id]) => id);
+}
+
+/* The farm pulse: one sentence a person would say, then the numbers behind
+ * it. Honest before reassuring — a bridge gone quiet outranks everything,
+ * and "most areas are running normally" is only said when it is true. */
+function pulsePanel(devices, areaCount) {
+  const n = devices.length;
+  const bad = devices.filter(deviceOffline).length;
+  const on = devices.filter(deviceActive).length;
+  const where = listWords(troubledAreas(devices).map(areaName));
+  const b = bridgeStatus();
+  let title, body, quiet = false;
+  if (b.cls === 'pill-stale' || b.cls === 'pill-offline') {
+    quiet = true;
+    title = 'The bridge has gone quiet.';
+    body = b.cls === 'pill-offline'
+      ? 'The farm bridge reported itself offline. What you see is the last state it sent.'
+      : `Nothing has arrived from the farm for ${humanAge(b.ageSec)}. What you see may be out of date.`;
+  } else if (!n) {
+    title = 'Waiting for the first devices.';
+    body = 'Assign devices to rooms in Home Assistant and they will appear here.';
+  } else if (!bad) {
+    title = 'Everything is reporting.';
+    body = `All ${n} ${plural(n, 'device', 'devices')} across ${areaCount} ${plural(areaCount, 'area', 'areas')} are answering` +
+      (on ? `, and ${inWords(on)} ${plural(on, 'is', 'are')} on right now.` : '.');
+  } else if (bad / n <= 0.25) {
+    title = 'Most areas are running normally.';
+    body = `${n - bad} of ${n} devices are reporting. ${cap(inWords(bad))} ${plural(bad, 'needs', 'need')} a closer look in ${where}.`;
+  } else if (bad / n <= 0.5) {
+    title = 'A few devices need a look.';
+    body = `${n - bad} of ${n} devices are reporting. ${cap(inWords(bad))} are offline, in ${where}.`;
+  } else {
+    title = 'Much of the farm is quiet.';
+    body = `Only ${n - bad} of ${n} devices are reporting. ${cap(inWords(bad))} are offline, most of them in ${where}.`;
+  }
+  return `<section class="pulse${quiet ? ' is-quiet' : ''}" aria-label="Farm pulse">
+    <div><p class="eyebrow">Farm pulse</p><h2 class="pulse-title">${escapeHtml(title)}</h2>
+      <p class="pulse-body">${escapeHtml(body)}</p></div>
+    <div class="pulse-fig"><span class="pulse-n">${pad2(areaCount)}</span>
+      <span class="eyebrow">${plural(areaCount, 'Area', 'Areas')}</span></div>
+  </section>`;
+}
+
+function statTiles(devices) {
+  // Counted in devices, not entities: one switched-off printer is one thing to
+  // look at, not 67. A device with some entities still answering is reporting.
+  const on = devices.filter(deviceActive).length;
+  const bad = devices.filter(deviceOffline).length;
+  const tile = (value, label, status, cls = '', of = '') =>
+    `<a class="stat ${cls}" href="#/devices" data-act="filter" data-status="${status}">` +
+    `<span class="stat-value">${value}${of}</span><span class="stat-label">${label}</span></a>`;
+  return `<div class="stats">` +
+    tile(pad2(devices.length - bad), 'Reporting', 'active', '', `<span class="stat-of">/${pad2(devices.length)}</span>`) +
+    tile(pad2(on), 'Active now', 'active', 'stat-on') +
+    tile(pad2(bad), 'Unavailable', 'offline', bad ? 'stat-bad' : '') +
+    `</div>`;
+}
+
+/** Which devices are down, and where — a to-do list, not an entity count. */
+function attentionCard(devices) {
+  const troubled = devices.filter((d) => d.ents.some(isBad));
+  const dead = troubled.filter(deviceOffline);
+  if (!dead.length) {
+    const partly = troubled.length;
+    return `<section class="panel att is-clear" aria-label="Attention">
+      <div class="att-top"><span class="att-n">00</span><div>
+        <p class="att-title">Every device is reporting</p>
+        <p class="att-sub"><span>${partly ? `${inWords(partly)} ${plural(partly, 'is', 'are')} partly reporting` : 'Nothing needs a look right now.'}</span></p>
+      </div></div></section>`;
+  }
+  const rooms = troubledAreas(devices).map(areaName);
+  const rows = troubled.map((d) => ({ ...d, bad: d.ents.filter(isBad).length }))
+    .sort((a, b) => (deviceOffline(b) - deviceOffline(a)) || (b.bad - a.bad) ||
+                    a.name.localeCompare(b.name, undefined, NATURAL));
+  const shown = rows.slice(0, 4);
+  return `<section class="panel att" aria-label="Attention">
+    <div class="att-top"><span class="att-n">${pad2(dead.length)}</span><div>
+      <p class="att-title">${plural(dead.length, 'Device needs', 'Devices need')} attention</p>
+      <a class="att-sub" href="#/devices" data-act="filter" data-status="offline">
+        <span>${escapeHtml(rooms.slice(0, 2).join(' · ') + (rooms.length > 2 ? ` · +${rooms.length - 2}` : ''))}</span>${arrow()}</a>
+    </div></div>
+    <div class="att-list">` + shown.map((d) => `
+      <a class="att-row" href="#/area/${encodeURIComponent(d.area)}">
+        <span class="att-main"><span class="att-name">${escapeHtml(d.name)}</span>
+          <span class="att-meta">${escapeHtml(areaName(d.area))}</span></span>
+        <span class="tag ${deviceOffline(d) ? 'tag-bad' : 'tag-warn'}">${deviceOffline(d) ? 'Offline' : `${d.bad} of ${d.ents.length} down`}</span>
+      </a>`).join('') + `</div>` +
+    (rows.length > shown.length
+      ? `<a class="att-more" href="#/devices" data-act="filter" data-status="offline">` +
+        `<span>${rows.length - shown.length} more not reporting</span>${arrow()}</a>` : '') +
+    `</section>`;
+}
+
+function quickControls(all) {
+  // An unavailable device in a *control* panel is a dead switch. They belong in
+  // the attention list, never here.
+  const operable = all.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
+  const quick = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 8);
+  const controllableTotal = all.filter((e) => CONTROLLABLE.has(e.domain)).length;
+  const more = operable.length - quick.length;
+  const body = quick.length
+    ? `<div class="dev-list">${quick.map((e) => deviceCard(e, 'quick')).join('')}</div>` +
+      (more > 0 ? `<a class="qc-more" href="#/devices" data-act="filter" data-status="active">` +
+        `<span>${more} more operable ${plural(more, 'device', 'devices')}</span>${arrow()}</a>` : '')
+    : emptyBlock('Nothing to operate right now',
+        controllableTotal
+          ? `All ${controllableTotal} switches, lights and fans are currently unavailable.`
+          : 'No switches, lights or fans are in a room yet.');
+  return `<section class="panel qc" aria-label="Quick controls">` +
+    panelHead(canControl ? 'Quick controls' : 'Controllable devices', ['#/devices', 'All devices']) +
+    controlNote() + body + `</section>`;
 }
 
 function overviewView(all, areas) {
-  // An unavailable device in a *control* panel is a dead switch. They belong in
-  // the breakdown below, never here.
-  const operable = all.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
-  const quick = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 8);
-  const offline = all.filter(isBad);
-  const controllableTotal = all.filter((e) => CONTROLLABLE.has(e.domain)).length;
+  const devices = byDevice(all);
+  const b = bridgeStatus();
+  const pill = `<span id="head-bridge" class="pill pill-head ${b.cls}" role="status">` +
+    `<span class="dot"></span><span id="head-bridge-text">${escapeHtml(b.long)}</span></span>`;
+  const cards = areas.slice(0, 6).map(([id, list]) => areaCard(id, list)).join('');
+  const areasPanel = `<section class="panel ov-areas" aria-label="Areas at a glance">` +
+    panelHead('Areas at a glance', ['#/areas', areas.length > 6 ? `View all ${areas.length} areas` : 'View all areas']) +
+    (cards ? `<div class="panel-body"><div class="grid">${cards}</div></div>`
+           : emptyBlock('No areas yet', 'Assign devices to an area in Home Assistant and they will group themselves here.')) +
+    `</section>`;
 
-  const areaCards = areas.slice(0, 8).map(([id, list]) => areaCard(id, list)).join('');
-  const more = operable.length - quick.length;
-
-  return head(state.meta?.name || 'SNOF', 'Everything the farm is doing, right now.') +
-    statTiles(all) +
-    sectionHead('i-switch', canControl ? 'Quick controls' : 'Controllable devices', ['#/devices']) +
-    controlNote() +
-    (quick.length
-      ? `<div class="dev-grid">${quick.map(deviceCard).join('')}</div>` +
-        (more > 0 ? `<p class="more-note">${more} more operable ${more === 1 ? 'device' : 'devices'} — ` +
-          `<a href="#/devices" data-act="filter" data-status="active">see all</a></p>` : '')
-      : emptyBlock('Nothing to operate right now',
-          controllableTotal
-            ? `All ${controllableTotal} switches, lights and fans are currently unavailable.`
-            : 'No switches, lights or fans are exposed by Home Assistant yet.')) +
-    (offline.length ? sectionHead('i-alert', 'Not reporting', ['#/devices']) + offlineBreakdown(offline) : '') +
-    sectionHead('n-areas', 'Areas', ['#/areas']) +
-    (areaCards ? `<div class="grid">${areaCards}</div>`
-               : emptyBlock('No areas yet', 'Assign entities to an area in Home Assistant and they will group themselves here.'));
-}
-
-/** 373 unavailable entities listed alphabetically is noise. Grouped by domain it
- *  is a to-do list: which integration died, and how much of it. */
-function offlineBreakdown(offline) {
-  const tally = new Map();
-  for (const e of offline) tally.set(e.domain, (tally.get(e.domain) || 0) + 1);
-  const rows = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const total = offline.length;
-  return `<p class="more-note">${total} ${total === 1 ? 'entity is' : 'entities are'} ` +
-    `unavailable or unknown. Most likely a handful of integrations, not ${total} separate faults.</p>` +
-    `<div class="breakdown">` + rows.map(([domain, n]) => `
-      <button class="brk" data-act="filter" data-status="offline" data-domain="${escapeHtml(domain)}">
-        <span class="brk-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-${iconName(domain)}"/></svg></span>
-        <span class="brk-text">
-          <span class="brk-name">${escapeHtml(humanDomain(domain))}</span>
-          <span class="brk-sub">not reporting</span>
-        </span>
-        <span class="brk-n">${n}</span>
-      </button>`).join('') + `</div>`;
+  return head('Your farm, right now.', '', pill, todayLine()) +
+    `<div class="ov">
+      <div class="ov-main">${pulsePanel(devices, areas.length)}${statTiles(devices)}${areasPanel}</div>
+      <div class="ov-side">${attentionCard(devices)}${quickControls(all)}</div>
+    </div>`;
 }
 
 function areasView(all) {
   const areas = groupByArea(all.filter(matches));
-  if (!areas.length) return head('Areas', 'Nothing matches that search.') + noMatch();
-  return head('Areas', `${areas.length} areas · ${all.length} entities`) +
+  if (!areas.length) return head('Areas', 'Nothing matches that search.', '', 'Rooms and zones') + noMatch();
+  const devices = byDevice(all);
+  const bad = devices.filter(deviceOffline).length;
+  return head('Areas', `${areas.length} ${plural(areas.length, 'area', 'areas')} · ${devices.length} devices` +
+      (bad ? ` · ${bad} offline` : ''), '', 'Rooms and zones') +
     `<div class="grid">${areas.map(([id, list]) => areaCard(id, list)).join('')}</div>`;
 }
 
 function areaCard(id, list) {
-  const on = list.filter(isOn).length;
-  const bad = list.filter(isBad).length;
+  // Devices, like the Overview tiles: a room with one switched-off printer has
+  // one thing offline, not 56.
+  const devices = byDevice(list);
+  const on = devices.filter(deviceActive).length;
+  const bad = devices.filter(deviceOffline).length;
   return `<a class="area-card" href="#/area/${encodeURIComponent(id)}">
-    <div class="area-top">
-      <span class="area-icon"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconForArea(list)}"/></svg></span>
-      <svg viewBox="0 0 24 24" class="ico ico-chevron"><use href="#i-chevron"/></svg>
-    </div>
-    <div>
-      <div class="area-name">${escapeHtml(areaName(id))}</div>
-      <div class="area-meta">
-        <span class="area-count">${list.length} ${list.length === 1 ? 'device' : 'devices'}</span>
-        ${on ? `<span class="tag tag-on">${on} active</span>` : ''}
-        ${bad ? `<span class="tag tag-bad">${bad} offline</span>` : ''}
-      </div>
+    <div class="area-top"><span class="area-name">${escapeHtml(areaName(id))}</span>${arrow('i-arrow-ne', 'area-arrow')}</div>
+    <span class="area-count">${devices.length} ${plural(devices.length, 'device', 'devices')}</span>
+    <div class="area-meta">
+      ${on ? `<span class="on">${on} active</span>` : `<span class="quiet">Nothing on</span>`}
+      ${bad ? `<span class="bad">${bad} unavailable</span>` : `<span class="on">All reporting</span>`}
     </div>
   </a>`;
 }
@@ -581,23 +699,24 @@ function areaCard(id, list) {
 function areaView(all, id) {
   const inArea = all.filter((e) => e.area === id);
   const list = inArea.filter(matches);
-  const back = `<a class="back" href="#/areas"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-back"/></svg>All areas</a>`;
+  const back = `<a class="back" href="#/areas">${arrow('i-back')}All areas</a>`;
   // Not a room (an old #/area/unassigned bookmark, or a deleted area): say
   // nothing about what might have been there.
   if (!state.areas?.[id]) {
-    return head('Area not found', '', back) +
+    return head('Area not found', '', '', back) +
       emptyBlock('No such area', 'It may have been removed or renamed in Home Assistant.');
   }
   if (!list.length) {
     // An area that is empty and an area whose contents the search hid are
     // different problems, and only one of them is the user's to fix.
     return inArea.length
-      ? head(areaName(id), 'Nothing here matches that search.', back) + noMatch()
-      : head(areaName(id), 'No devices here yet.', back) +
-        emptyBlock('This area is empty',
-                   'Nothing in Home Assistant is assigned to this area yet.');
+      ? head(areaName(id), 'Nothing here matches that search.', '', back) + noMatch()
+      : head(areaName(id), 'No devices here yet.', '', back) +
+        emptyBlock('This area is empty', 'Nothing in Home Assistant is assigned to this area yet.');
   }
-  const on = list.filter(isOn).length;
+  const devices = byDevice(inArea);
+  const on = devices.filter(deviceActive).length;
+  const bad = devices.filter(deviceOffline).length;
   const byDomain = new Map();
   for (const e of list) {
     if (!byDomain.has(e.domain)) byDomain.set(e.domain, []);
@@ -608,30 +727,39 @@ function areaView(all, id) {
     const ca = CONTROLLABLE.has(a) ? 0 : 1, cb = CONTROLLABLE.has(b) ? 0 : 1;
     return ca - cb || a.localeCompare(b);
   });
+  const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')} · ${on} active` + (bad ? ` · ${bad} unavailable` : '');
 
-  return head(areaName(id), `${list.length} devices · ${on} active`, back) +
-    controlNote() +
+  return head(areaName(id), sub, '', back) +
+    (canControl && !bridgeGate('control').ok ? controlNote() : '') +
     order.map((d) => {
       const items = byDomain.get(d).sort(byName);
-      return sectionHead(`i-${iconName(d)}`, humanDomain(d)) + (CONTROLLABLE.has(d)
-        ? `<div class="dev-grid">${items.map(deviceCard).join('')}</div>`
-        : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map(row).join('')}</div>`);
+      const title = cap(humanDomain(d));
+      return `<section class="panel area-sec">` + panelHead(title, null, items.length) + (CONTROLLABLE.has(d)
+        ? `<div class="dev-list${items.length > 8 ? ' cols' : ''}">${items.map((e) => deviceCard(e, 'area')).join('')}</div>`
+        : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e)).join('')}</div>`) +
+        `</section>`;
     }).join('');
 }
 
+/* All devices is a list of devices, not of the hundreds of readings they
+ * publish: a printer is one line with a status, and opens to show its 67
+ * readings. Filters and search still work on readings; a device appears when
+ * any of its readings match, and opens itself when a filter is doing the
+ * choosing, so what matched is visible without a click. */
 function devicesView(all) {
   const byStatus = (e) => statusFilter === 'all' ? true
     : statusFilter === 'active' ? !isBad(e) : isBad(e);
   const scoped = all.filter(byStatus);
   const domains = [...new Set(scoped.map((e) => e.domain))].sort();
   const list = scoped.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
+  const groups = byDevice(list).sort((a, b) => a.name.localeCompare(b.name, undefined, NATURAL));
 
-  const counts = { all: all.length, active: all.filter((e) => !isBad(e)).length,
-                   offline: all.filter(isBad).length };
+  const counts = { all: byDevice(all).length, active: byDevice(all.filter((e) => !isBad(e))).length,
+                   offline: byDevice(all.filter(isBad)).length };
   const seg = `<div class="seg" role="group" aria-label="Filter by status">` +
     [['all', 'All'], ['active', 'Reporting'], ['offline', 'Not reporting']].map(([k, label]) =>
       `<button data-act="status" data-status="${k}" aria-pressed="${statusFilter === k}">` +
-      `${label} <span class="n">${counts[k]}</span></button>`).join('') + `</div>`;
+      `${label}<span class="n">${counts[k]}</span></button>`).join('') + `</div>`;
 
   const chips = domains.length > 1 ? `<div class="chips">` + domains.map((d) => {
     const n = scoped.filter((e) => e.domain === d).length;
@@ -639,10 +767,31 @@ function devicesView(all) {
       `data-domain="${escapeHtml(d)}">${escapeHtml(humanDomain(d))}<span class="n">${n}</span></button>`;
   }).join('') + `</div>` : '';
 
-  return head('All devices', `${list.length} shown of ${all.length} entities`) +
+  const filtering = !!(search || domainFilter || statusFilter === 'offline');
+  const full = new Map(byDevice(all).map((d) => [d.id, d]));
+  const body = groups.map((g) => {
+    // No device id (an older bridge, or the synthetic fixture): a plain row.
+    if (g.id === g.ents[0].key && !g.ents[0].device) return `<div class="list dgroup-solo">${row(g.ents[0], true)}</div>`;
+    const whole = full.get(g.id) || g;
+    const down = whole.ents.filter(isBad).length;
+    const open = filtering || openDevices.has(g.id);
+    const status = down === 0 ? `<span class="tag tag-on">All reporting</span>`
+      : down === whole.ents.length ? `<span class="tag tag-bad">Offline</span>`
+      : `<span class="tag tag-warn">${down} of ${whole.ents.length} down</span>`;
+    const shownNote = g.ents.length !== whole.ents.length ? `${g.ents.length} of ${whole.ents.length} readings` : `${whole.ents.length} ${plural(whole.ents.length, 'reading', 'readings')}`;
+    return `<section class="dgroup${open ? ' open' : ''}">
+      <button class="dgroup-head" data-act="dev-open" data-dev="${escapeHtml(g.id)}" aria-expanded="${open}">
+        <span class="dgroup-main"><span class="dgroup-name">${escapeHtml(g.name)}</span>
+          <span class="dgroup-meta">${escapeHtml(areaName(g.area))} · ${shownNote}</span></span>
+        ${status}${arrow('i-chevron', 'dgroup-chev')}
+      </button>
+      ${open ? `<div class="dgroup-body">${g.ents.map((e) => row(e)).join('')}</div>` : ''}
+    </section>`;
+  }).join('');
+
+  return head('All devices', `${counts.all} ${plural(counts.all, 'device', 'devices')} · ${all.length} readings`, '', 'Everything in a room') +
     `<div class="toolbar-row">${seg}</div>` + chips +
-    (list.length ? `<div class="list${list.length > 8 ? ' cols' : ''}">${list.map((e) => row(e, true)).join('')}</div>`
-                 : noMatch());
+    (groups.length ? `<div class="dgroups">${body}</div>` : noMatch());
 }
 
 /* ---- irrigation (vendor motor/valve mirror, read-only) ---- */
@@ -1266,7 +1415,7 @@ function irrigationView() {
             irrigStatusTag(v.status), valveArt(v.name, v.type, v.status))).join('') + `</div>` : '')
     : '';
 
-  return head('Irrigation', 'Build a report from the irrigation controller.') +
+  return head('Irrigation', 'Build a report from the irrigation controller.', '', 'Mobitech DCON') +
     sectionHead('n-irrigation', 'Generate report') + builder + repsSec + cacheSec +
     `<p class="more-note">Read-only pulls — this page cannot operate pumps or valves.</p>`;
 }
@@ -1440,7 +1589,7 @@ function adminView() {
     ? `<div class="list">${rows.join('')}</div>`
     : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
 
-  return head('Admin', 'Add people and grant or revoke dashboard access.') +
+  return head('Admin', 'Add people and grant or revoke dashboard access.', '', 'Access') +
     sectionHead('n-admin', 'Add a person') + addForm +
     sectionHead('n-admin', 'People') + list +
     `<p class="more-note">Admin status is granted from the command line ` +
@@ -1458,36 +1607,42 @@ function controlNote() {
   return gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`;
 }
 
-function deviceCard(ent) {
+/* One operable device as a row. `quick` (Overview) says where it is; `area`
+ * (inside a room) already knows where, so it says what state it is in. */
+function deviceCard(ent, mode = 'area') {
   const want = pending.get(ent.key)?.want;
   const on = want ? want === 'on' : isOn(ent);
   const bad = isBad(ent);
   const level = levelOf(ent);
   const cls = bad ? 'is-bad' : on ? 'is-on' : '';
   const canOperate = canControl && !bad && bridgeGate('control').ok;
+  const name = ent.name || ent.entity_id;
+  const lvl = level !== null && !bad && on ? ` · ${level}%` : '';
+  // Inside a room the toggle already shows on or off; the words add what the
+  // toggle cannot: for how long.
+  const since = sinceText(ent);
+  const meta = mode === 'quick'
+    ? `${areaName(ent.area)}${lvl}`
+    : bad ? `Not reporting${since ? ` for ${since}` : ''}`
+      : `${on ? 'On' : 'Off'}${since ? ` for ${since}` : ''}${lvl}`;
 
   return `<div class="dev-card ${cls}" data-key="${escapeHtml(ent.key)}">
     <div class="dev-top">
-      <span class="dev-icon"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconFor(ent)}"/></svg></span>
       <span class="dev-text">
-        <span class="dev-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
-        <span class="dev-meta">${escapeHtml(humanDomain(ent.domain))}${subtitle(ent)}</span>
+        <span class="dev-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        <span class="dev-meta">${escapeHtml(meta)}</span>
       </span>
       ${canControl
         ? `<button class="toggle${want ? ' busy' : ''}" role="switch" aria-checked="${on}" ` +
-          `aria-label="${escapeHtml(ent.name || ent.entity_id)}" data-act="toggle"${canOperate ? '' : ' disabled'}></button>`
+          `aria-label="${escapeHtml(name)}" data-act="toggle"${canOperate ? '' : ' disabled'}></button>`
         : `<span class="dev-state ${stateClass(ent)}">${escapeHtml(formatState(ent))}</span>`}
     </div>
-    ${level !== null && canControl ? `<div class="ctl-row">
+    ${level !== null && canControl && mode === 'area' ? `<div class="ctl-row">
       <span class="ctl-label">${ent.domain === 'fan' ? 'Speed' : 'Bright'}</span>
       <input type="range" min="0" max="100" step="1" value="${level}" style="--fill:${level}%"
-             aria-label="${escapeHtml(ent.name || '')} level" data-act="level"${canOperate ? '' : ' disabled'}>
+             aria-label="${escapeHtml(name)} level" data-act="level"${canOperate ? '' : ' disabled'}>
       <span class="ctl-val">${level}%</span>
     </div>` : ''}
-    <div class="dev-foot">
-      <span>${escapeHtml(areaName(ent.area))}</span>
-      ${canControl ? `<span>${escapeHtml(formatState(ent))}</span>` : ''}
-    </div>
   </div>`;
 }
 
@@ -1537,6 +1692,14 @@ function wire(all) {
     input.onpointercancel = endInteract;
     input.onkeyup = endInteract;
     input.onblur = endInteract;
+  });
+
+  view.querySelectorAll('[data-act="dev-open"]').forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset.dev;
+      if (openDevices.has(id)) openDevices.delete(id); else openDevices.add(id);
+      render();
+    };
   });
 
   view.querySelectorAll('[data-act="status"]').forEach((btn) => {
@@ -1617,6 +1780,16 @@ function iconForArea(list) {
   return best ? iconName(best) : 'default';
 }
 
+/** "3h" since the entity last changed state, or '' if unknown. */
+function sinceText(ent) {
+  const t = Date.parse(ent.lastChanged || '');
+  if (!Number.isFinite(t)) return '';
+  const sec = (Date.now() + clockSkewMs - t) / 1000;
+  if (sec < 0) return '';
+  if (sec >= 172800) return `${Math.round(sec / 86400)} days`;
+  return humanAge(sec);
+}
+
 function subtitle(ent) {
   const a = ent.attrs || {};
   const bits = [];
@@ -1650,24 +1823,28 @@ function stateClass(ent) {
   return '';
 }
 
-function renderBridgeStatus() {
-  const pill = el('bridge-pill'), text = el('bridge-text');
-  const mpill = el('m-bridge'), mtext = el('m-bridge-text');
+/* One bridge state, drawn in two places: the header pill on phones and the
+ * overview's page-head pill on wide screens. Words first, colour second. */
+function bridgeStatus() {
   const hb = state.meta?.bridge;
-  const set = (cls, msg) => {
-    pill.className = 'pill pill-unknown ' + cls;
-    mpill.className = 'pill pill-unknown only-narrow ' + cls;
-    text.textContent = msg; mtext.textContent = msg;
-  };
-
-  if (!hb || !hb.lastSeen) { set('', 'no bridge data'); return; }
-  if (hb.status === 'offline') { set('pill-offline', 'bridge offline'); return; }
-
-  const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
+  if (!hb || !hb.lastSeen) return { cls: '', short: 'Connecting', long: 'No bridge data yet' };
+  if (hb.status === 'offline') return { cls: 'pill-offline', short: 'Offline', long: 'Bridge offline' };
+  const ageSec = Math.max(0, (Date.now() + clockSkewMs - hb.lastSeen) / 1000);
+  const ago = `${humanAge(ageSec)} ago`;
   if (ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    set('pill-stale', `stale ${humanAge(ageSec)}`);
-  } else {
-    set('pill-online', 'live');
+    return { cls: 'pill-stale', short: `Stale · ${ago}`, long: `Bridge stale · ${ago}`, ageSec };
+  }
+  return { cls: 'pill-online', short: `Live · ${ago}`, long: `Bridge live · ${ago}`, ageSec };
+}
+
+function renderBridgeStatus() {
+  const b = bridgeStatus();
+  el('m-bridge').className = `pill pill-unknown only-narrow ${b.cls}`;
+  el('m-bridge-text').textContent = b.short;
+  const head = el('head-bridge');
+  if (head) {
+    head.className = `pill pill-head ${b.cls}`;
+    el('head-bridge-text').textContent = b.long;
   }
 }
 

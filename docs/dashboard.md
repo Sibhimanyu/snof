@@ -70,9 +70,17 @@ explicit empty state if nothing is operable.
 
 ## Shell chrome
 
-- `.sidebar` is the desktop left rail; below 960px it becomes a drawer.
-- `.tabbar` is the mobile bottom navigation (Overview / Areas / Devices /
-  Irrigation / Admin), `display:none` on desktop. Both navs use `data-nav`,
+- `.topbar` is one bar on every width: wordmark, `.topnav` (the five
+  destinations, green underline on the current one), theme button, account.
+  Below 900px `.topnav` hides, the bridge pill `#m-bridge` takes its place,
+  and `.tabbar` (text-only, fixed to the bottom) carries the destinations.
+- The theme switch is in the account menu on every width (`#theme-menu`),
+  plus an icon button on wide screens (`#theme-btn`).
+- `#searchbar` lives **outside** `#view`, because `#view` is rebuilt on every
+  live update and an input inside it would lose focus mid-word. It shows
+  only where it filters (`body[data-route]` = areas, area, devices); on wide
+  screens it sits in the empty right end of the title row.
+- `.tabbar` and `.topnav` both use `data-nav`,
   and the active-state loop in `render()` selects `[data-nav]` — not
   `.nav-item` — so both stay in sync. A new route must be added to both.
 - Admin is the one nav item that is not always shown: both copies carry
@@ -80,13 +88,31 @@ explicit empty state if nothing is operable.
   once `isAdmin` resolves true. The route itself is still guarded
   server-side by RTDB rules, so a hidden link is convenience, not the
   security boundary.
-- The bridge pill exists twice: `#bridge-pill` (sidebar) and `#m-bridge`
-  (topbar, `only-narrow`). `renderBridgeStatus()` sets both; touching one
-  without the other leaves mobile or desktop stale.
-- Section heads take an optional `See all` link (`sectionHead(symbol, title,
-  [href])`) that drills to the full view.
+- The bridge pill exists twice: `#m-bridge` (top bar, phones) and
+  `#head-bridge` (the Overview's page head, wide screens). Both come from
+  `bridgeStatus()`, and `renderBridgeStatus()` runs after every view build
+  and every 5 s so the "· 28s ago" stays true.
+- Pages open with `head(title, sub, right, eyebrow)`; panels with a title row
+  use `panelHead(title, [href, label], count)`.
+
+## The Overview
+
+Left column: the **farm pulse** (`pulsePanel()` — one sentence chosen by how
+much is offline, with the bridge going quiet outranking everything; mirrored
+by `Pulse.summary` in SNOFCore, keep the wording in step), three tiles
+(reporting / active / unavailable devices, each a link into All devices), and
+**Areas at a glance**. Right column: the **attention card** (devices fully
+offline, worst first, each row opening its room) and **Quick controls** (rows,
+never tiles; unavailable devices excluded). Below 900px it is one column in
+the order you need it: attention, pulse, tiles, controls, areas.
+
+**All devices** lists devices, not readings: one line per device with its
+room and status, opening to its readings. A filter or search opens the
+matching devices by itself.
 
 ## Design system
+"Area workspace", chosen by the owner on 2026-09-24 (see DESIGN.md): cool slate,
+white panels, one tinted pulse panel, Manrope, big tabular numerals.
 Near-monochrome, chosen deliberately after a first attempt was rejected as neon.
 Greys carry the layout; colour appears only where it means something — green for
 on, red for unavailable, amber for a stale bridge. A coloured pixel is always
@@ -100,10 +126,11 @@ tones, not green: green is never a background (DESIGN.md).
 Farm illustrations live in `public/art/` (96 px, ~40 KB in total) and are
 picked by `valveArt()`, which mirrors `ios/SNOFCore/.../ValveArt.swift`.
 
-Token pairs live in three blocks at the top of `styles.css`: `:root` (dark),
-the `prefers-color-scheme: light` block for "follow the OS", and
-`:root[data-theme="light"]` for an explicit choice. The light palette is
-duplicated across the last two by necessity — keep them in sync.
+Token pairs live in three blocks at the top of `styles.css`: `:root` (light,
+the "Area workspace" comp), the `prefers-color-scheme: dark` block for
+"follow the OS", and `:root[data-theme="dark"]` for an explicit choice. The
+dark palette is duplicated across the last two by necessity — keep them in
+sync, and keep both in step with `ios/SNOF/UI/Theme.swift`.
 
 Hard-won constraints:
 

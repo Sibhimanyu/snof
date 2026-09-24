@@ -119,6 +119,7 @@ final class FirebaseBackend: FarmBackend {
         let denied = { handler(.denied) }
         observe("\(farm)/meta", onDenied: denied) { handler(.meta($0)) }
         observe("\(farm)/areas", onDenied: denied) { handler(.areas($0)) }
+        observe("\(farm)/devices", onDenied: denied) { handler(.devices($0)) }
         observe("\(farm)/entities", onDenied: denied) { handler(.entities($0)) }
         observe("\(farm)/irrigation", onDenied: denied) { handler(.irrigation($0)) }
         // The last 20 results, as on the web; a new report always lands in them.

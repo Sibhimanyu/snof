@@ -103,13 +103,15 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     });
     return {nameBlock:truncatable(name), metaBlock:truncatable(meta),
             overlap, cards:document.querySelectorAll('.dev-card').length,
-            deadInControls:[...document.querySelectorAll('.dev-grid .dev-card')]
+            qc:document.querySelectorAll('.qc .dev-card').length,
+            deadInControls:[...document.querySelectorAll('.qc .dev-card')]
               .filter(c=>c.className.includes('is-bad')).length};
   });
   check('device name is a block box (ellipsis can engage)', r.nameBlock, `display ok=${r.nameBlock}`);
   check('device meta truncates too', r.metaBlock);
   check('no name overlaps its state pill', r.overlap===0, `${r.overlap} of ${r.cards} cards`);
-  check('no unavailable device in Quick Controls', r.deadInControls===0, `${r.deadInControls} dead`);
+  // Guarded against passing vacuously: the panel must actually hold rows.
+  check('no unavailable device in Quick Controls', r.qc>0&&r.deadInControls===0, `${r.deadInControls} dead of ${r.qc}`);
   await c.close();
 }
 {

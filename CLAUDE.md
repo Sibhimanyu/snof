@@ -37,12 +37,20 @@ Architecture and data shape are in README.md.
     3. `allow_control` in the add-on options, **off by default**.
   `cover`, `lock` and `alarm_control_panel` are deliberately excluded at every
   layer. Adding one is a security decision, not a config tweak.
-- **Unassigned entities do not exist to users** (add-on 0.9.0). An entity with
-  no room in HA is never published (`mapper.should_publish` →
+- **Unassigned entities do not exist to users** (add-on 0.9.0; since 0.9.2
+  the owner's rule is "only devices with assigned rooms" — the entity's
+  *device* must be in a room; an entity-level area alone does not count). An
+  entity failing that is never published (`mapper.should_publish` →
   `registry.is_assigned`), `unassigned` is never written to `areas`, the RTDB
   rules refuse a command whose target is not under `entities/`, the bridge
   refuses it again (`is_visible`), and web/iOS drop any entity whose area is
   not a current room. Don't reintroduce an "Unassigned" group anywhere.
+- **Counts are in devices, not entities** (add-on 0.9.3, web, iOS 0.1.7).
+  The bridge puts `device` on every entity and publishes `devices/<id>/name`;
+  the Overview tiles, area cards and "Not reporting" group by device
+  (`byDevice()` in app.js, `Sorting.byDevice` in SNOFCore). A device is
+  offline only when *every* entity on it is unavailable. Nav "All devices"
+  and the device list still show entities.
 - Attribute export and control are both **allow-lists**. Never invert either.
 - Attribute export is an **allow-list** (`mapper.py::ALLOWED_ATTRS`). Add fields
   there deliberately; never switch it to a deny-list.
@@ -196,7 +204,8 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   every `irrigation_requests` node it is handed.
 - The SSH add-on had a plaintext `password:` in its options; it was still there
   on 2026-09-22 and should be removed and rotated now that key auth is proven.
-- **iOS app released** on 2026-09-24: `0.1.6 (202609240428)`, with the report charts (lines, stack, grid, matrix) and the reports gate; earlier `0.1.2 (202609231646)` (first: 0.1.0) at
+- **iOS app released** on 2026-09-24: `0.1.8 (202609240541)` (the "Area
+  workspace" redesign); before it `0.1.7 (202609240500)` (device counts), and `0.1.6 (202609240428)`, with the report charts (lines, stack, grid, matrix) and the reports gate; earlier `0.1.2 (202609231646)` (first: 0.1.0) at
   https://snof-ios.web.app (its own Hosting site, separate from the
   dashboard), installed through SideStore from `source.json`. `snof-live` is
   on **Blaze**, because Spark refuses `.ipa` files on Hosting. Release with
@@ -205,6 +214,11 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   confirmed in Firebase Auth and by a fresh `acl/directory` write. (An earlier
   check found no sign-in only because none had been attempted yet.) Still
   untried from the phone: a device toggle and an irrigation report.
+- **Design: "Area workspace"** (2026-09-24, owner's pick of option C): cool
+  slate light theme + its dark complement, Manrope, eyebrow + large title on
+  every page, tinted farm-pulse panel, device-level counts, All devices as a
+  list of devices. Web deployed and iOS 0.1.8 released, both 2026-09-24. DESIGN.md and docs/dashboard.md
+  describe it; `Theme.swift` mirrors `styles.css` value for value.
 - **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
   SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
   0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with

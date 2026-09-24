@@ -7,6 +7,7 @@ SRC="$PV/../public"
 
 cp "$SRC/styles.css" "$SRC/app.js" "$PV/"
 rm -rf "$PV/art" && cp -R "$SRC/art" "$PV/art"
+rm -rf "$PV/fonts" && cp -R "$SRC/fonts" "$PV/fonts"
 python3 - "$SRC/index.html" "$PV/index.html" "$PV/stub.html" <<'EOF'
 import re, sys
 src = open(sys.argv[1]).read()

@@ -9,6 +9,8 @@ import SNOFCore
  *
  * Launch arguments, mirroring the preview's query flags:
  *   -demo-real        698 entities, 373 unavailable, real HA naming
+ *   -demo-live        production on 2026-09-24: 297 entities on 21 roomed
+ *                     devices, with device ids and names (debug builds only)
  *   -demo-viewer      viewer, not controller
  *   -demo-controloff  bridge publishes control: false
  *   -demo-reportsoff  meta/reports.enabled: false (the report kill switch)
@@ -48,6 +50,11 @@ final class DemoBackend: FarmBackend {
         else { return }
         tree = root
         #if DEBUG
+        if flag("live"), let url = Bundle.main.url(forResource: "mock-farm-live", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let live = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for key in ["areas", "devices", "entities"] { tree[key] = live[key] }
+        }
         // Review hook: SNOF_DEMO_REPORTS=<json> swaps in report cards the Cloud
         // Function built from real controller payloads (dashboard/preview's
         // reports-real.json). Debug builds only; the file is never bundled.
@@ -136,6 +143,7 @@ final class DemoBackend: FarmBackend {
     private func emitAll() {
         handler?(.meta(tree["meta"]))
         handler?(.areas(tree["areas"]))
+        handler?(.devices(tree["devices"]))
         handler?(.entities(tree["entities"]))
         handler?(.irrigation(tree["irrigation"]))
         handler?(.reports(tree["irrigation_reports"]))

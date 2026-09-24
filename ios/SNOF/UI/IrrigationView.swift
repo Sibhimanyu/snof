@@ -15,7 +15,8 @@ struct IrrigationView: View {
     @State private var sending = false
 
     var body: some View {
-        Page {
+        Page(eyebrow: "Mobitech DCON", title: "Irrigation",
+             subtitle: "Build a report from the irrigation controller.") {
             SectionHead(symbol: "drop", title: "Generate report")
             if store.canControl { builder } else {
                 Note(text: "Report generation is limited to controllers — your account can view results below, but not run new pulls.")
@@ -75,7 +76,7 @@ struct IrrigationView: View {
             } label: {
                 HStack {
                     if waiting || sending { ProgressView().controlSize(.small).tint(.white) }
-                    Text(waiting ? "Working…" : "Generate report").font(.body.weight(.semibold))
+                    Text(waiting ? "Working…" : "Generate report").font(Theme.font(16, .semibold, relativeTo: .body))
                 }
                 .frame(maxWidth: .infinity, minHeight: Theme.hit)
                 .foregroundStyle(.white)
@@ -86,7 +87,7 @@ struct IrrigationView: View {
             .opacity(waiting || sending || !gate.ok ? 0.5 : 1)
             .padding(.top, 10)
         }
-        .font(.subheadline)
+        .font(Theme.font(14.5, .regular, relativeTo: .subheadline))
         .foregroundStyle(Theme.text)
         .panel()
 
@@ -106,16 +107,16 @@ struct ReportCard: View {
         let drawable = report.sections.filter { ReportSectionView.kinds.contains($0.kind) }
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(report.label).font(.headline).foregroundStyle(Theme.text)
+                Text(report.label).font(Theme.font(16.5, .bold, relativeTo: .headline)).foregroundStyle(Theme.text)
                 statusTag
                 Spacer(minLength: 0)
             }
-            Text(when).font(.caption).foregroundStyle(Theme.muted)
+            Text(when).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
             if !report.summary.isEmpty {
-                Text(report.summary).font(.subheadline).foregroundStyle(Theme.text)
+                Text(report.summary).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.text)
             }
             if report.status == "error", !report.error.isEmpty {
-                Text(report.error).font(.subheadline).foregroundStyle(Theme.bad)
+                Text(report.error).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.bad)
             }
             if report.sections.isEmpty {
                 LegacyBody(report: report)
@@ -164,16 +165,16 @@ struct ReportSectionView: View {
         VStack(alignment: .leading, spacing: 8) {
             if withTitle, !section.title.isEmpty {
                 HStack(spacing: 6) {
-                    Text(section.title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
+                    Text(section.title).font(Theme.font(14.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
                     if !section.source.isEmpty { Tag(text: section.source) }
                 }
             }
             if section.status == "error" {
                 Text(section.error.isEmpty ? "This part of the report did not come back." : section.error)
-                    .font(.footnote).foregroundStyle(Theme.bad)
+                    .font(Theme.font(13, .regular, relativeTo: .footnote)).foregroundStyle(Theme.bad)
             } else {
                 content
-                if !section.note.isEmpty { Text(section.note).font(.footnote).foregroundStyle(Theme.muted) }
+                if !section.note.isEmpty { Text(section.note).font(Theme.font(13, .regular, relativeTo: .footnote)).foregroundStyle(Theme.muted) }
             }
         }
         .padding(.top, 4)
@@ -205,7 +206,7 @@ struct ReportSectionView: View {
 
     @ViewBuilder private func more(_ total: Int, _ what: String) -> some View {
         if total > Self.rowCap {
-            Text("\(total - Self.rowCap) more \(what) in this report.").font(.footnote).foregroundStyle(Theme.muted)
+            Text("\(total - Self.rowCap) more \(what) in this report.").font(Theme.font(13, .regular, relativeTo: .footnote)).foregroundStyle(Theme.muted)
         }
     }
 }
@@ -216,13 +217,13 @@ private struct Metrics: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8)], spacing: 8) {
             ForEach(Array(rows.filter { !($0["value"] ?? "").isEmpty }.enumerated()), id: \.offset) { _, r in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(r["label"] ?? "").font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+                    Text(r["label"] ?? "").font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(1)
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(r["value"] ?? "").font(.title3.weight(.semibold).monospacedDigit()).foregroundStyle(Theme.text)
-                        if let u = r["unit"], !u.isEmpty { Text(u).font(.caption).foregroundStyle(Theme.muted) }
+                        Text(r["value"] ?? "").font(Theme.font(20, .semibold, relativeTo: .title3).monospacedDigit()).foregroundStyle(Theme.text)
+                        if let u = r["unit"], !u.isEmpty { Text(u).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted) }
                     }
                     if let n = r["note"], !n.isEmpty {
-                        Text(n).font(.caption2).foregroundStyle(Theme.muted).lineLimit(2)
+                        Text(n).font(Theme.font(11, .regular, relativeTo: .caption2)).foregroundStyle(Theme.muted).lineLimit(2)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -244,7 +245,7 @@ private struct Facts: View {
                     Spacer()
                     Text(r["value"] ?? "").foregroundStyle(Theme.text).multilineTextAlignment(.trailing)
                 }
-                .font(.subheadline).padding(.vertical, 8)
+                .font(Theme.font(14.5, .regular, relativeTo: .subheadline)).padding(.vertical, 8)
             }
         }
     }
@@ -262,8 +263,8 @@ private struct SimpleRows: View {
                 HStack(spacing: 10) {
                     ValveGlyph(art: art(r))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(name).font(.subheadline).foregroundStyle(Theme.text)
-                        if !meta.isEmpty { Text(meta).font(.caption).foregroundStyle(Theme.muted) }
+                        Text(name).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.text)
+                        if !meta.isEmpty { Text(meta).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted) }
                     }
                     Spacer()
                     if let status { ValveTag(status: status) }
@@ -333,7 +334,7 @@ private struct Series: View {
                     Spacer()
                     Text("\(fmt(hi, u)) max")
                 }
-                .font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
+                .font(Theme.font(12.5, .regular, relativeTo: .caption).monospacedDigit()).foregroundStyle(Theme.muted)
             }
         } else {
             // One reading is not a curve. Show it as a reading.
@@ -358,7 +359,7 @@ private struct Bars: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                 HStack(spacing: 8) {
                     ValveGlyph(art: r.art, size: 22)
-                    Text(r.name).font(.caption).foregroundStyle(Theme.text).lineLimit(1)
+                    Text(r.name).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.text).lineLimit(1)
                         .frame(width: 84, alignment: .leading)
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
@@ -368,7 +369,7 @@ private struct Bars: View {
                         }
                     }
                     .frame(height: 8)
-                    Text(Format.minutes(r.minutes)).font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
+                    Text(Format.minutes(r.minutes)).font(Theme.font(12.5, .regular, relativeTo: .caption).monospacedDigit()).foregroundStyle(Theme.muted)
                         .frame(width: 56, alignment: .trailing)
                 }
                 .accessibilityElement(children: .combine)
@@ -385,15 +386,15 @@ private struct Timeline: View {
                 let (day, time) = split(r["at"] ?? "")
                 let prevDay = i > 0 ? split(rows[i - 1]["at"] ?? "").0 : ""
                 if !day.isEmpty && day != prevDay {
-                    Text(day).font(.caption.weight(.semibold)).foregroundStyle(Theme.muted).padding(.top, i > 0 ? 8 : 0)
+                    Text(day).font(Theme.font(12.5, .semibold, relativeTo: .caption)).foregroundStyle(Theme.muted).padding(.top, i > 0 ? 8 : 0)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(time.isEmpty ? "—" : time).font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
+                    Text(time.isEmpty ? "—" : time).font(Theme.font(12.5, .regular, relativeTo: .caption).monospacedDigit()).foregroundStyle(Theme.muted)
                         .frame(width: 44, alignment: .leading)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(r["detail"] ?? r["event"] ?? "entry").font(.subheadline).foregroundStyle(Theme.text)
+                        Text(r["detail"] ?? r["event"] ?? "entry").font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.text)
                         if r["detail"] != nil, let ev = r["event"] {
-                            Text(ev).font(.caption).foregroundStyle(Theme.muted)
+                            Text(ev).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
                         }
                     }
                     Spacer()
@@ -442,7 +443,7 @@ private struct Legend: View {
             }
             if !trailing.isEmpty { Text(trailing).foregroundStyle(Theme.muted.opacity(0.8)) }
         }
-        .font(.caption).foregroundStyle(Theme.muted)
+        .font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
     }
 }
 
@@ -526,7 +527,7 @@ private struct Stack: View {
                     swatch(Theme.brand, section.legend[1]["label"] ?? "")
                     if !section.unit.isEmpty { Text("in \(section.unit)").foregroundStyle(Theme.muted.opacity(0.8)) }
                 }
-                .font(.caption).foregroundStyle(Theme.muted)
+                .font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
             }
         }
     }
@@ -547,9 +548,9 @@ private struct ValveGrid: View {
                     ValveGlyph(art: ValveArt.key(name: r["name"], type: r["type"], status: m > 0 ? "on" : "off"), size: 24)
                         .opacity(m > 0 ? 1 : 0.45).saturation(m > 0 ? 1 : 0)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(r["name"] ?? "Valve").font(.caption).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(r["name"] ?? "Valve").font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.text).lineLimit(1)
                         Text(m > 0 ? Format.minutes(m) : "none")
-                            .font(.subheadline.weight(m > 0 ? .bold : .semibold).monospacedDigit())
+                            .font(Theme.font(14.5, m > 0 ? .bold : .semibold, relativeTo: .subheadline).monospacedDigit())
                             .foregroundStyle(m > 0 ? Theme.on : Theme.muted)
                     }
                     Spacer(minLength: 0)
@@ -577,22 +578,22 @@ private struct Matrix: View {
                     ForEach(Array(cols.enumerated()), id: \.offset) { _, c in Text(c["label"] ?? "").frame(width: 52) }
                     Text("Total").frame(width: 60)
                 }
-                .font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted).padding(.vertical, 5)
+                .font(Theme.font(11, .semibold, relativeTo: .caption2)).foregroundStyle(Theme.muted).padding(.vertical, 5)
                 ForEach(Array(section.rows.enumerated()), id: \.offset) { _, r in
                     Divider().overlay(Theme.line)
                     GridRow {
-                        Text(r["name"] ?? "").font(.caption).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(r["name"] ?? "").font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.text).lineLimit(1)
                             .frame(width: 92, alignment: .leading)
                         ForEach(Array(cols.enumerated()), id: \.offset) { _, c in
                             let m = Int(Double(r[c["key"] ?? ""] ?? "") ?? 0)
                             Text(m > 0 ? Format.minutes(m) : "–")
-                                .font(.caption2.monospacedDigit())
+                                .font(Theme.font(11, .regular, relativeTo: .caption2).monospacedDigit())
                                 .foregroundStyle(m > 0 ? Theme.text : Theme.muted)
                                 .frame(width: 52, height: 26)
                                 .background(Theme.brand.opacity(m > 0 ? 0.10 + 0.55 * Double(m) / Double(top) : 0))
                         }
                         Text(Format.minutes(Int(Double(r["total"] ?? "") ?? 0)))
-                            .font(.caption2.weight(.bold).monospacedDigit()).foregroundStyle(Theme.text).frame(width: 60)
+                            .font(Theme.font(11, .bold, relativeTo: .caption2).monospacedDigit()).foregroundStyle(Theme.text).frame(width: 60)
                     }
                 }
             }
@@ -617,7 +618,7 @@ private struct LegacyBody: View {
             return (name, meta, nil)
         }
         if rows.count > 6 {
-            Text("\(rows.count - 6) more rows in this report.").font(.footnote).foregroundStyle(Theme.muted)
+            Text("\(rows.count - 6) more rows in this report.").font(Theme.font(13, .regular, relativeTo: .footnote)).foregroundStyle(Theme.muted)
         }
     }
 }
@@ -667,10 +668,10 @@ private struct ReadingTile: View {
     var on = false
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption.weight(.medium)).foregroundStyle(Theme.muted)
-            Text(value).font(.title2.weight(.semibold).monospacedDigit()).foregroundStyle(on ? Theme.on : Theme.text)
+            Text(label).font(Theme.font(12.5, .medium, relativeTo: .caption)).foregroundStyle(Theme.muted)
+            Text(value).font(Theme.font(22, .semibold, relativeTo: .title2).monospacedDigit()).foregroundStyle(on ? Theme.on : Theme.text)
                 .lineLimit(1).minimumScaleFactor(0.6)
-            Text(note).font(.caption).foregroundStyle(Theme.muted)
+            Text(note).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()

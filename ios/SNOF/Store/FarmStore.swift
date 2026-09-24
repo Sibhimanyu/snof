@@ -47,6 +47,8 @@ final class FarmStore {
 
     private(set) var meta = FarmMeta()
     private(set) var areas: [String: Area] = [:]
+    /// Device id -> name, for devices in a room.
+    private(set) var deviceNames: [String: String] = [:]
     /// Entities in a room — the only ones the app knows about. See `Sorting.inRooms`.
     private(set) var entities: [Entity] = []
     /// Everything the entities node carried, before the room filter.
@@ -157,7 +159,7 @@ final class FarmStore {
         reportTasks.values.forEach { $0.cancel() }
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []
-        meta = FarmMeta(); areas = [:]; entities = []; received = []; index = [:]
+        meta = FarmMeta(); areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         firstSnapshot = false; canControl = false; isAdmin = false
         deviceStatus = .all; deviceDomain = nil
@@ -169,6 +171,7 @@ final class FarmStore {
         case .areas(let v):
             areas = Parse.areas(v)
             applyRooms()
+        case .devices(let v): deviceNames = Parse.devices(v)
         case .entities(let v):
             received = Parse.entities(v).sorted(by: Sorting.byName)
             applyRooms()
@@ -198,6 +201,21 @@ final class FarmStore {
 
     var bridgeStatus: BridgeStatus { BridgeStatus(meta.bridge, nowMs: nowMs, skewMs: skewMs) }
 
+    /// "Live · 5s ago", as the web dashboard's pill says it. `long` adds
+    /// "Bridge" for places with room for it.
+    func bridgeText(long: Bool = false) -> String {
+        let prefix = long ? "Bridge " : ""
+        switch bridgeStatus {
+        case .unknown: return long ? "No bridge data yet" : "Connecting"
+        case .offline: return long ? "Bridge offline" : "Offline"
+        case .stale(let age): return "\(long ? "Bridge stale" : "Stale") · \(Format.age(age)) ago"
+        case .live:
+            guard let seen = meta.bridge?.lastSeen else { return prefix + "live" }
+            let age = max(0, (nowMs + skewMs - seen) / 1000)
+            return "\(long ? "Bridge live" : "Live") · \(Format.age(age)) ago"
+        }
+    }
+
     func gate(_ c: Capability) -> Gate {
         // Evaluated against the real clock, not the 5 s tick, at press time.
         Gate.evaluate(c, bridge: meta.bridge, reportsEnabled: meta.reportsEnabled, nowMs: Date().timeIntervalSince1970 * 1000, skewMs: skewMs)
@@ -213,6 +231,9 @@ final class FarmStore {
     func areaName(_ id: String) -> String {
         areas[id]?.name ?? id
     }
+
+    /// What the farm counts: devices, not entities.
+    var devices: [DeviceGroup] { Sorting.byDevice(entities, names: deviceNames) }
 
     var groupedAreas: [(id: String, entities: [Entity])] {
         Sorting.groupByArea(entities, name: areaName)

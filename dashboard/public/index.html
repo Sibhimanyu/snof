@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#ffffff">
 <title>SNOF Live Farm State</title>
 <link rel="icon" type="image/png" href="/art/logo.png">
 <link rel="apple-touch-icon" href="/art/logo.png">
+<link rel="preload" href="/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
 </head>
 <!-- data-view mounts exactly one screen: boot, gate or app. The previous build
@@ -51,6 +52,8 @@
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-ne" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2M4.6 4.6 6 6M18 18l1.4 1.4M19.4 4.6 18 6M6 18l-1.4 1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></symbol>
@@ -64,11 +67,15 @@
 
 <!-- ---------- sign-in: its own full-screen page ---------- -->
 <div id="gate" class="gate">
-  <div class="gate-bg" aria-hidden="true"><i></i><i></i><i></i></div>
   <main class="gate-card">
-    <img class="logo logo-lg" src="/art/logo.png" alt="Sibhi Natural Orchards and Farms">
-    <h1>Sibhi Natural Orchards<br>&amp; Farms</h1>
-    <p class="gate-tag">Every sensor, pump and gate on the farm — live, and controllable from here.</p>
+    <div class="gate-brand">
+      <img class="logo" src="/art/logo.png" alt="">
+      <span class="wordmark">SNOF</span>
+      <span class="wordmark-sub">Natural Orchards</span>
+    </div>
+    <p class="eyebrow">Sibhi Natural Orchards &amp; Farms</p>
+    <h1 class="gate-title">Your farm, right&nbsp;now.</h1>
+    <p class="gate-tag">Every room, sensor and switch on the farm — live, and operable from here.</p>
     <p id="gate-msg" class="gate-msg" role="status">Sign in with the Google account on the farm allowlist.</p>
     <button id="signin" class="btn btn-google btn-block">
       <svg class="g" viewBox="0 0 48 48" aria-hidden="true">
@@ -84,88 +91,72 @@
   </main>
 </div>
 
-<!-- ---------- app shell ---------- -->
+<!-- ---------- app shell ----------
+     One top bar on every width: wordmark, the five destinations, and the
+     account. Below 900px the destinations move to the bottom tab bar and the
+     bridge state takes their place up top, because on a phone "is this live?"
+     is the first question. Both navs carry data-nav; render() marks both. -->
 <div id="app">
-  <div id="scrim" class="scrim" hidden></div>
+  <header class="topbar">
+    <div class="topbar-in">
+      <a class="brand" href="#/" aria-label="SNOF overview">
+        <span class="wordmark">SNOF</span>
+        <span class="wordmark-sub" id="brand-sub">Natural Orchards</span>
+      </a>
 
-  <aside id="sidebar" class="sidebar">
-    <div class="side-brand">
-      <img class="logo" src="/art/logo.png" alt="">
-      <span class="side-brand-text">
-        <span class="side-brand-name">SNOF</span>
-        <span class="side-brand-sub">Natural Orchards</span>
-      </span>
-      <button id="nav-close" class="icon-btn only-narrow" aria-label="Close menu">
-        <svg viewBox="0 0 24 24" class="ico"><use href="#i-close"/></svg>
-      </button>
-    </div>
-
-    <nav class="side-nav" aria-label="Main">
-      <p class="side-label">Main menu</p>
-      <a class="nav-item" href="#/" data-nav="overview"><svg viewBox="0 0 24 24" class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
-      <a class="nav-item" href="#/areas" data-nav="areas"><svg viewBox="0 0 24 24" class="ico"><use href="#n-areas"/></svg><span>Areas</span><span class="nav-n" id="nav-areas-n"></span></a>
-      <a class="nav-item" href="#/devices" data-nav="devices"><svg viewBox="0 0 24 24" class="ico"><use href="#n-devices"/></svg><span>All devices</span><span class="nav-n" id="nav-devices-n"></span></a>
-      <a class="nav-item" href="#/irrigation" data-nav="irrigation"><svg viewBox="0 0 24 24" class="ico"><use href="#n-irrigation"/></svg><span>Irrigation</span><span class="nav-n" id="nav-irrig-n"></span></a>
-      <a class="nav-item nav-admin" href="#/admin" data-nav="admin" hidden><svg viewBox="0 0 24 24" class="ico"><use href="#n-admin"/></svg><span>Admin</span></a>
-    </nav>
-
-    <div class="side-foot">
-      <div class="side-bridge">
-        <span id="bridge-pill" class="pill pill-unknown" role="status">
-          <span class="dot"></span><span id="bridge-text">connecting</span>
-        </span>
-      </div>
-      <button id="signout" class="nav-item nav-btn"><svg viewBox="0 0 24 24" class="ico"><use href="#n-signout"/></svg><span>Sign out</span></button>
-    </div>
-  </aside>
-
-  <div class="main">
-    <header class="topbar">
-      <button id="nav-open" class="icon-btn only-narrow" aria-label="Open menu" aria-controls="sidebar">
-        <svg viewBox="0 0 24 24" class="ico"><use href="#i-menu"/></svg>
-      </button>
-
-      <div class="search-wrap">
-        <svg viewBox="0 0 24 24" class="ico search-icon"><use href="#i-search"/></svg>
-        <input id="search" type="search" aria-label="Search devices and areas" placeholder="Search devices, areas…" autocomplete="off" spellcheck="false">
-      </div>
+      <nav class="topnav" aria-label="Main">
+        <a class="topnav-item" href="#/" data-nav="overview">Overview</a>
+        <a class="topnav-item" href="#/areas" data-nav="areas">Areas</a>
+        <a class="topnav-item" href="#/devices" data-nav="devices">All devices</a>
+        <a class="topnav-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
+        <a class="topnav-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
+      </nav>
 
       <div class="topbar-right">
         <span id="m-bridge" class="pill pill-unknown only-narrow" role="status">
-          <span class="dot"></span><span id="m-bridge-text">connecting</span>
+          <span class="dot"></span><span id="m-bridge-text">Connecting</span>
         </span>
-        <button id="theme-btn" class="icon-btn" aria-label="Switch theme">
+        <button id="theme-btn" class="icon-btn only-wide" aria-label="Switch theme">
           <svg viewBox="0 0 24 24" class="ico ico-sun"><use href="#i-sun"/></svg>
           <svg viewBox="0 0 24 24" class="ico ico-moon"><use href="#i-moon"/></svg>
         </button>
         <div class="acct">
-          <button id="acct-btn" class="acct-btn" aria-haspopup="menu" aria-expanded="false">
+          <button id="acct-btn" class="acct-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Account">
+            <span class="acct-name" id="acct-name">Signed in</span>
             <span class="avatar" id="acct-initial">·</span>
-            <span class="acct-text">
-              <span class="acct-name" id="acct-name">Signed in</span>
-              <span class="acct-role" id="acct-role">Viewer</span>
-            </span>
-            <svg viewBox="0 0 24 24" class="ico ico-sm acct-caret"><use href="#i-chevron"/></svg>
           </button>
           <div id="acct-menu" class="acct-menu" role="menu" hidden>
+            <p class="acct-who"><span id="acct-full"></span><span class="acct-role" id="acct-role">Viewer</span></p>
             <p class="acct-email" id="acct-email"></p>
-            <button id="signout-menu" class="btn btn-ghost btn-block" role="menuitem">Sign out</button>
+            <button id="theme-menu" class="acct-item" role="menuitem">
+              <svg viewBox="0 0 24 24" class="ico ico-sm ico-sun"><use href="#i-sun"/></svg>
+              <svg viewBox="0 0 24 24" class="ico ico-sm ico-moon"><use href="#i-moon"/></svg>
+              <span id="theme-menu-text">Switch theme</span>
+            </button>
+            <button id="signout-menu" class="acct-item" role="menuitem">Sign out</button>
           </div>
         </div>
       </div>
-    </header>
+    </div>
+  </header>
 
+  <div class="main">
+    <!-- Outside #view on purpose: #view is rebuilt on every live update, and
+         an input inside it would lose focus and caret mid-word. -->
+    <div class="searchbar" id="searchbar">
+      <svg viewBox="0 0 24 24" class="ico search-icon"><use href="#i-search"/></svg>
+      <input id="search" type="search" aria-label="Search devices and areas" placeholder="Search devices, rooms, states…" autocomplete="off" spellcheck="false">
+    </div>
     <main id="view" class="view" tabindex="-1"></main>
-
     <footer class="foot"><span id="stats" role="status">Connecting…</span></footer>
   </div>
 
-  <nav class="tabbar only-narrow" aria-label="Main">
-    <a class="tab-item" href="#/" data-nav="overview"><svg viewBox="0 0 24 24" class="ico"><use href="#n-overview"/></svg><span>Overview</span></a>
-    <a class="tab-item" href="#/areas" data-nav="areas"><svg viewBox="0 0 24 24" class="ico"><use href="#n-areas"/></svg><span>Areas</span></a>
-    <a class="tab-item" href="#/devices" data-nav="devices"><svg viewBox="0 0 24 24" class="ico"><use href="#n-devices"/></svg><span>Devices</span></a>
-    <a class="tab-item" href="#/irrigation" data-nav="irrigation"><svg viewBox="0 0 24 24" class="ico"><use href="#n-irrigation"/></svg><span>Irrigation</span></a>
-    <a class="tab-item nav-admin" href="#/admin" data-nav="admin" hidden><svg viewBox="0 0 24 24" class="ico"><use href="#n-admin"/></svg><span>Admin</span></a>
+  <nav class="tabbar" aria-label="Main">
+    <a class="tab-item" href="#/" data-nav="overview">Overview</a>
+    <a class="tab-item" href="#/areas" data-nav="areas">Areas</a>
+    <a class="tab-item" href="#/devices" data-nav="devices">Devices</a>
+    <a class="tab-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
+    <a class="tab-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
   </nav>
 </div>
 

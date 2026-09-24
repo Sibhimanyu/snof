@@ -35,13 +35,16 @@ public struct Entity: Identifiable, Hashable, Sendable {
     public let state: String?
     /// An area id, or `unassigned`.
     public let area: String
+    /// Home Assistant device id; nil only from a bridge older than 0.9.3.
+    public let device: String?
     public let attrs: Attrs
     public let lastChanged: String?
 
     public var id: String { key }
 
     public init(domain: String, objectId: String, entityId: String? = nil, name: String? = nil,
-                state: String?, area: String? = nil, attrs: Attrs = Attrs(), lastChanged: String? = nil) {
+                state: String?, area: String? = nil, device: String? = nil,
+                attrs: Attrs = Attrs(), lastChanged: String? = nil) {
         self.domain = domain
         self.objectId = objectId
         self.key = "\(domain).\(objectId)"
@@ -49,6 +52,7 @@ public struct Entity: Identifiable, Hashable, Sendable {
         self.name = (name?.isEmpty == false ? name : nil) ?? self.entityId
         self.state = state
         self.area = (area?.isEmpty == false ? area : nil) ?? Area.unassigned
+        self.device = device?.isEmpty == false ? device : nil
         self.attrs = attrs
         self.lastChanged = lastChanged
     }

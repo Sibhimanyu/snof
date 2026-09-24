@@ -9,7 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.6"
+    MARKETING_VERSION: "0.1.8"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -60,6 +60,10 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
+        # Manrope, the same variable face the web dashboard serves (SIL OFL,
+        # licence beside it in Resources/Fonts).
+        UIAppFonts:
+          - Manrope.ttf
         # Where UpdateCheck looks for a newer build — the same file SideStore reads.
         SNOFSourceURL: $(SNOF_SOURCE_URL)
         # Google Sign-In returns to the app on this scheme. The value comes
@@ -82,4 +86,4 @@ targets:
         # The production-shaped fixture carries real room and device names.
         # It is for screenshots on a dev Mac; a published .ipa must not ship it.
         Release:
-          EXCLUDED_SOURCE_FILE_NAMES: mock-farm-real.json
+          EXCLUDED_SOURCE_FILE_NAMES: "mock-farm-real.json mock-farm-live.json"

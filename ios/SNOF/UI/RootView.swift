@@ -3,7 +3,7 @@ import SNOFCore
 
 struct RootView: View {
     @Environment(FarmStore.self) private var store
-    @AppStorage("appearance") private var appearance: Appearance = .dark
+    @AppStorage("appearance") private var appearance: Appearance = .system
 
     var body: some View {
         Group {
@@ -53,6 +53,7 @@ struct MainTabs: View {
             }
         }
         .tint(Theme.text)
+        .toolbarBackground(Theme.bar, for: .tabBar)
         .sheet(isPresented: $account) { AccountSheet() }
         #if DEBUG
         .onAppear {
@@ -62,44 +63,72 @@ struct MainTabs: View {
         #endif
     }
 
-    /// Every tab gets the same chrome: the account button here, and the
-    /// bridge band at the top of every Page, so liveness is visible anywhere.
+    /// Every tab gets the same bar as the web dashboard on a phone: the
+    /// wordmark on the left, the bridge and the account on the right. The
+    /// page's own eyebrow and large title sit in the content, so the bar
+    /// never repeats them.
     private func stack<V: View>(path: Binding<[AreaRoute]>, @ViewBuilder _ content: () -> V) -> some View {
         NavigationStack(path: path) {
             content()
                 .navigationDestination(for: AreaRoute.self) { AreaDetailView(areaId: $0.id) }
-                // Large title on the same row as the account button, not a
-                // second row under it: the page starts a row higher.
-                .toolbarTitleDisplayMode(.inlineLarge)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { account = true } label: {
-                            Text(String(store.user?.shortName.first ?? "·").uppercased())
-                                .font(.subheadline.weight(.semibold))
-                                .frame(width: 32, height: 32)
-                                .background(Theme.panel3, in: Circle())
-                                .frame(minWidth: Theme.hit, minHeight: Theme.hit)
-                        }
-                        .accessibilityLabel("Account")
-                    }
-                }
-                .toolbarBackground(Theme.bg, for: .navigationBar)
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar(removing: .title)
+                .toolbar { barItems }
+                .toolbarBackground(Theme.bar, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
         }
+    }
+
+    /// iOS 26 wraps each bar item in a glass capsule; the wordmark and the
+    /// pill carry their own shape, so they opt out where that exists.
+    @ToolbarContentBuilder private var barItems: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .topBarLeading) { wordmark }.sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .topBarTrailing) { bridgePill }.sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .topBarTrailing) { accountButton }.sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { wordmark }
+            ToolbarItem(placement: .topBarTrailing) { HStack(spacing: 4) { bridgePill; accountButton } }
+        }
+    }
+
+    private var wordmark: some View {
+        Text("SNOF").font(Theme.font(20, .heavy, relativeTo: .title3)).tracking(-1.2)
+            .foregroundStyle(Theme.text)
+            .fixedSize()
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var bridgePill: some View {
+        BridgePill(status: store.bridgeStatus, text: store.bridgeText(), compact: true)
+    }
+
+    private var accountButton: some View {
+        Button { account = true } label: {
+            Text(String(store.user?.shortName.first ?? "·").uppercased())
+                .font(Theme.font(12, .heavy, relativeTo: .caption))
+                .foregroundStyle(Theme.muted)
+                .frame(width: 30, height: 30)
+                .overlay(Circle().strokeBorder(Theme.line2, lineWidth: 1.5))
+                .frame(minWidth: Theme.hit, minHeight: Theme.hit)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Account")
     }
 }
 
 struct AccountSheet: View {
     @Environment(FarmStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("appearance") private var appearance: Appearance = .dark
+    @AppStorage("appearance") private var appearance: Appearance = .system
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(store.user?.shortName ?? "").font(.headline)
-                        if let e = store.user?.email { Text(e).font(.subheadline).foregroundStyle(Theme.muted) }
+                        Text(store.user?.shortName ?? "").font(Theme.font(16.5, .bold, relativeTo: .headline))
+                        if let e = store.user?.email { Text(e).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.muted) }
                     }
                     LabeledContent("Access", value: store.role.rawValue)
                 } footer: {
@@ -121,7 +150,7 @@ struct AccountSheet: View {
                 if store.backend.isDemo {
                     Section {
                         Text("This build has no Firebase configuration, so it shows bundled demo data. Nothing here reaches the farm.")
-                            .font(.footnote).foregroundStyle(Theme.muted)
+                            .font(Theme.font(13, .regular, relativeTo: .footnote)).foregroundStyle(Theme.muted)
                     }
                 }
                 Section("App") {
@@ -157,51 +186,78 @@ struct GateView: View {
     @State private var busy = false
 
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            // The roundel's centre is transparent and its lettering is the
-            // brand green, so it always sits on white, in both themes.
-            Image("brand-logo").resizable().interpolation(.high).scaledToFit()
-                .frame(width: 112, height: 112)
-                .padding(6)
-                .background(Color.white, in: Circle())
-                .accessibilityLabel("Sibhi Natural Orchards and Farms")
-            VStack(spacing: 8) {
-                Text("SNOF").font(.title.weight(.semibold)).foregroundStyle(Theme.text)
-                Text(message).font(.subheadline).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
-            }
-            .padding(.horizontal, 32)
-
-            switch kind {
-            case .signIn:
-                Button {
-                    busy = true
-                    Task { await store.signIn(); busy = false }
-                } label: {
-                    HStack(spacing: 10) {
-                        if busy { ProgressView().tint(Theme.bg) } else { Image(systemName: "person.crop.circle") }
-                        Text("Sign in with Google").font(.body.weight(.semibold))
-                    }
-                    .frame(maxWidth: 320, minHeight: 50)
-                    .foregroundStyle(Theme.bg)
-                    .background(Theme.text, in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    // The roundel's centre is transparent and its lettering is
+                    // the brand green, so it always sits on white.
+                    Image("brand-logo").resizable().interpolation(.high).scaledToFit()
+                        .frame(width: 28, height: 28).padding(2)
+                        .background(Color.white, in: Circle())
+                        .overlay(Circle().strokeBorder(Theme.line, lineWidth: 1))
+                        .accessibilityLabel("Sibhi Natural Orchards and Farms")
+                    Text("SNOF").font(Theme.font(22, .heavy, relativeTo: .title2)).tracking(-1.3)
+                        .foregroundStyle(Theme.text)
+                    Text("Natural Orchards").font(Theme.font(13.5, .semibold, relativeTo: .subheadline))
+                        .foregroundStyle(Theme.muted)
                 }
-                .buttonStyle(.plain)
-                .disabled(busy)
-                if let err = store.signInError { SignInFailure(detail: err) }
-            case .denied:
-                Button("Sign out") { store.signOut() }
-                    .frame(minHeight: Theme.hit)
-                    .foregroundStyle(Theme.text)
-            case .message:
-                EmptyView()
+                .padding(.bottom, 32)
+
+                Text("Sibhi Natural Orchards & Farms").eyebrowStyle()
+                Text("Your farm, right now.").font(Theme.font(36, .bold, relativeTo: .largeTitle))
+                    .tracking(-1.8).foregroundStyle(Theme.text)
+                    .padding(.top, 10).padding(.bottom, 12)
+                Text("Every room, sensor and switch on the farm — live, and operable from here.")
+                    .font(Theme.font(15, .regular, relativeTo: .body)).foregroundStyle(Theme.muted)
+
+                Text(message).font(Theme.meta).foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .tintPanel(padding: 14)
+                    .padding(.top, 24).padding(.bottom, 12)
+
+                switch kind {
+                case .signIn:
+                    Button {
+                        busy = true
+                        Task { await store.signIn(); busy = false }
+                    } label: {
+                        HStack(spacing: 10) {
+                            if busy { ProgressView().tint(Theme.text) } else { Image(systemName: "person.crop.circle") }
+                            Text("Continue with Google").font(Theme.font(15.5, .bold, relativeTo: .body))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .foregroundStyle(Theme.text)
+                        .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.rMd, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    if let err = store.signInError { SignInFailure(detail: err).padding(.top, 12) }
+                case .denied:
+                    Button("Use a different account") { store.signOut() }
+                        .font(Theme.font(15, .bold, relativeTo: .body))
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .foregroundStyle(Theme.text)
+                        .overlay(RoundedRectangle(cornerRadius: Theme.rMd).strokeBorder(Theme.line2, lineWidth: 1))
+                case .message:
+                    EmptyView()
+                }
+
+                Text("Control is limited to lights, switches and fans on the allowlist.")
+                    .font(Theme.meta).foregroundStyle(Theme.faint).padding(.top, 16)
+                if store.backend.isDemo { DemoBadge().padding(.top, 12) }
+                // Someone stuck here is exactly who needs to hear about a fix.
+                UpdateBanner().padding(.top, 12)
             }
-            if store.backend.isDemo { DemoBadge() }
-            // Someone stuck here is exactly who needs to hear about a fix.
-            UpdateBanner().frame(maxWidth: 360).padding(.horizontal, 20)
-            Spacer()
+            .padding(24)
+            .modifier(Panel(padding: 0))
+            .frame(maxWidth: 440)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 40)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
+        // Centred when it fits, scrollable from the top when it does not.
+        .defaultScrollAnchor(.center)
         .background(Theme.bg)
     }
 
@@ -224,7 +280,7 @@ private struct SignInFailure: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Sign-in did not complete", systemImage: "exclamationmark.triangle")
-                .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.bad)
+                .font(Theme.font(14.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.bad)
             Text(detail)
                 .font(.caption.monospaced()).foregroundStyle(Theme.text)
                 .textSelection(.enabled)
@@ -233,11 +289,9 @@ private struct SignInFailure: View {
                 UIPasteboard.general.string = detail
                 copied = true
             }
-            .font(.footnote.weight(.semibold)).foregroundStyle(Theme.text)
+            .font(Theme.font(13, .semibold, relativeTo: .footnote)).foregroundStyle(Theme.text)
             .frame(minHeight: Theme.hit)
         }
         .panel()
-        .frame(maxWidth: 360)
-        .padding(.horizontal, 20)
     }
 }

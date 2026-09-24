@@ -58,9 +58,14 @@ communicate state, not decoration.
 
 ### Colour semantics
 
-- Neutral graphite/charcoal surfaces and warm gray text create the default dark
-  theme. Light theme uses a warm off-white canvas, pale gray surfaces, and
-  charcoal text.
+- **"Area workspace"** (design option C), chosen by the owner on 2026-09-24
+  and shipped on web and iOS. Light: a cool slate canvas `#f5f7f7`, white
+  panels on `#dce4e4` hairlines, ink text `#17252a`, numerals `#25393d`, and
+  one tinted surface — the farm pulse, `#eaf0ef` on `#d2e0df`. Dark is its
+  complement: the same slate hue at low chroma (`#0e1314` canvas, `#141b1d`
+  panels, `#192326` pulse). Every token is in `styles.css` and
+  `ios/SNOF/UI/Theme.swift`, value for value; the reference comp is
+  `.context/snof-reviewed-c-desktop.png` / `-mobile.png`.
 - Green means live or on only. It is the **brand green** from the Sibhi
   Natural Orchards logo, `#018843`, used exactly for fills (toggles, sliders,
   bars, chart lines, the live dot, primary buttons). Green *text* uses the
@@ -70,9 +75,9 @@ communicate state, not decoration.
   selected item or chart; those surfaces are neutral, and the green is the
   dot, the text, the toggle or the line. Chosen by the owner on 2026-09-23
   after the washes read as "a greenish background".
-- Palettes: **Graphite** dark (`#111111` canvas, `#1a1a1a` panels) and a
-  **warm light** (`#f5f3ee` canvas, white panels, `#171614` text). The OS
-  setting picks between them.
+- Light is the default look; the OS setting picks dark, and a choice made
+  in the account menu (web) or Account sheet (iOS) sticks. The earlier
+  Graphite / warm-light palettes are retired.
 - Amber means stale only.
 - Muted red means unavailable or error only.
 - Do not use gradients, glow, glassmorphism, neon, or an accent colour without
@@ -83,12 +88,19 @@ never depend on colour alone: pair it with a label, icon, or readable state.
 
 ### Type and layout
 
-- Use a clean, highly legible sans-serif system stack. Avoid display typography
-  in production views.
+- One typeface, **Manrope** (variable, SIL OFL), self-hosted on the web
+  (`public/fonts/`) and bundled in the app. Page titles are large and
+  tightly tracked ("Your farm, right now."); every page opens with an
+  uppercase eyebrow that says where you are. Counts are two-digit and
+  tabular ("09/21", "05"). On iOS every size is anchored to a Dynamic Type
+  style, so it still scales.
 - Favour a compact but breathable operations layout: clear page title, one
   primary status band, then grouped panels or rows.
-- Prefer 1px low-contrast borders and flat surfaces over shadows. Rounded
-  corners should be modest and consistent.
+- Prefer 1px low-contrast borders and flat surfaces over shadows. Corners
+  are 3px on every panel, card and input; only pills and toggles are round.
+- **Count devices, not entities.** A switched-off printer is one thing
+  offline, not 67 readings. Tiles, area cards, the attention card and the
+  All devices list all group by the bridge's `device` id.
 - Make device names the dominant row text. Support long Home Assistant names:
   list rows truncate safely; cards allow a two-line clamp when room permits.
 - Avoid large charts. Direct state, counts, names, timestamps, and controls are

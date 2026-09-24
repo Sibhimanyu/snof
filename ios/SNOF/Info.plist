@@ -35,6 +35,10 @@
 	<false/>
 	<key>SNOFSourceURL</key>
 	<string>$(SNOF_SOURCE_URL)</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Manrope.ttf</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

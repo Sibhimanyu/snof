@@ -75,6 +75,14 @@ public enum Parse {
         return out
     }
 
+    /// `devices`: device id -> name, for devices in a room.
+    public static func devices(_ v: Any?) -> [String: String] {
+        guard let d = v as? [String: Any] else { return [:] }
+        var out: [String: String] = [:]
+        for (id, node) in d { out[id] = string((node as? [String: Any])?["name"]) ?? id }
+        return out
+    }
+
     public static func entities(_ v: Any?) -> [Entity] {
         guard let domains = v as? [String: Any] else { return [] }
         var out: [Entity] = []
@@ -90,6 +98,7 @@ public enum Parse {
                     name: string(n["name"]),
                     state: string(n["state"]),
                     area: string(n["area"]),
+                    device: string(n["device"]),
                     attrs: Attrs(unit: string(a["unit_of_measurement"]),
                                  deviceClass: string(a["device_class"]),
                                  batteryLevel: double(a["battery_level"]),

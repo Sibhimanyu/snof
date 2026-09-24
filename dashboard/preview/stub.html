@@ -65,10 +65,13 @@
       meta:{sources:{dcon:'ok'},error:''}
     }
   };
-  if(params.get('real')){
-    const req=new XMLHttpRequest(); req.open('GET','farm-real.json',false); req.send(null);
+  // ?real=1 is the 698-entity snapshot from 2026-09-22 (before the room
+  // filter); ?live=1 is production on 2026-09-24: 297 entities on 21 roomed
+  // devices, with the device ids and names the bridge now publishes.
+  if(params.get('real')||params.get('live')){
+    const req=new XMLHttpRequest(); req.open('GET',params.get('live')?'farm-live.json':'farm-real.json',false); req.send(null);
     const f=JSON.parse(req.responseText);
-    data.areas=f.areas; data.entities=f.entities;
+    data.areas=f.areas; data.entities=f.entities; data.devices=f.devices||{};
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
   if(params.get('noirrig')) delete data.irrigation;

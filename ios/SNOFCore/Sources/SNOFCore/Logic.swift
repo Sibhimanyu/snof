@@ -81,6 +81,27 @@ extension Entity {
     }
 }
 
+/* ---- devices ---- */
+
+/// The farm thinks in devices — "the printer is off" — while Home Assistant
+/// reports entities, dozens per device. Mirrors byDevice() in app.js.
+public struct DeviceGroup: Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let area: String
+    public let entities: [Entity]
+
+    public init(id: String, name: String, area: String, entities: [Entity]) {
+        self.id = id; self.name = name; self.area = area; self.entities = entities
+    }
+
+    /// Nothing on it is reporting.
+    public var isOffline: Bool { entities.allSatisfy(\.isBad) }
+    /// Anything on it is on, open or running.
+    public var isActive: Bool { entities.contains(where: \.isOn) }
+    public var badCount: Int { entities.filter(\.isBad).count }
+}
+
 /* ---- sorting and grouping ---- */
 
 public enum Sorting {
@@ -97,6 +118,34 @@ public enum Sorting {
     /// "Unassigned" pile or becomes pressable.
     public static func inRooms(_ ents: [Entity], areas: [String: Area]) -> [Entity] {
         ents.filter { $0.area != Area.unassigned && areas[$0.area] != nil }
+    }
+
+    /// Entities grouped into their devices. An entity without a device id (an
+    /// older bridge) stands alone.
+    public static func byDevice(_ ents: [Entity], names: [String: String]) -> [DeviceGroup] {
+        var order: [String] = []
+        var groups: [String: [Entity]] = [:]
+        for e in ents {
+            let id = e.device ?? e.key
+            if groups[id] == nil { order.append(id) }
+            groups[id, default: []].append(e)
+        }
+        return order.map { id in
+            let list = groups[id]!
+            let first = list[0]
+            return DeviceGroup(id: id, name: first.device.flatMap { names[$0] } ?? first.name,
+                               area: first.area, entities: list)
+        }
+    }
+
+    /// Devices with anything not reporting: fully offline first, then most
+    /// entities down, then by name.
+    public static func troubledDevices(_ devices: [DeviceGroup], limit: Int = 8) -> [DeviceGroup] {
+        devices.filter { $0.badCount > 0 }.sorted { a, b in
+            if a.isOffline != b.isOffline { return a.isOffline }
+            if a.badCount != b.badCount { return a.badCount > b.badCount }
+            return natural(a.name, b.name)
+        }.prefix(limit).map { $0 }
     }
 
     /// Areas by name.
@@ -124,16 +173,6 @@ public enum Sorting {
         let operable = all.filter { $0.isControllable && !$0.isBad }.sorted(by: byName)
         let ordered = operable.filter(\.isOn) + operable.filter { !$0.isOn }
         return (Array(ordered.prefix(limit)), operable.count)
-    }
-
-    /// Not-reporting entities tallied by domain, largest first: which integration
-    /// died, and how much of it.
-    public static func offlineBreakdown(_ all: [Entity], limit: Int = 8) -> [(domain: String, count: Int)] {
-        var tally: [String: Int] = [:]
-        for e in all where e.isBad { tally[e.domain, default: 0] += 1 }
-        return tally.map { (domain: $0.key, count: $0.value) }
-            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.domain < $1.domain }
-            .prefix(limit).map { $0 }
     }
 
     /// The icon for a room is its most common domain; ties go to a controllable one.
@@ -325,7 +364,87 @@ public enum Invites {
 
 /* ---- formatting ---- */
 
+/* ---- the farm pulse: one sentence a person would say ----
+ * Mirrors pulsePanel() in dashboard/public/app.js; keep the wording in step.
+ * Honest before reassuring: a bridge gone quiet outranks everything, and
+ * "most areas are running normally" is only said when it is true. */
+public enum Pulse {
+    static let wordsTable = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight",
+                             "nine", "ten", "eleven", "twelve"]
+    public static func words(_ n: Int) -> String { n >= 0 && n <= 12 ? wordsTable[n] : "\(n)" }
+    static func cap(_ s: String) -> String { s.prefix(1).uppercased() + s.dropFirst() }
+    static func plural(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? one : many }
+
+    /// ["Cold Store", "East Orchard", "Barn"] -> "Cold Store, East Orchard and 1 other".
+    public static func list(_ items: [String], max: Int = 2) -> String {
+        if items.count <= max {
+            return items.count > 1 ? items.dropLast().joined(separator: ", ") + " and " + items.last! : (items.first ?? "")
+        }
+        let rest = items.count - max
+        return items.prefix(max).joined(separator: ", ") + " and \(rest) " + plural(rest, "other", "others")
+    }
+
+    /// Rooms with a device fully offline, worst first.
+    public static func troubledAreas(_ devices: [DeviceGroup], name: (String) -> String) -> [String] {
+        var tally: [String: Int] = [:]
+        for d in devices where d.isOffline { tally[d.area, default: 0] += 1 }
+        return tally.sorted { a, b in
+            a.value != b.value ? a.value > b.value : Sorting.natural(name(a.key), name(b.key))
+        }.map(\.key)
+    }
+
+    public static func summary(devices: [DeviceGroup], areaCount: Int, bridge: BridgeStatus,
+                               areaName: (String) -> String) -> (title: String, body: String, quiet: Bool) {
+        let n = devices.count
+        let bad = devices.filter(\.isOffline).count
+        let on = devices.filter(\.isActive).count
+        let whereText = list(troubledAreas(devices, name: areaName).map(areaName))
+        switch bridge {
+        case .offline:
+            return ("The bridge has gone quiet.",
+                    "The farm bridge reported itself offline. What you see is the last state it sent.", true)
+        case .stale(let age):
+            return ("The bridge has gone quiet.",
+                    "Nothing has arrived from the farm for \(Format.age(age)). What you see may be out of date.", true)
+        default: break
+        }
+        if n == 0 {
+            return ("Waiting for the first devices.",
+                    "Assign devices to rooms in Home Assistant and they will appear here.", false)
+        }
+        if bad == 0 {
+            let tail = on > 0 ? ", and \(words(on)) \(plural(on, "is", "are")) on right now." : "."
+            return ("Everything is reporting.",
+                    "All \(n) \(plural(n, "device", "devices")) across \(areaCount) \(plural(areaCount, "area", "areas")) are answering" + tail, false)
+        }
+        let ratio = Double(bad) / Double(n)
+        if ratio <= 0.25 {
+            return ("Most areas are running normally.",
+                    "\(n - bad) of \(n) devices are reporting. \(cap(words(bad))) \(plural(bad, "needs", "need")) a closer look in \(whereText).", false)
+        }
+        if ratio <= 0.5 {
+            return ("A few devices need a look.",
+                    "\(n - bad) of \(n) devices are reporting. \(cap(words(bad))) are offline, in \(whereText).", false)
+        }
+        return ("Much of the farm is quiet.",
+                "Only \(n - bad) of \(n) devices are reporting. \(cap(words(bad))) are offline, most of them in \(whereText).", false)
+    }
+}
+
 public enum Format {
+    /// "3h" since an ISO-8601 timestamp (Home Assistant's, with microseconds),
+    /// "4 days" past two days, nil if unparseable or in the future.
+    public static func since(_ iso: String?, now: Date = Date()) -> String? {
+        guard var s = iso, !s.isEmpty else { return nil }
+        // ISO8601DateFormatter will not take six fractional digits; drop them.
+        if let r = s.range(of: #"\.\d+"#, options: .regularExpression) { s.removeSubrange(r) }
+        guard let date = ISO8601DateFormatter().date(from: s) else { return nil }
+        let sec = now.timeIntervalSince(date)
+        guard sec >= 0 else { return nil }
+        if sec >= 172_800 { return "\(Int((sec / 86_400).rounded())) days" }
+        return age(sec)
+    }
+
     public static func age(_ sec: Double) -> String {
         if sec < 90 { return "\(Int(sec.rounded()))s" }
         if sec < 5400 { return "\(Int((sec / 60).rounded()))m" }

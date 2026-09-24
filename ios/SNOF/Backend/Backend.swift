@@ -18,6 +18,7 @@ struct AppUser: Equatable {
 enum FarmEvent {
     case meta(Any?)
     case areas(Any?)
+    case devices(Any?)
     case entities(Any?)
     case irrigation(Any?)
     case reports(Any?)

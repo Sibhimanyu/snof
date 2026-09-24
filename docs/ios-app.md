@@ -132,6 +132,22 @@ Refreshing needs LocalDevVPN on and Wi-Fi.
 
 ## Decisions worth keeping
 
+- **The look is the web's "Area workspace", value for value** (0.1.8).
+  `Theme.swift` carries the same two palettes as `styles.css`; Manrope is
+  bundled (`Resources/Fonts`, registered via `UIAppFonts` in project.yml,
+  OFL licence shipped beside it) and every size is anchored to a Dynamic
+  Type style through `Theme.font(_:_:relativeTo:)`. The navigation bar holds
+  only the wordmark, the bridge pill and the account (`.toolbar(removing:
+  .title)`); each page draws its own eyebrow and large title via `Page(
+  eyebrow:title:subtitle:)`. On iOS 26 the bar items opt out of the glass
+  capsule (`sharedBackgroundVisibility`), behind `#available`. The theme
+  follows the phone unless the Account sheet says otherwise.
+- **The farm pulse sentence lives in SNOFCore** (`Pulse.summary`), unit
+  tested, mirroring `pulsePanel()` in app.js.
+- **Review hooks** (debug only): `-demo-live` loads production's 2026-09-24
+  snapshot (21 roomed devices with ids and names); `-scroll <points>`
+  scrolls a page before `-snapshot` captures it; `-appearance light|dark`.
+
 - **RTDB disk persistence stays off.** With it on, a command written with no
   signal would be kept on disk and replayed on a later launch. The rules'
   `at === now` check would accept it, because `now` is when the write reaches

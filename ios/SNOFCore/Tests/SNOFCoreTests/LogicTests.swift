@@ -97,6 +97,49 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(q.operable, 2)
     }
 
+    func testDevicesAreCountedNotEntities() {
+        func on(_ id: String, _ st: String, dev: String?) -> Entity {
+            Entity(domain: "switch", objectId: id, state: st, area: "shed", device: dev)
+        }
+        let all = [on("p1", "unavailable", dev: "printer"), on("p2", "unknown", dev: "printer"),
+                   on("s1", "on", dev: "shed_sw"), on("s2", "unavailable", dev: "shed_sw"),
+                   on("loose", "off", dev: nil)]
+        let d = Sorting.byDevice(all, names: ["printer": "Printer"])
+        XCTAssertEqual(d.count, 3, "two devices plus one entity with no device id")
+        XCTAssertEqual(d.first { $0.id == "printer" }?.name, "Printer")
+        XCTAssertEqual(d.filter(\.isOffline).map(\.id), ["printer"], "partly reporting is not offline")
+        XCTAssertEqual(d.filter(\.isActive).map(\.id), ["shed_sw"])
+        XCTAssertEqual(Sorting.troubledDevices(d).map(\.id), ["printer", "shed_sw"], "fully offline first")
+        XCTAssertEqual(Parse.entities(["switch": ["a": ["state": "on", "device": "abc"]]]).first?.device, "abc")
+        XCTAssertEqual(Parse.devices(["abc": ["name": "Printer"]]), ["abc": "Printer"])
+    }
+
+    func testPulseSaysWhatIsTrue() {
+        func dev(_ id: String, _ area: String, _ st: String) -> DeviceGroup {
+            DeviceGroup(id: id, name: id, area: area,
+                        entities: [Entity(domain: "switch", objectId: id, state: st, area: area, device: id)])
+        }
+        let name: (String) -> String = { ["cs": "Cold Store", "eo": "East Orchard", "ph": "Pump House"][$0] ?? $0 }
+        let calm = (0..<22).map { dev("d\($0)", "ph", "off") } + [dev("x1", "cs", "unavailable"), dev("x2", "eo", "unavailable")]
+        let s = Pulse.summary(devices: calm, areaCount: 6, bridge: .live, areaName: name)
+        XCTAssertEqual(s.title, "Most areas are running normally.")
+        XCTAssertEqual(s.body, "22 of 24 devices are reporting. Two need a closer look in Cold Store and East Orchard.")
+        XCTAssertEqual(Pulse.summary(devices: calm, areaCount: 6, bridge: .stale(ageSeconds: 400), areaName: name).title,
+                       "The bridge has gone quiet.", "a quiet bridge outranks the device count")
+        let fine = (0..<3).map { dev("d\($0)", "ph", "on") }
+        XCTAssertEqual(Pulse.summary(devices: fine, areaCount: 1, bridge: .live, areaName: name).body,
+                       "All 3 devices across 1 area are answering, and three are on right now.")
+        XCTAssertEqual(Pulse.list(["A", "B", "C", "D"]), "A, B and 2 others")
+    }
+
+    func testSinceReadsHomeAssistantTimestamps() {
+        let now = ISO8601DateFormatter().date(from: "2026-09-24T04:31:52Z")!
+        XCTAssertEqual(Format.since("2026-09-24T01:31:52.437263+00:00", now: now), "3h")
+        XCTAssertEqual(Format.since("2026-09-20T04:31:52+00:00", now: now), "4 days")
+        XCTAssertNil(Format.since("not a date", now: now))
+        XCTAssertNil(Format.since("2026-09-25T00:00:00+00:00", now: now), "future stamps say nothing")
+    }
+
     func testAreasInNaturalOrder() {
         let all = [ent("sensor", "b", "1", area: "z10"), ent("sensor", "c", "1", area: "z2")]
         let g = Sorting.groupByArea(all) { $0 == "z10" ? "Zone 10" : $0 == "z2" ? "Zone 2" : $0 }

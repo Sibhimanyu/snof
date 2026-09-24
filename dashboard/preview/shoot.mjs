@@ -32,8 +32,9 @@ await shot('11-loading',{url:'?nodata=1',wait:'.sk-card'});
 await shot('12-big-farm',{url:'?big=1#/areas'});
 await shot('13-mobile-overview',{vp:{width:390,height:844}});
 await shot('14-mobile-area',{url:'#/area/cold_store',vp:{width:390,height:844}});
-await shot('15-mobile-nav',{vp:{width:390,height:844},act:async p=>{await p.click('#nav-open');await p.waitForTimeout(350);}});
-await shot('16-search',{act:async p=>{await p.fill('#search','pump');await p.waitForTimeout(200);await p.click('a[href="#/areas"]');await p.waitForTimeout(200);}});
+await shot('15-mobile-nav',{vp:{width:390,height:844},act:async p=>{await p.click('#acct-btn');await p.waitForTimeout(250);}});
+// Search lives on the pages it filters (Areas, one area, All devices), not the Overview.
+await shot('16-search',{url:'#/areas',act:async p=>{await p.fill('#search','pump');await p.waitForTimeout(200);}});
 await shot('18-irrigation',{url:'#/irrigation'});
 // Exercise a control end to end and confirm the command payload is well formed.
 {
