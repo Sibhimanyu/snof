@@ -74,6 +74,32 @@ name happened to be long enough for a given viewport, so a passing screenshot
 proved nothing. `qa.mjs` asserts the computed `display` of the name box instead,
 which is true or false regardless of content.
 
+## Replay the real farm (2026-09-25)
+
+`?real=1` is a frozen, older shape. For anything that depends on today's data
+(irrigation logs, water, systems), replay a snapshot of production instead:
+
+```bash
+firebase database:get /farms/snof --project snof-live > dashboard/preview/replay.local.json   # gitignored
+# web:  http://localhost:8765/index.html?replay=1&fresh=1#/irrigation
+# iOS:  SNOF_DEMO_TREE=$PWD/dashboard/preview/replay.local.json <Catalyst app> -demo -demo-admin -snapshot out.png [-tab …] [-system security] [-demo-watering]
+```
+
+`fresh=1` (and the iOS hook, always) moves the bridge heartbeat to now; every
+other timestamp stays real, so ages ("65m ago", "Water readings are old") read
+as they would have then. The snapshot never leaves the machine. `qa.mjs` runs
+extra checks when the file exists and skips them when it does not.
+
+What the replay caught that fixtures never showed: 83 report cards from
+Refresh presses, a run log capped at 32 rows (yesterday's Watered showed 3
+runs), a smart fan flagged as a faulty switch module, ACs and a printer shown
+as red "offline", a still-running program called "stopped early", and a
+background refresh that could stop the page updating.
+
+Independent passes that worked well: a background code-review agent reading
+the diff with a controllable clock, and a QA agent driving every mode and
+route in the mock at phone width. Both found real bugs the author missed.
+
 ## Shell traps that produced false alarms here
 
 - `grep -c pattern file` exits **1** when the count is zero, so

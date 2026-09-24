@@ -359,3 +359,17 @@ take the newest. Three things this changes:
 - Phase 3 reads 259–264 V all day while phases 1 and 2 swing 198–255 V. It is
   steady, not stuck, so nothing flags it. The imbalance figure (7–8%) is where
   it shows.
+
+
+## Cache and retention (2026-09-25)
+
+- The irrigation cache keeps the newest **150** runs (`CACHE_RUNS` in
+  `reports.py`); the two-day "Watered" view needs about 60. It used to keep 32
+  — and not because of the slice: `scrub()` caps every list at 32, so the run
+  logs are now scrubbed row by row.
+- `irrigation_reports` keeps the newest **60** reports (`prune_reports`, after
+  every report; push ids sort by time). The apps show at most 20, and show
+  only the newest report of each kind and range.
+- The apps refresh the controller reads by themselves when Home or
+  Irrigation opens with data older than 15 minutes (once per 10 minutes per
+  device, controllers only), and ignore a Refresh within 45 s of the last read.
