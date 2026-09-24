@@ -86,7 +86,7 @@ private struct AttentionRowView: View {
                 Text(item.text).font(Theme.font(14.5, .bold, relativeTo: .subheadline))
                     .foregroundStyle(item.level == .bad ? Theme.bad : Theme.text)
                 if !item.sub.isEmpty {
-                    Text(item.sub).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
+                    Text(item.sub).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -228,7 +228,7 @@ struct SystemView: View {
                 }
                 if ![.security, .solar, .switches].contains(id) {
                     ForEach(sys.devices.filter { !$0.isOffline }.sorted { Sorting.natural($0.name, $1.name) }) { d in
-                        let rows = d.entities.filter { !$0.isBad && !$0.isControllable && !["select", "number", "time", "button", "image"].contains($0.domain) }
+                        let rows = d.entities.filter { !$0.isBad && !$0.isControllable && !$0.isBackstage }
                             .sorted { Sorting.natural($0.name, $1.name) }
                         TitledPanel(title: d.name) {
                             if rows.isEmpty {
@@ -239,10 +239,13 @@ struct SystemView: View {
                         }
                     }
                 }
-                let off = sys.devices.filter(\.isOffline)
-                if !off.isEmpty, id != .security {
-                    Note(text: (id.offlineIsFault ? "Offline: " : "Switched off: ") + off.map(\.name).joined(separator: ", "))
-                }
+                // Per device, as on a room page: a fan on the switches page is
+                // switched off, not offline.
+                let off = id == .security ? [] : sys.devices.filter(\.isOffline)
+                let offFault = off.filter { Systems.offlineIsFault($0, system: id) }
+                let offRest = off.filter { !Systems.offlineIsFault($0, system: id) }
+                if !offFault.isEmpty { Note(text: "Offline: " + offFault.map(\.name).joined(separator: ", "), tone: .warn) }
+                if !offRest.isEmpty { Note(text: "Switched off: " + offRest.map(\.name).joined(separator: ", ")) }
             } else {
                 EmptyBlock(title: "Nothing here", message: "This part of the farm has no devices right now.")
             }
@@ -349,10 +352,14 @@ struct WateredCard: View {
         let pump = Irrigation.pumpDays(c).first { $0.day == day }
         if !Irrigation.runs(c).isEmpty || !Irrigation.pumpDays(c).isEmpty {
             VStack(alignment: .leading, spacing: 0) {
+                // The age sits under the title: beside it, title + age + the
+                // day picker is wider than a 375pt phone has room for.
                 HStack {
-                    Text("Watered").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    if let checked { Text(checked).font(Theme.small).foregroundStyle(Theme.faint) }
-                    Spacer()
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Watered").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                        if let checked { Text(checked).font(Theme.small).foregroundStyle(Theme.faint) }
+                    }
+                    Spacer(minLength: 8)
                     Picker("Day", selection: Binding(get: { which }, set: { pick = $0 })) {
                         Text("Today").tag("today")
                         Text("Yesterday").tag("yesterday")
@@ -482,7 +489,7 @@ struct PumpPowerCard: View {
                     }
                 }
                 if let s = supply {
-                    HStack(spacing: 14) {
+                    FlowRow {
                         if s.hasVoltage {
                             if !s.powerOn { Tag(text: "No power", kind: .bad) }
                             else if s.missingPhase { Tag(text: "Phase missing · \(s.livePhases) of 3 live", kind: .bad) }

@@ -373,3 +373,31 @@ take the newest. Three things this changes:
 - The apps refresh the controller reads by themselves when Home or
   Irrigation opens with data older than 15 minutes (once per 10 minutes per
   device, controllers only), and ignore a Refresh within 45 s of the last read.
+  While reads go through the NUC's relay (`meta/reports.transport`, written by
+  the function; absent means relay), Refresh and the auto-refresh are closed
+  with the reason whenever the bridge is quiet: a request would only time out.
+
+## Cut short, or caught part-way (2026-09-25)
+
+A run log read part-way through a run used to write that run as
+`"11m of 1h, stopped"`, and Home called it cut short once the hour had passed
+on the phone's clock — Mango2, read 22 minutes into its hour at 00:02, read
+"cut short" at 01:50. Now:
+
+- The function writes `"11m of 1h so far"` for an unfinished run whose
+  planned minutes plus 30 minutes of slack for backwash pauses
+  (`RUN_SLACK_MIN`) had not passed when the log was read, and which the
+  controller did not end (`endedBy`). It stamps `irrigation/timerLogAt`.
+- The apps (`mayStillRun` in app.js, `Irrigation.mayStillRun` in SNOFCore)
+  never call a "so far" run cut short, and judge an older `"stopped"` row
+  against when the log was read (`timerLogAt`, else `meta.lastUpdated`, never
+  later than now), with the same slack. Such a run reads "11m of 1h so far",
+  and "11m of 1h by 00:02" once its window has passed on the clock — "so far"
+  would claim it is still going.
+- A row that says `ended by …` (a Stop, a fault) is over: cut short at once,
+  whatever the clock says.
+- The next Refresh (which always re-reads `session_log`) settles it.
+- **Deploy order:** the function's `"so far"` wording is unknown to iOS
+  0.9.3 and older web tabs, which would read it as a valve list. Deploy
+  `functions:reports` only once iOS 0.10.0 is on the phone; hosting first.
+  The new apps handle rows from either function.

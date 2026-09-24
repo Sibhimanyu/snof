@@ -56,6 +56,14 @@ public enum FarmTime {
         today(now.addingTimeInterval(-86_400), zone: zone)
     }
 
+    /// A server moment (ms), worded like the controller's own times: "00:43",
+    /// "23:40 yesterday", "26 Sep 22:40". 24-hour, as everywhere else in the
+    /// app; the phone's 12-hour format put "12:43 AM" beside "23:40".
+    public static func when(ms: Double, now: Date, zone: TimeZone = zone(nil)) -> String {
+        let s = formatter(zone).string(from: Date(timeIntervalSince1970: ms / 1000))
+        return when(s, now: now, zone: zone) ?? s
+    }
+
     /// "20:32", "20:32 yesterday", "21 Sep 20:32" — for a farm timestamp.
     public static func when(_ s: String?, now: Date, zone: TimeZone) -> String? {
         guard let s, s.count >= 16 else { return nil }
@@ -92,6 +100,10 @@ public struct ProgramRun: Hashable, Sendable {
     public let plannedMin: Int?
     public let finished: Bool
     public let valves: String
+    /// The function caught it part-way ("11m of 1h so far"): not ended.
+    public var going = false
+    /// "ended by A8": the controller says who ended it (a Stop, a fault).
+    public var ended = false
 
     public var day: String { String(start.prefix(10)) }
 
@@ -142,10 +154,11 @@ public enum Irrigation {
         let kind = head.count > 1 ? head[0] : "Program"
         let name = head.count > 1 ? head.dropFirst().joined(separator: " · ") : event
         var pieces = (row["detail"] ?? "").components(separatedBy: " · ")
-        var delivered: Int?, planned: Int?, finished = false
-        if let first = pieces.first, first.hasSuffix(", finished") || first.hasSuffix(", stopped") {
+        var delivered: Int?, planned: Int?, finished = false, going = false
+        if let first = pieces.first, first.hasSuffix(", finished") || first.hasSuffix(", stopped") || first.hasSuffix(" so far") {
             finished = first.hasSuffix(", finished")
-            let amount = first.components(separatedBy: ",")[0]
+            going = first.hasSuffix(" so far")
+            let amount = going ? String(first.dropLast(" so far".count)) : first.components(separatedBy: ",")[0]
             let parts = amount.components(separatedBy: " of ")
             if parts.count == 2 {
                 delivered = Format.runtimeMinutes(parts[0])
@@ -160,8 +173,10 @@ public enum Irrigation {
             let l = p.lowercased()
             return p.isEmpty || l.contains("backwash") || l.hasPrefix("started by") || l.hasPrefix("ended by") ? nil : p
         } ?? ""
+        let ended = pieces.contains { $0.lowercased().hasPrefix("ended by ") }
         return ProgramRun(kind: kind, name: name, start: start, deliveredMin: delivered,
-                          plannedMin: planned, finished: finished, valves: valves == "no valves" ? "" : valves)
+                          plannedMin: planned, finished: finished, valves: valves == "no valves" ? "" : valves,
+                          going: going, ended: ended)
     }
 
     /// "pump 16h 21m of 19h 42m with power · 77.89 kWh".

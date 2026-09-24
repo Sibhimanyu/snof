@@ -483,7 +483,8 @@ input[type=range][disabled]{opacity:.42}
 .row.is-on .row-icon{color:var(--accent)}
 .row.is-bad .row-icon{color:var(--bad);background:var(--bad-soft)}
 .row-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
-.row-name{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;font-weight:600}
+/* Two lines before it clips: "Car Shed Smart Switch Initial…" hid what it was. */
+.row-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-width:0;overflow:hidden;font-size:14px;font-weight:600}
 .row-meta{display:block;min-width:0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ---------- all devices: one line per device, opening to its readings ---------- */
@@ -582,7 +583,8 @@ input[type=range][disabled]{opacity:.42}
 .rep-builder + .more-note{margin-top:10px}
 .btn-primary{background:var(--brand);color:var(--on-brand);box-shadow:var(--shadow)}
 .btn-primary:hover{filter:brightness(1.07)}
-.btn-primary[disabled]{opacity:.55;cursor:progress}
+/* Grey on grey at full strength, not a faded green: white on a 55% brand was ~2:1. */
+.btn-primary[disabled]{background:var(--panel-3);border-color:var(--panel-3);color:var(--muted);cursor:default}
 .rep-card{padding:0;background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-xl);box-shadow:var(--shadow-card);margin-bottom:12px}
 .rep-card:last-child{margin-bottom:0}
 .rep-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;min-height:56px;
@@ -908,6 +910,8 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .flow-title{font-size:14px;font-weight:700;color:var(--text);margin-top:4px}
 .flow-sub{font-size:12.5px;color:var(--muted)}
 .flow-node.is-on .flow-sub{color:var(--accent);font-weight:650}
+/* A reading that is not current: its age, under the state it last had. */
+.flow-age{font-size:11.5px;color:var(--faint)}
 .flow-pipe{flex:1;min-width:24px;margin-top:32px;height:8px}
 .pipe-line{display:block;height:6px;margin-top:1px;border-radius:3px;background:var(--line-2)}
 .flow-pipe.is-on .pipe-line{background:repeating-linear-gradient(90deg,var(--brand) 0 10px,transparent 10px 18px);
@@ -962,8 +966,10 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .tile.is-on .tile-ico{background:rgba(255,255,255,.2);color:var(--on-brand)}
 .tile.is-on .tile-meta{color:#fff}
 .tile.busy{opacity:.7}
-.tile:disabled{opacity:.55;box-shadow:none}
-.tile.is-on:disabled{opacity:.6}
+/* Not pressable: flat, the icon dimmed, the words at full strength. A whole-
+ * tile fade left the name at 2.2:1 and hid the state a viewer came to read. */
+.tile:disabled{box-shadow:none}
+.tile:disabled .tile-ico{opacity:.6}
 
 @media (prefers-reduced-motion:reduce){ .flow-pipe.is-on .pipe-line{animation:none} }
 @media (max-width:620px){
@@ -996,7 +1002,8 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .attn-main{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
 .attn-main strong{font-size:14.5px;font-weight:700;color:var(--text)}
 .attn-row.bad .attn-main strong{color:var(--bad)}
-.attn-main span{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Two lines before it clips: "quiet for 7m" was cut to "quiet f…". */
+.attn-main span{font-size:12.5px;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .attn-chev{width:15px;height:15px;color:var(--faint);flex:none}
 .attn-more{display:block;width:100%;min-height:44px;padding:8px 22px;border:0;border-top:1px solid var(--line-soft);background:none;
   text-align:left;font:inherit;font-size:13px;font-weight:700;color:var(--accent);cursor:pointer}

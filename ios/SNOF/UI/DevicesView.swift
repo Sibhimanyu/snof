@@ -28,8 +28,13 @@ struct DevicesView: View {
             (store.deviceDomain == nil || $0.domain == store.deviceDomain) &&
             $0.matches(search, areaName: store.areaName($0.area))
         }
-        let groups = Sorting.byDevice(list, names: store.deviceNames).sorted { Sorting.natural($0.name, $1.name) }
         let whole = Dictionary(store.devices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let fault = { (g: DeviceGroup) in Systems.offlineIsFault(whole[g.id] ?? g, system: store.deviceSystems[g.id]) }
+        // Not reporting: the faults first, then what is only switched off.
+        let groups = Sorting.byDevice(list, names: store.deviceNames).sorted { a, b in
+            if store.deviceStatus == .offline, fault(a) != fault(b) { return fault(a) }
+            return Sorting.natural(a.name, b.name)
+        }
         // Opened by hand or by a search: dead devices opened by the filter were
         // ~170 rows of "unavailable".
         let filtering = !search.isEmpty || store.deviceDomain != nil
@@ -43,6 +48,7 @@ struct DevicesView: View {
             }
             .pickerStyle(.segmented)
             .sensoryFeedback(.selection, trigger: store.deviceStatus)
+            SearchField(text: $search, prompt: "Name, entity id, state or room")
 
             if !store.firstSnapshot {
                 LoadingBlock()
@@ -62,7 +68,6 @@ struct DevicesView: View {
             }
         }
         .navigationTitle("Rooms")
-        .searchable(text: $search, prompt: "Name, entity id, state or room")
     }
 
     /// Devices with at least one reading in each state.
@@ -119,10 +124,12 @@ struct DeviceGroupRow: View {
 
     @ViewBuilder private var status: some View {
         let down = whole.badCount
+        let fault = Systems.offlineIsFault(whole, system: store.deviceSystems[whole.id])
         if down == 0 { Tag(text: "All reporting", kind: .on) }
-        // An appliance off at the wall is "Off", as on Home and Rooms.
-        else if down == whole.entities.count { Tag(text: Systems.isAppliance(whole) ? "Off" : "Offline", kind: Systems.isAppliance(whole) ? .plain : .bad) }
-        else { Tag(text: "\(down) of \(whole.entities.count) down", kind: .warn) }
+        // Off at the wall is "Off", as on Home and Rooms: the printer's AMS too,
+        // which is no appliance but sits in a system whose offline is no fault.
+        else if down == whole.entities.count { Tag(text: fault ? "Offline" : "Off", kind: fault ? .bad : .plain) }
+        else { Tag(text: "\(down) of \(whole.entities.count) readings down", kind: .warn) }
     }
 }
 

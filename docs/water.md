@@ -86,6 +86,18 @@ motors/<slug>: {name, group, role:"main-farm"|"drip"|"", vendor:"niagara", model
 
 A vendor that fails keeps its last good state, with its error beside it.
 
+**Current or not** (2026-09-25, `waterCurrent()` in app.js,
+`WaterState.isCurrent` in SNOFCore): a motor is drawn as running (green, pipe
+flowing) only when its vendor's last *good* read (`meta/water/<vendor>/at`,
+stamped only on success — `pulledAt` is stamped on every pull) is under 10
+minutes old and, for Livesky, whose starter reports every few seconds, its
+own report is under 15 minutes old. Niagara reports on change, so an hour-old "motor on" with no
+"off" since is still the state. Otherwise Home shows the last state with its
+age ("Running · 2h ago", or "not read" once SNOF's Livesky session has ended),
+the Water tab shows it in grey, and the card's header drops "just now" — the
+pull's age would vouch for readings it did not refresh. "readings off" when
+the kill switch is off.
+
 ## Parsing rules learned from the real payloads
 
 - **Niagara `running`**: the zoned controller's `liveMessage` field 0

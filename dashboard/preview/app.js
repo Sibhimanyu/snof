@@ -24,6 +24,21 @@ const BAD_STATES = new Set(['unavailable', 'unknown']);
 
 const el = (id) => document.getElementById(id);
 const humanDomain = (d) => String(d).replace(/_/g, ' ');
+/* Room sections named for what they are, not Home Assistant's domains
+ * ("Binary Sensor", "Alarm Control Panel"), in this order after the operable
+ * ones. Mirrors Entity.sectionTitles in SNOFCore. */
+const SECTION_TITLE = { light: 'Lights', switch: 'Switches', fan: 'Fans', input_boolean: 'Toggles',
+  climate: 'Air conditioning', media_player: 'TVs & speakers', remote: 'Remotes', camera: 'Cameras',
+  alarm_control_panel: 'Alarm', binary_sensor: 'Detectors', sensor: 'Readings', device_tracker: 'Presence' };
+const SECTION_ORDER = Object.keys(SECTION_TITLE);
+/* Settings rather than things to look at (a switch's power-on behaviour, an
+ * AC's timer, a firmware notice): left out of room and system pages unless
+ * searched for. Mirrors Entity.settingDomains. */
+const SETTING_DOMAINS = new Set(['select', 'input_select', 'number', 'input_number', 'time', 'date', 'datetime',
+  'button', 'input_button', 'image', 'text', 'input_text', 'update', 'event']);
+/* Diagnostics ("Goats Debug (station)"): the bridge does not export Home
+ * Assistant's entity category, so the name is what says it. */
+const isBackstage = (e) => SETTING_DOMAINS.has(e.domain) || /\bdebug\b/i.test(e.name || '');
 
 let state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, irrigation_reports: {}, water: {}, acl: {} };
 let canControl = false;
@@ -280,8 +295,62 @@ function flatEntities() {
       }
     }
   }
+  tidyNames(out);
   return out;
 }
+
+/* Some integrations name a device by its serial number: the 3D printer is
+ * "P1S_01P09C510500118", its AMS "P1S_01P09C510500118_AMS_1", a camera
+ * station "T8400P202040124D". They read as what they are here; renaming the
+ * device in Home Assistant fixes it at the source. Mirrors DeviceNames in
+ * SNOFCore. */
+const BAMBU_NAME = /^(P1S|P1P|X1C|X1E|X1|A1M|A1|H2D|H2S)_(?=(?:[A-Z]*\d){6})[0-9A-Z]{12,}(?:_(.+))?$/;
+const SERIAL_NAME = /^(?=(?:[A-Z]*\d){6})[A-Z0-9]{10,}$/;
+function tidyDeviceName(raw, objectIds) {
+  const b = BAMBU_NAME.exec(raw || '');
+  if (b) {
+    if (!b[2]) return `${b[1]} printer`;
+    const rest = b[2].replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+    return `${b[1]} ${/^[A-Z]{2}/.test(rest) ? rest : rest.toLowerCase()}`;
+  }
+  // Two ids at least: one id's "prefix" is the whole id ("goats_motion_detected").
+  if (SERIAL_NAME.test(raw || '') && objectIds.length >= 2) {
+    // Home Assistant keeps the name a device had when its entities were made
+    // in their ids: "goats_motion_detected", under a station now called by
+    // its serial number.
+    const parts = objectIds.map((o) => o.split('_'));
+    let n = 0;
+    while (parts.every((p) => p.length > n && p[n] === parts[0][n])) n++;
+    const slug = parts[0].slice(0, n).join(' ');
+    if (slug.length >= 3 && !raw.toLowerCase().startsWith(parts[0][0])) return slug.charAt(0).toUpperCase() + slug.slice(1);
+  }
+  return raw;
+}
+
+/** deviceId -> { raw, tidy } for the devices tidyDeviceName() renamed. */
+let renamedDevices = new Map();
+function tidyNames(ents) {
+  const ids = new Map();
+  for (const e of ents) if (e.device) (ids.get(e.device) || ids.set(e.device, []).get(e.device)).push(e.objectId);
+  renamedDevices = new Map();
+  for (const [id, oids] of ids) {
+    const raw = state.devices?.[id]?.name;
+    const tidy = raw && tidyDeviceName(raw, oids);
+    if (tidy && tidy !== raw) renamedDevices.set(id, { raw, tidy });
+  }
+  for (const e of ents) {
+    const d = renamedDevices.get(e.device);
+    if (d && typeof e.name === 'string' && e.name.startsWith(d.raw) && [undefined, ' '].includes(e.name[d.raw.length])) {
+      // "T8400P202040124D Goats" is the station's own entity: "Goats", not "Goats Goats".
+      const rest = e.name.slice(d.raw.length).trim();
+      const repeats = rest.toLowerCase().startsWith(d.tidy.toLowerCase()) && [undefined, ' '].includes(rest[d.tidy.length]);
+      e.name = repeats ? rest : rest ? `${d.tidy} ${rest}` : d.tidy;
+    }
+  }
+}
+/** A device's name as the farm reads it; `rawDeviceName` for matching on. */
+const deviceName = (id) => renamedDevices.get(id)?.tidy || state.devices?.[id]?.name || '';
+const rawDeviceName = (id) => state.devices?.[id]?.name || '';
 
 const areaName = (id) => state.areas?.[id]?.name || id;
 
@@ -292,7 +361,7 @@ function byDevice(ents) {
   const map = new Map();
   for (const e of ents) {
     const id = e.device || e.key;
-    if (!map.has(id)) map.set(id, { id, name: state.devices?.[e.device]?.name || e.name || e.key, area: e.area, ents: [] });
+    if (!map.has(id)) map.set(id, { id, name: deviceName(e.device) || e.name || e.key, raw: rawDeviceName(e.device), area: e.area, ents: [] });
     map.get(id).ents.push(e);
   }
   return [...map.values()];
@@ -578,30 +647,63 @@ function skeletonView() {
 const motorArt = (m) => artImg(m && m.running ? 'motor-on' : 'motor-off', 'flow-art');
 const motorWord = (m) => (!m ? 'No reading' : m.running === true ? 'Running' : m.running === false ? 'Off' : 'Unknown');
 
+/** Whether a motor's reading says what it is doing now: its vendor answered
+ *  a recent pull and, for Livesky (the starter reports every few seconds),
+ *  its own report is recent too. Niagara reports on change, so an hour-old
+ *  "motor on" with no "off" since is still the state. A reading that is not
+ *  current is drawn with its age and never as water flowing (2026-09-25: Home
+ *  showed "River · Running" after the Livesky session had ended). */
+function waterCurrent(m) {
+  const w = state.water || {}, ws = state.meta?.water || {}, now = serverNow();
+  if (!m) return false;
+  // A vendor's own `at` is stamped only when its read succeeded; `pulledAt`
+  // is stamped on every pull, failed or not.
+  if (m.vendor === 'livesky') {
+    const read = ws.livesky?.at || w.pulledAt;
+    const at = Date.parse(m.liveAt || m.reportedAt || '');
+    return liveskyState().kind === 'ok' && !!read && now - read <= 10 * 60000 && Number.isFinite(at) && now - at < 15 * 60000;
+  }
+  const read = ws.niagara?.at || (ws.niagara?.ok !== false ? w.pulledAt : 0);
+  return !!read && now - read <= 10 * 60000;
+}
+/** How old a reading that is not current is: the starter's own report for
+ *  Livesky, Niagara's last good read (its reports only mark changes); "not
+ *  read" once SNOF's Livesky session is gone. */
+const waterAge = (m) => (m.vendor === 'livesky' && liveskyState().kind !== 'ok' ? 'not read'
+  : agoText(m.vendor === 'livesky' ? (m.liveAt || m.reportedAt) : (state.meta?.water?.niagara?.at || state.water?.pulledAt)));
+
 function flowHero() {
   const w = state.water || {};
   const motors = Object.values(w.motors || {});
   const supply = motors.find((m) => m.role === 'main-farm');
   const drip = motors.find((m) => m.role === 'drip');
   const s = irrNowState();
-  const node = (cls, art, title, sub, on) =>
+  const live = (m) => !!m && m.running === true && waterCurrent(m);
+  const node = (cls, art, title, sub, on, age = '') =>
     `<div class="flow-node ${cls}${on ? ' is-on' : ''}"><span class="flow-disc">${art}</span>` +
-    `<span class="flow-title">${escapeHtml(title)}</span><span class="flow-sub">${escapeHtml(sub)}</span></div>`;
+    `<span class="flow-title">${escapeHtml(title)}</span><span class="flow-sub">${escapeHtml(sub)}</span>` +
+    (age ? `<span class="flow-age">${escapeHtml(age)}</span>` : '') + `</div>`;
   const pipe = (on, label) => `<div class="flow-pipe${on ? ' is-on' : ''}" aria-hidden="true">` +
     `<span class="pipe-line"></span>` +
     (label ? `<em>${escapeHtml(label)}</em>` : '') + `</div>`;
-  const drips = drip ? `<a class="flow-branch${drip.running ? ' is-on' : ''}" href="#/water">${artImg(drip.running ? 'motor-on' : 'motor-off', 'flow-mini')}` +
-    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}</span></a>` : '';
+  const aged = (m) => (m && !waterCurrent(m) ? waterAge(m) : '');
+  const drips = drip ? `<a class="flow-branch${live(drip) ? ' is-on' : ''}" href="#/water">${artImg(live(drip) ? 'motor-on' : 'motor-off', 'flow-mini')}` +
+    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}` +
+    `${aged(drip) ? ` · ${escapeHtml(aged(drip))}` : ''}</span></a>` : '';
   const hasWater = w.river || motors.length;
+  // The pull's age only while every reading drawn is current; otherwise the
+  // stale ones carry their own, and "just now" would vouch for them.
+  const allCurrent = [w.river, supply].filter(Boolean).every(waterCurrent);
   return `<section class="panel flow" aria-label="Water from the river to the main farm">
     <div class="flow-head"><h2 class="panel-title">Water</h2>
-      ${w.pulledAt ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
+      ${state.meta?.water?.enabled !== true ? '<span class="card-age">readings off</span>'
+        : w.pulledAt && allCurrent ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
       <a class="panel-link" href="#/water">Details${arrow()}</a></div>
     <div class="flow-row">
-      ${node('', motorArt(w.river), 'River', hasWater ? motorWord(w.river) : 'No reading', w.river?.running)}
-      ${pipe(w.river?.running, '')}
-      ${node('', motorArt(supply), 'Other farm', supply ? `7.5 HP ${motorWord(supply).toLowerCase()}` : 'No reading', supply?.running)}
-      ${pipe(supply?.running, '')}
+      ${node('', motorArt(live(w.river) ? w.river : null), 'River', hasWater ? motorWord(w.river) : 'No reading', live(w.river), aged(w.river))}
+      ${pipe(live(w.river), '')}
+      ${node('', motorArt(live(supply) ? supply : null), 'Other farm', supply ? `7.5 HP ${motorWord(supply).toLowerCase()}` : 'No reading', live(supply), aged(supply))}
+      ${pipe(live(supply), '')}
       ${node('farm', artImg('kulam', 'flow-art'), 'Main farm', s.running ? 'Watering' : 'Not watering', s.running)}
     </div>
     ${drips}
@@ -636,8 +738,9 @@ function irrigationCard() {
     const last = irrRuns()[0];
     if (last) {
       frac = last.planned ? (last.delivered ?? (last.finished ? last.planned : 0)) / last.planned : 1;
-      tone = last.finished ? 'is-done' : 'is-warn';
-      label = runAmount(last).split(' of ')[0] || '—'; sub = last.finished ? 'last run' : 'cut short';
+      tone = last.finished ? 'is-done' : mayStillRun(last) ? '' : 'is-warn';
+      label = runAmount(last).split(' of ')[0] || '—';
+      sub = last.finished ? 'last run' : runOutcome(last).replace(/^,? /, '');
       valves = last.valves;
     }
   }
@@ -658,7 +761,7 @@ function tileFor(e) {
   const on = want ? want === 'on' : isOn(e);
   const can = canControl && bridgeGate('control').ok;
   const full = e.name || e.entity_id;
-  const dev = state.devices?.[e.device]?.name || '';
+  const dev = deviceName(e.device);
   const trimmed = dev && full.startsWith(`${dev} `) ? full.slice(dev.length + 1) : full;
   const name = trimmed || full;
   return `<button class="tile${on ? ' is-on' : ''}${want ? ' busy' : ''}" data-key="${escapeHtml(e.key)}" data-act="toggle"` +
@@ -730,10 +833,11 @@ function farmSystems(all) {
   const rest = [];
   for (const g of groups) {
     const id = systemOfDevice(g);
-    if (id === 'printer') { printers.push(g.name); put(id, g); } else rest.push([id, g]);
+    if (id === 'printer') { printers.push(g.raw || g.name); put(id, g); } else rest.push([id, g]);
   }
-  // A printer's add-ons (its AMS, the external spool) are named after it.
-  for (const [id, g] of rest) put(printers.some((p) => g.name.startsWith(`${p}_`)) ? 'printer' : id, g);
+  // A printer's add-ons (its AMS, the external spool) are named after it,
+  // in Home Assistant's own names rather than the tidied ones.
+  for (const [id, g] of rest) put(printers.some((p) => (g.raw || g.name).startsWith(`${p}_`)) ? 'printer' : id, g);
   return out;
 }
 
@@ -749,9 +853,13 @@ function deviceSystems(all) {
   return out;
 }
 /** Offline devices split into faults and appliances switched off. */
+/** Whether a device being offline is a fault (a camera, the inverter, a
+ *  switch module) rather than something switched off at the wall (an AC, a
+ *  TV, the printer and its AMS). Mirrors Systems.offlineIsFault. */
+const offlineIsFault = (d, index) => (SYSTEMS[index.get(d.id)] || SYSTEMS.other).offline !== 'none' && !isAppliance(d);
 function offlineSplit(devices, index) {
   const down = devices.filter(deviceOffline);
-  const fault = down.filter((d) => (SYSTEMS[index.get(d.id)] || SYSTEMS.other).offline !== 'none' && !isAppliance(d));
+  const fault = down.filter((d) => offlineIsFault(d, index));
   return { fault: fault.length, off: down.length - fault.length };
 }
 
@@ -826,7 +934,8 @@ function attentionItems(all, systems) {
   const add = (level, text, sub, href) => items.push({ level, text, sub, href });
   const b = bridgeStatus();
   if (b.cls === 'pill-offline' || b.cls === 'pill-stale') {
-    add('bad', 'Farm box offline', `Switches and controller reads are paused${b.ageSec ? ` · quiet for ${humanAge(b.ageSec)}` : ''}`, null);
+    // "Bridge", as the pill, the account menu and the gates say it.
+    add('bad', 'Bridge not reporting', `Switches and controller reads are paused${b.ageSec ? ` · quiet for ${humanAge(b.ageSec)}` : ''}`, null);
   }
   // Irrigation.
   const c = irrig(), p = c.program;
@@ -878,7 +987,10 @@ function attentionItems(all, systems) {
       continue;
     }
     const down = sys.devices.filter((d) => deviceOffline(d) && !isAppliance(d));
-    if (down.length) add('warn', `${down.length === 1 ? down[0].name : `${down.length} switch modules`} offline`,
+    // A module named after its room ("Family Room" in the family room) says
+    // what it is, or the row reads as the whole room being down.
+    const one = down[0] && (down[0].name.toLowerCase() === areaName(down[0].area).toLowerCase() ? `${down[0].name} switch module` : down[0].name);
+    if (down.length) add('warn', `${down.length === 1 ? one : `${down.length} switch modules`} offline`,
       down.length === 1 ? areaName(down[0].area) : down.map((d) => d.name).join(', '), '#/sys/switches');
   }
   return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1));
@@ -1011,8 +1123,13 @@ function systemView(all, id) {
   const live = devices.filter((d) => !deviceOffline(d));
   const off = devices.filter(deviceOffline);
   const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
-      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !['select', 'number', 'time', 'button', 'image'].includes(e.domain)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
-  const offNote = off.length && id !== 'security' ? `<p class="more-note">${escapeHtml(SYSTEMS[id].offline === 'none' ? 'Switched off' : 'Offline')}: ${escapeHtml(off.map((d) => d.name).join(', '))}</p>` : '';
+      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !isBackstage(e)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
+  // Per device, as on a room page: a fan on the switches page is switched
+  // off, not offline.
+  const offFault = id === 'security' ? [] : off.filter((d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d));
+  const offRest = id === 'security' ? [] : off.filter((d) => !offFault.includes(d));
+  const offNote = (offFault.length ? `<p class="more-note note-off">Offline: ${escapeHtml(offFault.map((d) => d.name).join(', '))}</p>` : '') +
+    (offRest.length ? `<p class="more-note">Switched off: ${escapeHtml(offRest.map((d) => d.name).join(', '))}</p>` : '');
   return head(sys.title, '', '', back) + top + tiles + devList + offNote;
 }
 
@@ -1067,14 +1184,15 @@ function areaView(all, id) {
   const deadIds = new Set(dead.map((d) => d.id));
   const byDomain = new Map();
   for (const e of list) {
-    if (!search && deadIds.has(e.device || e.key)) continue;
+    if (!search && (deadIds.has(e.device || e.key) || isBackstage(e))) continue;
     if (!byDomain.has(e.domain)) byDomain.set(e.domain, []);
     byDomain.get(e.domain).push(e);
   }
   // Operable domains first: the reason to open a room is usually to do something.
+  const rank = (d) => (SECTION_ORDER.includes(d) ? SECTION_ORDER.indexOf(d) : 99);
   const order = [...byDomain.keys()].sort((a, b) => {
     const ca = CONTROLLABLE.has(a) ? 0 : 1, cb = CONTROLLABLE.has(b) ? 0 : 1;
-    return ca - cb || a.localeCompare(b);
+    return ca - cb || rank(a) - rank(b) || a.localeCompare(b);
   });
   const split = offlineSplit(devices, deviceSystems(all));
   const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')}` +
@@ -1084,13 +1202,14 @@ function areaView(all, id) {
     (canControl && !bridgeGate('control').ok ? controlNote() : '') +
     order.map((d) => {
       const items = byDomain.get(d).sort(byName);
-      const title = cap(humanDomain(d));
+      const title = SECTION_TITLE[d] || cap(humanDomain(d));
       return `<section class="panel area-sec">` + panelHead(title, null, items.length) + (CONTROLLABLE.has(d)
         ? `<div class="dev-list${items.length > 8 ? ' cols' : ''}">${items.map((e) => deviceCard(e, 'area')).join('')}</div>`
-        : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e)).join('')}</div>`) +
+        : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e, false, false)).join('')}</div>`) +
         `</section>`;
     }).join('') + (search ? '' : (() => {
-      const faults = dead.filter((d) => !isAppliance(d) && (SYSTEMS[deviceSystems(all).get(d.id)] || SYSTEMS.other).offline !== 'none');
+      const index = deviceSystems(all);
+      const faults = dead.filter((d) => offlineIsFault(d, index));
       const off = dead.filter((d) => !faults.includes(d));
       return (faults.length ? `<p class="more-note note-off">Offline: ${escapeHtml(faults.map((d) => d.name).join(', '))}</p>` : '') +
         (off.length ? `<p class="more-note">Switched off: ${escapeHtml(off.map((d) => d.name).join(', '))}</p>` : '');
@@ -1111,7 +1230,11 @@ function devicesView(all) {
     : statusFilter === 'active' ? !isBad(e) : deadIds.has(e.device || e.key);
   const scoped = all.filter(byStatus);
   const list = scoped.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
-  const groups = byDevice(list).sort((a, b) => a.name.localeCompare(b.name, undefined, NATURAL));
+  const index = deviceSystems(all);
+  const fault = (g) => offlineIsFault(full.get(g.id) || g, index);
+  // Not reporting: the faults first, then what is only switched off.
+  const groups = byDevice(list).sort((a, b) => (statusFilter === 'offline' ? fault(b) - fault(a) : 0) ||
+    a.name.localeCompare(b.name, undefined, NATURAL));
 
   const counts = { all: full.size, active: byDevice(all.filter((e) => !isBad(e))).length, offline: deadIds.size };
   const seg = `<div class="seg" role="group" aria-label="Filter by status">` +
@@ -1129,10 +1252,11 @@ function devicesView(all) {
     const whole = full.get(g.id) || g;
     const down = whole.ents.filter(isBad).length;
     const open = filtering || openDevices.has(g.id);
-    // An appliance off at the wall is "Off", as on Home and Rooms.
+    // Off at the wall is "Off", as on Home and Rooms: the printer's AMS too,
+    // which is no appliance but sits in a system whose offline is no fault.
     const status = down === 0 ? `<span class="tag tag-on">All reporting</span>`
-      : down === whole.ents.length ? (isAppliance(whole) ? `<span class="tag">Off</span>` : `<span class="tag tag-bad">Offline</span>`)
-      : `<span class="tag tag-warn">${down} of ${whole.ents.length} down</span>`;
+      : down === whole.ents.length ? (fault(whole) ? `<span class="tag tag-bad">Offline</span>` : `<span class="tag">Off</span>`)
+      : `<span class="tag tag-warn">${down} of ${whole.ents.length} readings down</span>`;
     return `<section class="dgroup${open ? ' open' : ''}">
       <button class="dgroup-head" data-act="dev-open" data-dev="${escapeHtml(g.id)}" aria-expanded="${open}">
         <span class="dgroup-main"><span class="dgroup-name">${escapeHtml(g.name)}</span>
@@ -1225,15 +1349,19 @@ function irrDefaultDates() {
  * same as off; only an explicit false blocks. */
 function bridgeGate(feature) {
   const hb = state.meta && state.meta.bridge;
+  const reads = feature === 'reports';
+  // bridge: closed because the bridge is quiet (two such gates are said once).
   if (!hb || !hb.lastSeen) {
-    return { ok: false, why: 'The bridge has not reported in yet, so nothing would act on that.' };
+    return { ok: false, bridge: true, why: reads ? 'The bridge has not checked in yet, so the controller cannot be read.'
+      : 'The bridge has not checked in yet, so a press would not reach the farm.' };
   }
   const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
   if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    return { ok: false, why: 'The bridge is not reporting in, so nothing would act on that.' };
+    return { ok: false, bridge: true, why: reads ? 'The bridge is not reporting in, so the controller cannot be read right now.'
+      : 'The bridge is not reporting in, so a press would not reach the farm.' };
   }
   if (feature === 'control' && hb.control === false) {
-    return { ok: false, why: 'Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.' };
+    return { ok: false, why: 'Switching from the app is turned off at the farm.' };
   }
   return { ok: true, why: '' };
 }
@@ -1246,6 +1374,10 @@ function reportsGate() {
   if (state.meta?.reports?.enabled === false) {
     return { ok: false, why: 'Irrigation reports are switched off for now.' };
   }
+  // Controller reads go through the NUC's relay until the function has a
+  // static egress IP (docs/dcon-off-the-nuc.md): with the bridge quiet, a
+  // Refresh would only time out. No field yet means relay.
+  if (state.meta?.reports?.transport !== 'direct') return bridgeGate('reports');
   return { ok: true, why: '' };
 }
 
@@ -1744,11 +1876,13 @@ function parseRun(r) {
   const kind = headParts.length > 1 ? headParts[0] : 'Program';
   const name = headParts.length > 1 ? headParts.slice(1).join(' · ') : r.event;
   const pieces = String(r.detail || '').split(' · ');
-  let delivered = null, planned = null, finished = false;
+  let delivered = null, planned = null, finished = false, going = false;
   const first = pieces[0] || '';
-  if (/, (finished|stopped)$/.test(first)) {
-    finished = first.endsWith(', finished');
-    const amount = first.split(',')[0];
+  const tail = /^(.*?)(?:, (finished|stopped)| (so far))$/.exec(first);
+  if (tail) {
+    finished = tail[2] === 'finished';
+    going = !!tail[3];
+    const amount = tail[1];
     const parts = amount.split(' of ');
     if (parts.length === 2) { delivered = parseRuntimeMinutes(parts[0]); planned = parseRuntimeMinutes(parts[1]); }
     else { planned = parseRuntimeMinutes(amount); delivered = finished ? planned : null; }
@@ -1757,12 +1891,28 @@ function parseRun(r) {
   let valves = pieces[0] || '';
   const l = valves.toLowerCase();
   if (l.includes('backwash') || l.startsWith('started by') || l.startsWith('ended by') || valves === 'no valves') valves = '';
-  return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, valves };
+  // "ended by A8": the controller says who ended it (a Stop, a fault), so it
+  // is over whatever the clock says.
+  const ended = pieces.some((p) => /^ended by /i.test(p));
+  return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, going, ended, valves };
 }
-/** A run whose planned end has not passed yet may still be going: the log
- *  writes an unfinished run as "stopped" (join_runs), so it is not flagged
- *  as cut short until its time is up. */
-const mayStillRun = (r) => r.planned != null && (farmMs(r.start) ?? 0) + r.planned * 60000 > serverNow();
+/** Not known to have ended, so never "cut short": the function writes "so
+ *  far" for a run it caught part-way, and an older log (which wrote every
+ *  unfinished run as "stopped") is judged against when it was read, not
+ *  against this clock. A run read 22 minutes into its hour is not cut short
+ *  two hours later (2026-09-25). The slack is the backwash pauses, as
+ *  RUN_SLACK_MIN in reports.py. */
+const RUN_SLACK_MS = 30 * 60000;
+const logReadAt = () => Math.min(serverNow(), irrig().timerLogAt || irrig().meta?.lastUpdated || serverNow());
+const runEnd = (r) => (farmMs(r.start) ?? 0) + (r.planned || 0) * 60000 + RUN_SLACK_MS;
+const mayStillRun = (r) => !r.finished && !r.ended && (r.going || (r.planned != null && runEnd(r) > logReadAt()));
+/** When the log was read, as the farm's clock: "00:02". */
+const readClock = () => new Date(logReadAt() + farmTz() * 60000).toISOString().slice(11, 16);
+/** ", finished" / " so far" / ", cut short" after a run's amount; " by 00:02"
+ *  once its time is up but the last read caught it part-way — "so far" would
+ *  claim it is still going. */
+const runOutcome = (r) => (r.finished ? ', finished' : !mayStillRun(r) ? ', cut short'
+  : r.planned != null && runEnd(r) <= serverNow() ? ` by ${readClock()}` : ' so far');
 const runAmount = (x) => (x.planned == null ? (x.delivered != null ? fmtMin(x.delivered) : '')
   : x.finished ? fmtMin(x.planned) : `${fmtMin(x.delivered || 0)} of ${fmtMin(x.planned)}`);
 const irrRuns = () => (irrig().timerLog || []).map(parseRun).filter(Boolean)
@@ -1829,7 +1979,7 @@ function irrNowState() {
   if (last) {
     const bits = [];
     const a = runAmount(last);
-    if (a) bits.push(last.finished ? a : `${a}, cut short`);
+    if (a) bits.push(a + runOutcome(last));
     if (last.valves) bits.push(last.valves);
     const w = farmWhen(last.start);
     if (w) bits.push(w);
@@ -1852,12 +2002,12 @@ let runOpen = false, runPick = [], runMinutes = 15;
 function irrControlGate() {
   if (state.meta?.irrigationControl?.enabled === true) return { ok: true, why: '' };
   const hb = state.meta?.bridge;
-  if (!hb || !hb.lastSeen) return { ok: false, why: 'Valve control has not checked in yet.' };
+  if (!hb || !hb.lastSeen) return { ok: false, bridge: true, why: 'Valve control has not checked in yet.' };
   const ageSec = (serverNow() - hb.lastSeen) / 1000;
   if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    return { ok: false, why: 'Valve control is not answering right now.' };
+    return { ok: false, bridge: true, why: 'Valve control is not answering right now.' };
   }
-  if (hb.irrigationControl !== true) return { ok: false, why: 'Valve control is switched off.' };
+  if (hb.irrigationControl !== true) return { ok: false, why: 'Valve control is switched off at the farm.' };
   return { ok: true, why: '' };
 }
 const irrLocked = () => (state.irrigationLock?.until || 0) > serverNow();
@@ -1991,13 +2141,19 @@ function irrNowModule() {
   const empty = !c.program && !(c.timerLog || []).length;
   const faults = s.running ? (c.program?.faults || []) : [];
   const next = c.program?.next;
+  // Why Refresh (and Run) are off, said once when the quiet bridge is both reasons.
+  const rg = reportsGate(), vg = irrControlGate();
+  const both = isAdmin && !rg.ok && rg.bridge && !vg.ok && vg.bridge;
+  const readNote = canControl && !rg.ok
+    ? `<p class="more-note note-off">${escapeHtml(both ? 'The bridge is not reporting in, so the controller cannot be read or sent a Run or Stop.' : rg.why)}</p>` : '';
   const controls = isAdmin ? `<div class="now-actions">
       <button class="btn btn-primary" data-act="run-open"${refusal || runOpen || (s.running && s.manual) || !valveRows().some(isIrrigationValve) ? ' disabled' : ''}>Run valves</button>
       ${s.running && s.manual ? `<button class="btn btn-danger" data-act="irr-stop"${refusal ? ' disabled' : ''}>Stop</button>` : ''}
     </div>
     ${irrPending ? `<p class="more-note">${irrConfirming ? 'Confirming with the controller…' : 'Sent. Waiting for the farm…'}</p>`
-      : refusal && refusal !== 'Only farm admins can open or close valves.' ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
-      : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>` : ''}` : '';
+      : refusal && refusal !== 'Only farm admins can open or close valves.' && !both ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
+      : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>`
+      : s.running && s.manual ? '<p class="more-note">One manual run at a time.</p>' : ''}` : '';
   return `<section class="panel now${s.running ? ' is-on' : ''}" aria-label="Now">
     <div class="now-top">
       <p class="now-label"><span class="dot"></span>${s.running ? 'Watering now' : 'Not watering'}</p>
@@ -2007,7 +2163,7 @@ function irrNowModule() {
       : `<h2 class="now-title">${escapeHtml(s.title)}</h2>${s.detail ? `<p class="now-detail">${escapeHtml(s.detail)}</p>` : ''}`}
     ${faults.map((f) => `<span class="tag tag-bad">${escapeHtml(f)}</span>`).join('')}
     ${next && next.name ? `<p class="now-next"><span>Next</span>${escapeHtml([next.name, next.plannedMin != null ? fmtMin(next.plannedMin) : ''].filter(Boolean).join(' · '))}</p>` : ''}
-    ${controls}
+    ${controls}${readNote}
   </section>`;
 }
 
@@ -2271,8 +2427,10 @@ const WATER_ROLE = {
   drip: "Runs this farm's own drip zones",
 };
 
-function motorStateTag(m) {
-  if (m.running === true) return `<span class="tag tag-on">Running</span>`;
+/** current: false for a reading that no longer says what the motor is
+ *  doing now (waterCurrent): its last state, in grey. */
+function motorStateTag(m, current = true) {
+  if (m.running === true) return current ? `<span class="tag tag-on">Running</span>` : `<span class="tag">Running</span>`;
   if (m.running === false) return `<span class="tag">Off</span>`;
   return `<span class="tag">Unknown</span>`;
 }
@@ -2324,11 +2482,13 @@ function waterMotorCard(m, vendorErr) {
   if (m.skippedZone != null) notes.push(`<p class="more-note note-bad">Zone ${m.skippedZone} was skipped: no valve feedback.</p>`);
   if (vendorErr) notes.push(`<p class="more-note note-off">${escapeHtml(vendorErr)}</p>`);
   const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
-  return `<article class="panel wmotor${m.running ? ' is-on' : ''}">
+  // Green only on a current reading, as on Home.
+  const live = m.running === true && waterCurrent(m);
+  return `<article class="panel wmotor${live ? ' is-on' : ''}">
     <div class="wmotor-head">
-      <img class="wmotor-art" src="/art/${m.running ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
+      <img class="wmotor-art" src="/art/${live ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
       <div class="wmotor-title"><h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p></div>
-      ${motorStateTag(m)}
+      ${motorStateTag(m, waterCurrent(m))}
     </div>
     ${headline.length ? `<div class="mb-facts">${headline.map(([k, v]) => {
       const [main, asOf] = String(v).split(' · as of ');
@@ -2357,10 +2517,11 @@ function waterView() {
   const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
 
-  const riverBody = w.river
-    ? waterMotorCard(w.river, liveskyErr ? `${liveskyErr} Showing the last reading.` : '')
-    : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
   const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
+  // Said once: the account note above the card already carries a session problem.
+  const riverBody = w.river
+    ? waterMotorCard(w.river, liveskyErr && livesky.kind === 'ok' ? `${liveskyErr} Showing the last reading.` : '')
+    : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
   const riverNote = livesky.kind === 'ok' ? ''
     : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`;
 
@@ -2377,7 +2538,9 @@ function waterView() {
 
   const account = isAdmin
     ? `<details class="acct-sec"${livesky.kind !== 'ok' || lsStep !== 'idle' ? ' open' : ''}><summary>Livesky account</summary>${liveskyPanel()}</details>` : '';
-  return head('Water', '', refresh) +
+  // When it was read, and that it only reads: the owner asked why these
+  // motors cannot be switched from here (2026-09-24).
+  return head('Water', `${w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet'} · read-only`, refresh) +
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
     `<div class="wchain">` +
     waterStage('1', 'River', 'The river motor pumps to the other farm.', riverNote + riverBody) +
@@ -2889,12 +3052,15 @@ function deviceCard(ent, mode = 'area') {
   </div>`;
 }
 
-function row(ent, withArea = false) {
+/** withDomain: off under a room section that already names the kind. */
+function row(ent, withArea = false, withDomain = true) {
+  const meta = [withArea ? areaName(ent.area) : withDomain ? humanDomain(ent.domain) : '', subtitle(ent).replace(/^ · /, '')]
+    .filter(Boolean).join(' · ');
   return `<div class="row ${isBad(ent) ? 'is-bad' : isOn(ent) ? 'is-on' : ''}" data-key="${escapeHtml(ent.key)}">
     <span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-${iconFor(ent)}"/></svg></span>
     <span class="row-main">
       <span class="row-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
-      <span class="row-meta">${escapeHtml(withArea ? areaName(ent.area) : humanDomain(ent.domain))}${subtitle(ent)}</span>
+      ${meta ? `<span class="row-meta">${escapeHtml(meta)}</span>` : ''}
     </span>
     <span class="dev-state ${stateClass(ent)}">${escapeHtml(formatState(ent))}</span>
   </div>`;
@@ -3101,8 +3267,12 @@ function wire(all) {
 
 /* ---- formatting ---- */
 
+/* Domains without a drawing of their own borrow the nearest one, not the
+ * placeholder square, which reads as broken. */
+const ICON_ALIAS = { alarm_control_panel: 'shield', remote: 'media_player', siren: 'alert', input_select: 'select', input_number: 'number' };
 function iconName(domain) {
-  return document.getElementById(`i-${domain}`) ? domain : 'default';
+  const d = ICON_ALIAS[domain] || domain;
+  return document.getElementById(`i-${d}`) ? d : 'default';
 }
 function iconFor(ent) {
   return ent ? iconName(ent.domain) : 'default';
@@ -3219,7 +3389,8 @@ function flashChanged(ents) {
 function humanAge(sec) {
   if (sec < 90) return `${Math.round(sec)}s`;
   if (sec < 5400) return `${Math.round(sec / 60)}m`;
-  return `${Math.round(sec / 3600)}h`;
+  if (sec < 172800) return `${Math.round(sec / 3600)}h`;
+  return `${Math.round(sec / 86400)}d`;
 }
 
 function escapeHtml(v) {

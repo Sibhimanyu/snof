@@ -88,20 +88,23 @@ public enum Systems {
     }
 
     /// Systems that have devices, keyed by id. A printer's add-ons (its AMS,
-    /// the external spool) are named after it and join it.
-    public static func build(_ entities: [Entity], names: [String: String]) -> [FarmSystemID: FarmSystem] {
+    /// the external spool) are named after it and join it, matched on Home
+    /// Assistant's own names (`raw`) rather than the tidied display ones.
+    public static func build(_ entities: [Entity], names: [String: String],
+                             raw: [String: String] = [:]) -> [FarmSystemID: FarmSystem] {
         let groups = Sorting.byDevice(entities, names: names)
         var out: [FarmSystemID: FarmSystem] = [:]
         func put(_ id: FarmSystemID, _ g: DeviceGroup) {
             out[id, default: FarmSystem(id: id, devices: [])].devices.append(g)
         }
+        func match(_ g: DeviceGroup) -> String { raw[g.id] ?? g.name }
         var printers: [String] = []
         var rest: [(FarmSystemID, DeviceGroup)] = []
         for g in groups {
             let id = classify(g)
-            if id == .printer { printers.append(g.name); put(.printer, g) } else { rest.append((id, g)) }
+            if id == .printer { printers.append(match(g)); put(.printer, g) } else { rest.append((id, g)) }
         }
-        for (id, g) in rest { put(printers.contains { g.name.hasPrefix("\($0)_") } ? .printer : id, g) }
+        for (id, g) in rest { put(printers.contains { match(g).hasPrefix("\($0)_") } ? .printer : id, g) }
         return out
     }
 
@@ -159,7 +162,7 @@ public enum Systems {
             let noun = sys.id == .climate ? (main.count == 1 ? "AC" : "ACs") : (main.count == 1 ? "device" : "devices")
             return SystemSummary(state: on.isEmpty ? .off : .on, line: on.isEmpty ? "All off" : "\(on.count) on", sub: "\(main.count) \(noun)")
         case .printer:
-            if allOffline { return SystemSummary(state: .off, line: "Off", sub: "Switched off") }
+            if allOffline { return SystemSummary(state: .off, line: "Off", sub: "") }   // not "Off · Switched off"
             let prog = find { n, e in n.contains("progress") && e.attrs.unit == "%" }
             let stage = find { n, _ in matches(n, "current stage|print status") }
             let stageText = stage.flatMap { $0.isBad ? nil : firstUpper(($0.state ?? "").replacingOccurrences(of: "_", with: " ")) }
@@ -218,11 +221,44 @@ extension Irrigation {
         return digits.isEmpty || digits.count > 2 ? nil : Int(digits)
     }
 
-    /// A run whose planned end has not passed may still be going: the log
-    /// writes an unfinished run as "stopped", so it is not cut short yet.
-    public static func mayStillRun(_ r: ProgramRun, now: Date, zone: TimeZone) -> Bool {
-        guard let planned = r.plannedMin, let start = FarmTime.date(r.start, zone: zone) else { return false }
-        return start.addingTimeInterval(Double(planned) * 60) > now
+    /// Room for backwash pauses, which stop the countdown (RUN_SLACK_MIN in reports.py).
+    public static let runSlack: TimeInterval = 30 * 60
+
+    /// When the run log was read: judged against this, not the phone's clock.
+    public static func logReadAt(_ c: IrrigationCache, now: Date) -> Date {
+        guard let ms = c.timerLogAt ?? c.lastUpdated else { return now }
+        return min(now, Date(timeIntervalSince1970: ms / 1000))
+    }
+
+    /// Not known to have ended, so never "cut short": the function writes "so
+    /// far" for a run it caught part-way, and an older log (which wrote every
+    /// unfinished run as "stopped") is judged against when it was read. A run
+    /// read 22 minutes into its hour is not cut short two hours later
+    /// (2026-09-25). Mirrors mayStillRun() in app.js.
+    public static func mayStillRun(_ r: ProgramRun, readAt: Date, zone: TimeZone) -> Bool {
+        // "ended by A8": over, whatever the clock says (a Stop, a fault).
+        if r.finished || r.ended { return false }
+        if r.going { return true }
+        guard let end = runEnd(r, zone: zone) else { return false }
+        return end > readAt
+    }
+
+    /// Start + planned minutes + the backwash slack; nil without a plan.
+    static func runEnd(_ r: ProgramRun, zone: TimeZone) -> Date? {
+        guard let planned = r.plannedMin, let start = FarmTime.date(r.start, zone: zone) else { return nil }
+        return start.addingTimeInterval(Double(planned) * 60 + runSlack)
+    }
+
+    /// What follows a run's amount: "" (finished), " so far", ", cut short";
+    /// " by 00:02" once its time is up but the last read caught it part-way —
+    /// "so far" would claim it is still going. Mirrors runOutcome() in app.js.
+    public static func outcome(_ r: ProgramRun, readAt: Date, now: Date, zone: TimeZone) -> String {
+        if r.finished { return "" }
+        if !mayStillRun(r, readAt: readAt, zone: zone) { return ", cut short" }
+        if let end = runEnd(r, zone: zone), end <= now {
+            return " by " + FarmTime.when(ms: readAt.timeIntervalSince1970 * 1000, now: now, zone: zone)
+        }
+        return " so far"
     }
 
     /// What each crop got on one farm day, from the controller's run log.
@@ -237,10 +273,11 @@ extension Irrigation {
         var byNumber: [Int: String] = [:]
         for r in rows { if let id = r["id"].flatMap(Int.init), let n = r["name"] { byNumber[id] = n } }
         let dayRuns = runs(c).filter { $0.day == day && !$0.valves.isEmpty }
+        let readAt = logReadAt(c, now: now)
         var valves: [String: (no: Int?, min: Int, cut: Set<String>)] = [:]
         var order: [String] = []
         for r in dayRuns {
-            let cut = !r.finished && !mayStillRun(r, now: now, zone: zone)
+            let cut = !r.finished && !mayStillRun(r, readAt: readAt, zone: zone)
             for raw in r.valves.components(separatedBy: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !raw.isEmpty {
                 let no = valveNumber(raw)
                 let name = no.flatMap { byNumber[$0] } ?? raw
@@ -333,7 +370,8 @@ public enum Attention {
         var out: [AttentionItem] = []
         let room = { (id: String) in i.areaName[id] ?? "" }
         if i.bridgeDown {
-            out.append(.init(.bad, "Farm box offline",
+            // "Bridge", as the pill, the account sheet and the gates say it.
+            out.append(.init(.bad, "Bridge not reporting",
                              "Switches and controller reads are paused" + (i.bridgeQuietFor.isEmpty ? "" : " · quiet for \(i.bridgeQuietFor)"), .home))
         }
         let c = i.irrigation
@@ -350,9 +388,10 @@ public enum Attention {
             }
         }
         let since = i.now.addingTimeInterval(-86_400)
+        let readAt = Irrigation.logReadAt(c, now: i.now)
         // Programs with no valves assigned end at 0m by design; not faults.
         let cut = Irrigation.runs(c).filter { r in
-            !r.finished && r.plannedMin != nil && !r.valves.isEmpty && !Irrigation.mayStillRun(r, now: i.now, zone: zone)
+            !r.finished && r.plannedMin != nil && !r.valves.isEmpty && !Irrigation.mayStillRun(r, readAt: readAt, zone: zone)
                 && (FarmTime.date(r.start, zone: zone).map { $0 >= since } ?? false)
         }
         if !cut.isEmpty {
@@ -406,7 +445,13 @@ public enum Attention {
         }
         if let sw = i.systems[.switches] {
             let down = sw.devices.filter { $0.isOffline && !Systems.isAppliance($0) }
-            if down.count == 1 { out.append(.init(.warn, "\(down[0].name) offline", room(down[0].area), .system(.switches))) }
+            // A module named after its room ("Family Room" in the family room)
+            // says what it is, or the row reads as the whole room being down.
+            if down.count == 1 {
+                let d = down[0]
+                let name = d.name.lowercased() == room(d.area).lowercased() ? "\(d.name) switch module" : d.name
+                out.append(.init(.warn, "\(name) offline", room(d.area), .system(.switches)))
+            }
             else if down.count > 1 {
                 out.append(.init(.warn, "\(down.count) switch modules offline", down.map(\.name).joined(separator: ", "), .system(.switches)))
             }

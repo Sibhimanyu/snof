@@ -159,7 +159,10 @@ def _status(store, root: str, ok: bool = False, error: str = "", rtype: str = ""
             refused: bool = False) -> None:
     """meta/reports: what the dashboard reads to say reports are live. A
     patch, so `enabled` — the kill switch — is never touched from here."""
-    patch: dict[str, Any] = {"runtime": "cloud-functions",
+    # transport: "relay" while controller reads go through the NUC (the apps
+    # then close Refresh when the bridge is quiet), "direct" once the function
+    # has a static egress IP Mobitech allowlists (docs/dcon-off-the-nuc.md).
+    patch: dict[str, Any] = {"runtime": "cloud-functions", "transport": DCON_TRANSPORT.value,
                              "lastSeen": reports.SERVER_TIMESTAMP}
     if refused:
         patch["lastRefused"] = reports.SERVER_TIMESTAMP
@@ -298,7 +301,15 @@ def water_refresh(event: db_fn.Event[Any]) -> None:
 )
 def water_poll(event: scheduler_fn.ScheduledEvent) -> None:
     """Keep the water chain roughly current when nobody is looking."""
-    _water_pull(_db(), f"farms/{FARM_SLUG.value}")
+    store, root = _db(), f"farms/{FARM_SLUG.value}"
+    _water_pull(store, root)
+    # The apps close Refresh while reads are relayed and the bridge is quiet.
+    # Written here too, not only after a report: at cut-over to direct with
+    # the bridge down, no report would ever run to say so.
+    try:
+        store.reference(f"{root}/meta/reports").update({"transport": DCON_TRANSPORT.value})
+    except Exception:          # noqa: BLE001 — best-effort, like _status
+        _LOG.exception("Could not write meta/reports.transport")
 
 
 def _json(body: dict, status: int = 200) -> https_fn.Response:

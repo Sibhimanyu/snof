@@ -17,6 +17,7 @@ import SNOFCore
  *   -demo-controloff  bridge publishes control: false
  *   -demo-reportsoff  meta/reports.enabled: false (the report kill switch)
  *   -demo-stale       bridge heartbeat 400 s old
+ *   -demo-fresh       (with SNOF_DEMO_TREE) water readings moved to now
  *   -demo-signedout   start on the sign-in screen
  *   -demo-denied      signed in, but not on the allowlist
  *   -demo-signinfail  sign-in fails the way a real one can (shows the report) */
@@ -119,11 +120,48 @@ final class DemoBackend: FarmBackend {
                                   "at": now - 60_000] as [String: Any]
                 tree["irrigation"] = irr
             }
+            // The state flags apply to the replayed tree too (they were lost
+            // to its own meta, so -demo-stale showed "Live").
             var m = tree["meta"] as? [String: Any] ?? [:]
             var b = m["bridge"] as? [String: Any] ?? [:]
-            b["lastSeen"] = now - 5_000
+            b["lastSeen"] = now - (flag("stale") ? 400_000 : 5_000)
+            if flag("controloff") { b["control"] = false; b["irrigationControl"] = false }
+            if flag("irrigationoff") { b["irrigationControl"] = false }
             m["bridge"] = b
+            if flag("reportsoff") { m["reports"] = ["enabled": false] }
+            if var wm = m["water"] as? [String: Any] {
+                if flag("wateroff") { wm["enabled"] = false }
+                if flag("liveskyexpired") {
+                    var ls = wm["livesky"] as? [String: Any] ?? [:]
+                    ls["expires"] = now - 3_600_000; ls["ok"] = false; ls["error"] = "The Livesky session has expired."
+                    wm["livesky"] = ls
+                }
+                m["water"] = wm
+            }
             tree["meta"] = m
+            // -demo-fresh: the water readings as if pulled just now, for
+            // reviewing the live look with the real farm's values.
+            if flag("fresh"), var w = tree["water"] as? [String: Any], let pulled = Parse.double(w["pulledAt"]) {
+                let shift = (now - 10_000 - pulled) / 1000
+                let fmt = ISO8601DateFormatter()
+                func moved(_ v: Any?) -> Any? {
+                    guard let s = v as? String, let d = fmt.date(from: s) else { return v }
+                    return fmt.string(from: d.addingTimeInterval(shift))
+                }
+                func touch(_ v: Any?) -> Any? {
+                    guard var d = v as? [String: Any] else { return v }
+                    for k in ["reportedAt", "liveAt"] where d[k] != nil { d[k] = moved(d[k]) }
+                    return d
+                }
+                w["pulledAt"] = now - 10_000
+                w["river"] = touch(w["river"])
+                if let motors = w["motors"] as? [String: Any] { w["motors"] = motors.mapValues { touch($0) ?? $0 } }
+                tree["water"] = w
+                if var wm = (tree["meta"] as? [String: Any])?["water"] as? [String: Any] {
+                    for k in ["livesky", "niagara"] { if var st = wm[k] as? [String: Any] { st["at"] = now - 10_000; wm[k] = st } }
+                    var mm = tree["meta"] as? [String: Any] ?? [:]; mm["water"] = wm; tree["meta"] = mm
+                }
+            }
             return
         }
         #endif

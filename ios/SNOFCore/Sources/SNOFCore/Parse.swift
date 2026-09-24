@@ -65,10 +65,13 @@ public enum Parse {
                 .map { Int($0) }
         }
         let cloud = d["irrigationControl"] as? [String: Any]
-        return FarmMeta(name: string(d["name"]), bridge: bridge,
-                        reportsEnabled: bool((d["reports"] as? [String: Any])?["enabled"]),
-                        cloudIrrigationControl: bool(cloud?["enabled"]),
-                        cloudIrrigationMaxMinutes: double(cloud?["maxMinutes"]).map { Int($0) })
+        let reports = d["reports"] as? [String: Any]
+        var m = FarmMeta(name: string(d["name"]), bridge: bridge,
+                         reportsEnabled: bool(reports?["enabled"]),
+                         cloudIrrigationControl: bool(cloud?["enabled"]),
+                         cloudIrrigationMaxMinutes: double(cloud?["maxMinutes"]).map { Int($0) })
+        m.reportsTransport = string(reports?["transport"])
+        return m
     }
 
     public static func areas(_ v: Any?) -> [String: Area] {
@@ -127,6 +130,7 @@ public enum Parse {
             c.timeZone = string(dcon["timeZone"]).flatMap { $0.isEmpty ? nil : $0 }
         }
         c.timerLog = rows(d["timerLog"])
+        c.timerLogAt = double(d["timerLogAt"])
         c.motorLog = rows(d["motorLog"])
         if let p = d["program"] as? [String: Any] {
             c.program = CurrentProgram(name: string(p["name"]) ?? "", kind: string(p["kind"]) ?? "",

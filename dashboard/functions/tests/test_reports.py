@@ -639,6 +639,28 @@ def test_a_valve_that_did_not_answer_is_named():
     assert facts["Valve fault"] == "6 Kulam no signal", facts
 
 
+def test_a_run_the_log_caught_part_way_is_so_far_not_stopped():
+    """Read 22 minutes into an hour's run: "11m of 1h so far", never "stopped"
+    (it read on Home as cut short, 2026-09-25). Once the hour and the slack for
+    backwash pauses have passed, an unfinished run is stopped."""
+    run = {"plannedMin": 60, "deliveredMin": 11, "finished": False, "endedBy": "",
+           "start": "2026-09-24 23:40:08", "valves": ["17"], "backwashes": 1,
+           "startedBy": "", "faults": [], "kind": "Program", "name": "Mango2"}
+    at = V.parse_stamp("2026-09-25 00:01:57")
+    assert R.still_going(run, at)
+    assert R.run_row(run, {}, at)["detail"].startswith("11m of 1h so far"), R.run_row(run, {}, at)
+    late = V.parse_stamp("2026-09-25 01:20:00")
+    assert not R.still_going(run, late)
+    assert "11m of 1h, stopped" in R.run_row(run, {}, late)["detail"]
+    # A run the controller says was ended is stopped, however recent.
+    assert not R.still_going({**run, "endedBy": "A8"}, at)
+    # No read time (an old caller): the old wording.
+    assert "stopped" in R.run_row(run, {})["detail"]
+    # The metric counts it as going, not as stopped early.
+    rows = R.timer_sections(V.timer_segments(TIMER_LOG), "", {}, "w", V.parse_stamp("2026-09-22 00:00:00"))[0][0]["rows"]
+    assert "cut short" in rows[0]["note"], rows[0]
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:

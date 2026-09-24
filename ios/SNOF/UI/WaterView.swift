@@ -12,7 +12,7 @@ struct WaterView: View {
     @State private var account = false
 
     var body: some View {
-        Page(title: "Water", refresh: refresh) {
+        Page(title: "Water", subtitle: pulledLine, refresh: refresh) {
             if let why = store.waterGateWhy { Note(text: why, tone: .warn) }
             Stage(n: 1, title: "River", lead: "") { river }
             Flow(text: "To the other farm")
@@ -30,6 +30,7 @@ struct WaterView: View {
                     .navigationTitle("Livesky account").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { account = false } } }
             }
+            .environment(store)
         }
         // Ask now, and every 30 s while this tab is on screen; SwiftUI
         // cancels the task when the tab goes away.
@@ -48,9 +49,10 @@ struct WaterView: View {
         return { await store.refreshWater(force: true) }
     }
 
+    /// When it was read, and that it only reads: the owner asked why these
+    /// motors cannot be switched from here (2026-09-24).
     private var pulledLine: String {
-        let read = water.pulledAt.map { "Read from the controllers \(ago(ms: $0))." } ?? "Not read yet."
-        return read + " Read-only: this app cannot switch a motor."
+        (water.pulledAt.map { "Read \(ago(ms: $0))" } ?? "Not read yet") + " · read-only"
     }
 
     @ViewBuilder private var river: some View {
@@ -58,8 +60,11 @@ struct WaterView: View {
             Note(text: problem, tone: .warn)
         }
         if let r = water.river {
+            // Said once: the account note above already carries the session problem.
+            let noted = store.isAdmin && store.liveskyProblem != nil
             MotorCard(motor: r, now: store.now,
-                      vendorError: water.livesky.status.ok == false ? water.livesky.status.error : nil)
+                      vendorError: !noted && water.livesky.status.ok == false ? water.livesky.status.error : nil,
+                      current: water.isCurrent(r, now: store.now))
         } else {
             EmptyBlock(title: "No reading from the river motor",
                        message: water.livesky.status.error.isEmpty ? "It appears after the first pull." : water.livesky.status.error,
@@ -73,7 +78,7 @@ struct WaterView: View {
                        message: water.niagara.error.isEmpty ? "It appears after the first pull." : water.niagara.error,
                        symbol: "drop")
         } else {
-            ForEach(water.motors) { m in MotorCard(motor: m, now: store.now) }
+            ForEach(water.motors) { m in MotorCard(motor: m, now: store.now, current: water.isCurrent(m, now: store.now)) }
             if water.niagara.ok == false, !water.niagara.error.isEmpty {
                 Note(text: "\(water.niagara.error) Showing the last readings.", tone: .warn)
             }
@@ -102,12 +107,12 @@ struct WaterView: View {
 }
 
 enum Water {
+    /// "just now", "12m ago", "2h ago", "3d ago": the app's one age format,
+    /// as agoText() in app.js. (Two formats once put "checked 2h ago" and
+    /// "1 h ago" for the same pull on one screen.)
     static func ago(_ d: Date, now: Date) -> String {
         let s = max(0, now.timeIntervalSince(d))
-        if s < 45 { return "just now" }
-        if s < 3600 { return "\(max(1, Int(s / 60))) min ago" }
-        if s < 86400 { return "\(Int(s / 3600)) h ago" }
-        return "\(Int(s / 86400)) d ago"
+        return s < 45 ? "just now" : "\(Format.age(s)) ago"
     }
 }
 
@@ -149,6 +154,9 @@ struct MotorCard: View {
     let motor: WaterMotor
     let now: Date
     var vendorError: String? = nil
+    /// The reading says what the motor is doing now (WaterState.isCurrent);
+    /// if not, its last state shows in grey, as on Home.
+    var current = true
     @State private var showDetails = false
 
     private static let headlineKeys: Set<String> = ["Running for", "Off for", "Program", "Zone time left"]
@@ -185,7 +193,7 @@ struct MotorCard: View {
         let m = motor
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
-                Image(m.running == true ? "art-motor-on" : "art-motor-off").resizable().scaledToFit()
+                Image(m.running == true && current ? "art-motor-on" : "art-motor-off").resizable().scaledToFit()
                     .frame(width: 44, height: 44)
                     .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 2) {
@@ -196,7 +204,7 @@ struct MotorCard: View {
                 }
                 Spacer(minLength: 8)
                 Tag(text: m.running == true ? "Running" : m.running == false ? "Off" : "Unknown",
-                    kind: m.running == true ? .on : .plain)
+                    kind: m.running == true && current ? .on : .plain)
             }
             if !headline.isEmpty { factGrid(headline) }
             if let p = m.pendingText { Note(text: p, tone: .warn) }
@@ -207,13 +215,16 @@ struct MotorCard: View {
             DisclosureGroup(isExpanded: $showDetails) {
                 factGrid(details).padding(.top, 8)
             } label: {
-                Text(m.lastReport.map { "Reported \(Water.ago($0, now: now))" } ?? "Details")
+                // Says it opens something, and when the motor last spoke.
+                Text("Details" + (m.lastReport.map { " · reported \(Water.ago($0, now: now))" } ?? ""))
                     .font(Theme.small).foregroundStyle(Theme.faint)
             }
             .tint(Theme.faint)
         }
         .panel(padding: 16)
-        .accessibilityElement(children: .combine)
+        // A container, not one combined element: combined, VoiceOver could
+        // not reach the Details disclosure inside it.
+        .accessibilityElement(children: .contain)
     }
 
     private var facts: [(String, String)] {
@@ -261,7 +272,7 @@ struct LiveskySignIn: View {
             .font(Theme.meta).foregroundStyle(Theme.muted)
         if !ls.mobileLast4.isEmpty { LabeledContent("Number", value: "ending \(ls.mobileLast4)") }
         if let e = ls.expires {
-            LabeledContent("Session ends", value: Date(timeIntervalSince1970: e / 1000).formatted(date: .abbreviated, time: .shortened))
+            LabeledContent("Session ends", value: FarmTime.when(ms: e, now: store.now))
         }
         if let problem = store.liveskyProblem { Text(problem).foregroundStyle(Theme.warn) }
 

@@ -238,7 +238,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     why:document.querySelector('.note-off')?.textContent||''}));
   check('control switched off on the bridge disables every toggle',
     r.toggles>0&&r.disabled===true, `${r.toggles} toggles, allDisabled=${r.disabled}`);
-  check('and the page says why', /switched off on the bridge/.test(r.why), r.why.slice(0,70));
+  check('and the page says why', /turned off at the farm/.test(r.why), r.why.slice(0,70));
   // Re-enable before pressing: that is the real race the guard is for — the
   // button was painted while control was on, and the bridge went off after.
   // A genuinely disabled button fires no click at all, so it proves nothing.
@@ -249,7 +249,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     busy:document.querySelector('.toggle').className.includes('busy'),
     toast:[...document.querySelectorAll('.toast')].map(t=>t.textContent).join('|')}));
   check('a press that beats the re-render writes nothing and never flips',
-    writes.length===0&&after.busy===false&&/switched off/.test(after.toast),
+    writes.length===0&&after.busy===false&&/turned off/.test(after.toast),
     `writes=${writes.length} busy=${after.busy} toast=${after.toast.slice(0,50)}`);
   await c.close();
 }
@@ -280,13 +280,22 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 {
   const [p,c]=await open('?stale=1#/irrigation');
   await p.waitForSelector('[data-act="irr-builder"]'); await p.click('[data-act="irr-builder"]'); await p.waitForSelector('.rep-builder');
-  const r=await p.evaluate(()=>({
-    disabled:document.querySelector('[data-act="irr-gen"]').disabled,
-    why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
-  // Reports run in a Cloud Function, not on the NUC: a bridge that has gone
-  // quiet must not take them down with it.
-  check('a stale bridge does not block reports', r.disabled===false&&r.why==='',
-    r.why.slice(0,80));
+  const read=()=>({disabled:document.querySelector('[data-act="irr-gen"]')?.disabled,
+    why:document.querySelector('.rep-builder + .note-off')?.textContent||''});
+  const relay=await p.evaluate(read);
+  // Reads go through the NUC's relay until the function reaches Mobitech
+  // itself (docs/dcon-off-the-nuc.md): a quiet bridge closes Generate with the
+  // reason, rather than letting it time out. A direct transport does not.
+  check('a stale bridge closes reports while reads are relayed, and says why',
+    relay.disabled===true&&/cannot be read/.test(relay.why), relay.why.slice(0,80));
+  const direct=await p.evaluate((fn)=>{state.meta.reports=Object.assign({},state.meta.reports,{transport:'direct'});render();
+    return {disabled:document.querySelector('[data-act="irr-gen"]')?.disabled,
+      why:document.querySelector('.rep-builder + .note-off')?.textContent||''};});
+  check('once reads are direct, a stale bridge does not block them', direct.disabled===false&&direct.why==='',
+    JSON.stringify(direct).slice(0,80));
+  const blank=await p.evaluate(()=>{state.meta.reports.transport='';render();
+    return document.querySelector('[data-act="irr-gen"]')?.disabled;});
+  check('only an explicit "direct" opens reads without the bridge', blank===true);
   await c.close();
 }
 {
@@ -373,6 +382,15 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const [p,c]=await open('?replay=1&fresh=1#/devices');
   const ok=await p.waitForSelector('.dgroups',{timeout:5000}).then(()=>true).catch(()=>false);
   if(ok){
+    // Devices Home Assistant names by serial number read as what they are,
+    // and the printer keeps its AMS and spool, which are matched on the raw names.
+    const n=await p.evaluate(()=>{const s=farmSystems(flatEntities());
+      return {serial:flatEntities().map(e=>e.name).concat([...document.querySelectorAll('.dgroup-name')].map(t=>t.textContent))
+        .filter(t=>/\b(P1S|X1C|A1)_\d|T8400P\d/.test(t)),
+        printer:(s.printer?.devices||[]).map(d=>d.name), doubled:flatEntities().filter(e=>/^(\S+) \1\b/.test(e.name)).map(e=>e.name)};});
+    check('replay: no device or entity reads as a serial number', n.serial.length===0, n.serial.slice(0,3).join(' | '));
+    check('replay: the printer keeps its AMS and spool after renaming', n.printer.length>=3, n.printer.join(', '));
+    check('replay: a renamed device never doubles its name', n.doubled.length===0, n.doubled.slice(0,3).join(' | '));
     await p.click('.seg button[data-status=offline]'); await p.waitForTimeout(150);
     const r=await p.evaluate(()=>({tags:[...document.querySelectorAll('.dgroup .tag')].map(t=>t.textContent),
       names:[...document.querySelectorAll('.dgroup-name')].map(t=>t.textContent),
@@ -401,6 +419,95 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   if(more){ await more.click(); await p.waitForTimeout(100); }
   const after=await p.evaluate(()=>document.querySelectorAll('.attn-row').length);
   check('"N more" in Needs a look opens the rest', !more || after>n, `${n} -> ${after}`);
+  await c.close();
+}
+{
+  // A run the log caught part-way reads "so far", never "cut short", however
+  // long ago the log was read (2026-09-25: Mango2, read 22 minutes into its
+  // hour, read as cut short on Home two hours later).
+  const [p,c]=await open('?live=1#/irrigation');
+  await p.waitForSelector('#view .panel');
+  const r=await p.evaluate(()=>{
+    const read=serverNow()-2*3600e3, start=read-22*60e3;
+    const stamp=(ms)=>{const t=new Date(ms+farmTz()*60000).toISOString();return t.slice(0,10)+' '+t.slice(11,19);};
+    state.irrigation=Object.assign({},state.irrigation,{meta:{lastUpdated:read},program:{at:read,running:false},
+      timerLog:[{at:stamp(start),event:'Program · Mango2',detail:'11m of 1h, stopped · 17 Mango 2 · started by timer',source:'timer'},
+                {at:stamp(start-3*3600e3),event:'Program · Mango1',detail:'25m of 1h, stopped · 16 Mango 1 · started by A8',source:'timer'}]});
+    render(); const irr=document.getElementById('view').innerText;
+    // Read 10 minutes ago, 22 minutes in: still inside its hour, so "so far".
+    const read2=serverNow()-10*60e3; state.irrigation.meta={lastUpdated:read2};
+    state.irrigation.timerLog=[Object.assign({},state.irrigation.timerLog[0],{at:stamp(read2-22*60e3)})]; render();
+    const soFar=document.getElementById('view').innerText;
+    // Ended by a Stop 8 minutes in, read 2 minutes later: cut short at once.
+    state.irrigation.timerLog=[{at:stamp(read2-10*60e3),event:'Program · Manual Mode',detail:'8m of 30m, stopped · 4 Veg · started by A8 · ended by A8',source:'timer'}];
+    render(); const ended=document.getElementById('view').innerText;
+    state.irrigation.timerLog=[{at:stamp(start),event:'Program · Mango2',detail:'11m of 1h, stopped · 17 Mango 2 · started by timer',source:'timer'},
+                {at:stamp(start-3*3600e3),event:'Program · Mango1',detail:'25m of 1h, stopped · 16 Mango 1 · started by A8',source:'timer'}];
+    state.irrigation.meta={lastUpdated:read};
+    location.hash='#/'; render(); return {irr, soFar, ended, home:document.getElementById('view').innerText};});
+  check('a run caught part-way, its hour since past, reads "by <read time>", not "cut short"', /11m of 1h by \d\d:\d\d/.test(r.irr)&&!/11m of 1h, cut short/.test(r.irr),
+        (r.irr.match(/.{0,24}(so far|cut short| by \d\d:\d\d).{0,16}/)||[''])[0]);
+  check('while it could still be going, it reads "so far"', /11m of 1h so far/.test(r.soFar), (r.soFar.match(/.{0,24}(so far|cut short| by ).{0,16}/)||[''])[0]);
+  check('a run the controller ended is cut short at once', /8m of 30m, cut short/.test(r.ended), (r.ended.match(/.{0,24}(so far|cut short| by ).{0,16}/)||[''])[0]);
+  check('Needs a look counts only the run the log saw end', /1 run cut short/.test(r.home)&&!/2 runs cut short/.test(r.home),
+        (r.home.match(/\d+ runs? cut short[^\n]*/)||['none'])[0]);
+  await c.close();
+}
+{
+  // A water reading that is not current is drawn with its age, never as
+  // water flowing (2026-09-25: "River · Running" after the session ended).
+  const [p,c]=await open('?live=1#/');
+  await p.waitForSelector('#view .flow');
+  const r=await p.evaluate(()=>{
+    const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
+    state.meta=Object.assign({},state.meta,{water:{enabled:true,livesky:{ok:true,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true}}});
+    state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,reportedAt:iso(now-3600e3)},
+      motors:{s:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:true,reportedAt:iso(now-3600e3)}}};
+    const f=()=>{render();return {pipes:[...document.querySelectorAll('#view .flow-pipe')].map(x=>x.classList.contains('is-on')),
+      ages:[...document.querySelectorAll('#view .flow-age')].map(x=>x.textContent),head:document.querySelector('#view .flow-head .card-age')?.textContent||''};};
+    const stale=f();
+    state.water.river.reportedAt=iso(now-20e3); const fresh=f();
+    state.meta.water.livesky.expires=now-60e3; const expired=f();
+    state.meta.water.enabled=false; const off=f();
+    // Niagara failing for 3 h while pulls go on: its age is its last good read.
+    state.meta.water.enabled=true; state.meta.water.livesky.expires=now+864e5; state.water.pulledAt=now-5000;
+    state.meta.water.niagara={ok:false,error:'Niagara: HTTP 502',at:now-3*3600e3}; const niagaraDown=f();
+    return {stale,fresh,expired,off,niagaraDown};});
+  check('a stale river reading shows its age and does not flow', r.stale.pipes[0]===false&&r.stale.ages.length===1&&r.stale.head==='', JSON.stringify(r.stale));
+  check('Niagara, which reports on change, still flows on a fresh pull', r.stale.pipes[1]===true);
+  check('fresh readings flow, with the pull age in the header', r.fresh.pipes.every(Boolean)&&r.fresh.ages.length===0&&/ago|just now/.test(r.fresh.head), JSON.stringify(r.fresh));
+  check('an ended Livesky session stops the river flowing', r.expired.pipes[0]===false&&r.expired.ages[0]==='not read', JSON.stringify(r.expired));
+  check('Home says when water readings are off', r.off.head==='readings off', r.off.head);
+  check('a failing Niagara read is not current, and ages from its last good read', r.niagaraDown.pipes[1]===false&&r.niagaraDown.ages.includes('3h ago'), JSON.stringify(r.niagaraDown));
+  await c.close();
+}
+{
+  // Room pages say what things are, and leave settings and diagnostics out
+  // unless searched for (2026-09-25: "Binary Sensor", "Debug (station)").
+  let hasReplay=true; try{readFileSync(new URL('./replay.local.json',import.meta.url));}catch{hasReplay=false;}
+  if(hasReplay){
+    const [p,c]=await open('?replay=1&fresh=1#/area/sheep_shed');
+    await p.waitForSelector('#view .area-sec');
+    const r=await p.evaluate(()=>({titles:[...document.querySelectorAll('#view .area-sec .panel-title')].map(t=>t.firstChild.textContent),
+      debug:[...document.querySelectorAll('#view .row-name')].filter(n=>/debug/i.test(n.textContent)).length}));
+    check('replay: room sections are named for what they are', r.titles.includes('Detectors')&&!r.titles.some(t=>/Binary|Control Panel|Select/.test(t)), r.titles.join(', '));
+    check('replay: no debug rows in a room unless searched', r.debug===0, `${r.debug}`);
+    await c.close();
+  } else console.log('  skip  room section checks (no replay.local.json)');
+}
+{
+  // Every page, on the narrowest phone, with the real farm's names and
+  // readings: nothing is wider than the screen. (The iOS Irrigation page
+  // once was, from two tags that could not wrap.)
+  let hasReplay=true; try{readFileSync(new URL('./replay.local.json',import.meta.url));}catch{hasReplay=false;}
+  const c=await b.newContext({viewport:{width:320,height:800}}); const p=await c.newPage();
+  const wide=[];
+  for (const r of ['#/','#/irrigation','#/water','#/areas','#/devices','#/sys/solar','#/sys/security','#/admin']) {
+    await p.goto(base+(hasReplay?'?replay=1&fresh=1':'?live=1')+r); await p.waitForTimeout(700);
+    const w=await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
+    if(w>0) wide.push(`${r} +${w}px`);
+  }
+  check(`no page is wider than a 320px phone (${hasReplay?'replay':'mock'})`, wide.length===0, wide.join(', '));
   await c.close();
 }
 await b.close();

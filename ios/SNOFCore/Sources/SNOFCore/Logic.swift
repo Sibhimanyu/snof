@@ -73,6 +73,29 @@ extension Entity {
     public var humanDomain: String { Entity.humanDomain(domain) }
     public static func humanDomain(_ d: String) -> String { d.replacingOccurrences(of: "_", with: " ") }
 
+    /// Room sections named for what they are, not Home Assistant's domains
+    /// ("Binary Sensor", "Alarm Control Panel"). Mirrors SECTION_TITLE in app.js.
+    public static let sectionTitles: [(domain: String, title: String)] = [
+        ("light", "Lights"), ("switch", "Switches"), ("fan", "Fans"), ("input_boolean", "Toggles"),
+        ("climate", "Air conditioning"), ("media_player", "TVs & speakers"), ("remote", "Remotes"),
+        ("camera", "Cameras"), ("alarm_control_panel", "Alarm"), ("binary_sensor", "Detectors"),
+        ("sensor", "Readings"), ("device_tracker", "Presence"),
+    ]
+    public static func sectionTitle(_ d: String) -> String {
+        sectionTitles.first { $0.domain == d }?.title ?? humanDomain(d).capitalized
+    }
+    /// Settings rather than things to look at (a switch's power-on behaviour,
+    /// an AC's timer, a firmware notice): left out of room and system pages
+    /// unless searched for. Mirrors SETTING_DOMAINS in app.js.
+    public static let settingDomains: Set<String> = ["select", "input_select", "number", "input_number", "time", "date",
+                                                     "datetime", "button", "input_button", "image", "text", "input_text",
+                                                     "update", "event"]
+    /// A diagnostic reading ("Goats Debug (station)"): the bridge does not
+    /// export Home Assistant's entity category, so the name is what says it.
+    public var isDiagnostic: Bool { name.range(of: #"\bdebug\b"#, options: [.regularExpression, .caseInsensitive]) != nil }
+    /// Left out of room and system pages unless searched for.
+    public var isBackstage: Bool { Entity.settingDomains.contains(domain) || isDiagnostic }
+
     /// Search haystack, matching app.js `matches()`.
     public func matches(_ query: String, areaName: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -156,12 +179,14 @@ public enum Sorting {
 
     /// Operable domains first: the reason to open a room is usually to do something.
     public static func domainsForArea(_ ents: [Entity]) -> [(domain: String, entities: [Entity])] {
-        Dictionary(grouping: ents, by: \.domain)
+        let rank = { (d: String) in Entity.sectionTitles.firstIndex { $0.domain == d } ?? 99 }
+        return Dictionary(grouping: ents, by: \.domain)
             .map { (domain: $0.key, entities: $0.value.sorted(by: byName)) }
             .sorted { a, b in
                 let ca = Farm.controllable.contains(a.domain) ? 0 : 1
                 let cb = Farm.controllable.contains(b.domain) ? 0 : 1
-                return ca != cb ? ca < cb : a.domain < b.domain
+                if ca != cb { return ca < cb }
+                return (rank(a.domain), a.domain) < (rank(b.domain), b.domain)
             }
     }
 
@@ -217,7 +242,11 @@ public enum Capability: Sendable { case control, irrigation, irrigationControl }
 public struct Gate: Equatable, Sendable {
     public let ok: Bool
     public let why: String
+    /// Closed because the bridge is quiet: two such gates are said once.
+    public var bridge = false
     public static let open = Gate(ok: true, why: "")
+    /// Reads and valve control both down for the same quiet bridge, in one line.
+    public static let bridgeDownBoth = "The bridge is not reporting in, so the controller cannot be read or sent a Run or Stop."
 }
 
 extension Gate {
@@ -233,34 +262,40 @@ extension Gate {
     public static func evaluate(_ capability: Capability, bridge hb: BridgeMeta?,
                                 reportsEnabled: Bool? = nil,
                                 cloudIrrigationControl: Bool? = nil,
+                                reportsTransport: String? = nil,
                                 nowMs: Double, skewMs: Double) -> Gate {
         // Valve control run by the Cloud Function does not go through the
         // NUC, so it does not need a live bridge: its own switch decides.
         if capability == .irrigationControl, cloudIrrigationControl == true {
             return .open
         }
-        if capability == .irrigation {
-            return reportsEnabled == false
-                ? Gate(ok: false, why: "Irrigation reports are switched off for now.")
-                : .open
+        let reads = capability == .irrigation
+        if reads {
+            if reportsEnabled == false { return Gate(ok: false, why: "Irrigation reports are switched off for now.") }
+            // Controller reads go through the NUC's relay until the function
+            // has a static egress IP (docs/dcon-off-the-nuc.md): with the bridge
+            // quiet, a Refresh would only time out. No field yet means relay.
+            if reportsTransport == "direct" { return .open }
         }
         // Valve control is spoken of as valve control: the owner thinks of the
         // Mobitech side as its own thing, not as "the bridge".
         let valves = capability == .irrigationControl
         guard let hb, let last = hb.lastSeen else {
             return Gate(ok: false, why: valves ? "Valve control has not checked in yet."
-                        : "The bridge has not reported in yet, so nothing would act on that.")
+                        : reads ? "The bridge has not checked in yet, so the controller cannot be read."
+                        : "The bridge has not checked in yet, so a press would not reach the farm.", bridge: true)
         }
         let age = (nowMs + skewMs - last) / 1000
         if hb.status == "offline" || age > (hb.heartbeatSeconds ?? 30) * Farm.staleFactor {
             return Gate(ok: false, why: valves ? "Valve control is not answering right now, so a Run or Stop would not reach the controller."
-                        : "The bridge is not reporting in, so nothing would act on that.")
+                        : reads ? "The bridge is not reporting in, so the controller cannot be read right now."
+                        : "The bridge is not reporting in, so a press would not reach the farm.", bridge: true)
         }
         switch capability {
         case .control where hb.control == false:
-            return Gate(ok: false, why: "Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.")
+            return Gate(ok: false, why: "Switching from the app is turned off at the farm.")
         case .irrigationControl where hb.irrigationControl != true:
-            return Gate(ok: false, why: "Irrigation control is switched off. The farm owner turns it on, with someone at the pump house for the first run.")
+            return Gate(ok: false, why: "Valve control is switched off at the farm.")
         default:
             return .open
         }
@@ -461,7 +496,8 @@ public enum Format {
     public static func age(_ sec: Double) -> String {
         if sec < 90 { return "\(Int(sec.rounded()))s" }
         if sec < 5400 { return "\(Int((sec / 60).rounded()))m" }
-        return "\(Int((sec / 3600).rounded()))h"
+        if sec < 172_800 { return "\(Int((sec / 3600).rounded()))h" }
+        return "\(Int((sec / 86400).rounded()))d"
     }
 
     /// "1h 20m", "45m".

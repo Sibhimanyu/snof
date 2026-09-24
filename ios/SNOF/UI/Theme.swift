@@ -118,6 +118,12 @@ enum Theme {
         case "water_heater", "valve": return "spigot"
         case "vacuum": return "fan.oscillation"
         case "siren": return "light.beacon.max"
+        // Not the dashed square, which reads as broken (snapshot review).
+        case "alarm_control_panel": return "shield.lefthalf.filled"
+        case "remote": return "appletvremote.gen1"
+        case "time", "date", "datetime": return "clock"
+        case "text", "input_text": return "character.cursor.ibeam"
+        case "image": return "photo"
         default: return "square.dashed"
         }
     }

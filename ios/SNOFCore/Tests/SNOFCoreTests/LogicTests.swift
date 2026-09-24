@@ -189,7 +189,8 @@ final class LogicTests: XCTestCase {
     func testOperableDomainsFirstInAnArea() {
         let d = Sorting.domainsForArea([ent("binary_sensor", "a", "on"), ent("sensor", "b", "1"),
                                         ent("switch", "c", "off"), ent("fan", "d", "off")])
-        XCTAssertEqual(d.map(\.domain), ["fan", "switch", "binary_sensor", "sensor"])
+        // Operable first, then in the room order (Lights, Switches, Fans, …, Detectors, Readings).
+        XCTAssertEqual(d.map(\.domain), ["switch", "fan", "binary_sensor", "sensor"])
     }
 
     /* ---- gate ---- */
@@ -205,8 +206,15 @@ final class LogicTests: XCTestCase {
         XCTAssertFalse(Gate.evaluate(.control, bridge: off, nowMs: now, skewMs: 0).ok)
         XCTAssertTrue(Gate.evaluate(.irrigation, bridge: off, nowMs: now, skewMs: 0).ok,
                       "control off does not block reports")
-        XCTAssertTrue(Gate.evaluate(.irrigation, bridge: nil, nowMs: now, skewMs: 0).ok,
-                      "reports run in a Cloud Function, not on the NUC")
+        // Reads go through the NUC's relay until the function reaches Mobitech
+        // itself: a quiet bridge closes Refresh, a direct transport does not.
+        XCTAssertFalse(Gate.evaluate(.irrigation, bridge: nil, nowMs: now, skewMs: 0).ok, "no field yet = relay")
+        XCTAssertFalse(Gate.evaluate(.irrigation, bridge: live, reportsTransport: "relay", nowMs: now + 200_000, skewMs: 0).ok,
+                       "stale bridge, relayed reads")
+        XCTAssertTrue(Gate.evaluate(.irrigation, bridge: nil, reportsTransport: "direct", nowMs: now, skewMs: 0).ok,
+                      "direct reads do not need the NUC")
+        XCTAssertFalse(Gate.evaluate(.irrigation, bridge: nil, reportsTransport: "", nowMs: now, skewMs: 0).ok,
+                       "only an explicit direct opens without the bridge, as on the web")
         XCTAssertFalse(Gate.evaluate(.irrigation, bridge: live, reportsEnabled: false,
                                      nowMs: now, skewMs: 0).ok)
 

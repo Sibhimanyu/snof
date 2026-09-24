@@ -35,8 +35,9 @@ struct OverviewView: View {
         }
         .navigationTitle("Home")
         // Home is the first screen: keep the water picture current while it is
-        // open (the function spaces pulls 15 s apart whoever asks).
-        .task {
+        // open (the function spaces pulls 15 s apart whoever asks). Restarted
+        // once meta arrives: before it the gate is closed and nothing refreshes.
+        .task(id: store.metaLoaded) {
             await store.autoRefreshIrrigationIfStale()
             while !Task.isCancelled {
                 await store.refreshWater()
@@ -86,6 +87,8 @@ private struct Station: View {
     let title: String
     let sub: String
     let on: Bool
+    /// How old the reading is, when it is not current.
+    var age: String? = nil
 
     var body: some View {
         VStack(spacing: 4) {
@@ -97,6 +100,7 @@ private struct Station: View {
             Text(title).font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.text).padding(.top, 4)
             Text(sub).font(Theme.font(11.5, on ? .semibold : .regular, relativeTo: .caption))
                 .foregroundStyle(on ? Theme.on : Theme.muted).lineLimit(1).minimumScaleFactor(0.8)
+            if let age { Text(age).font(Theme.font(11, .regular, relativeTo: .caption2)).foregroundStyle(Theme.faint).lineLimit(1) }
         }
         .frame(width: 88)
         .accessibilityElement(children: .combine)
@@ -116,31 +120,41 @@ struct FlowHero: View {
         let drip = w.motors.first { $0.role == "drip" }
         let c = store.irrigation
         let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
+        // Flowing only on a current reading; a stale one shows its age.
+        let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: store.now) }
+        let aged = { (m: WaterMotor?) -> String? in
+            guard let m, !w.isCurrent(m, now: store.now) else { return nil }
+            if m.vendor == "livesky", w.livesky.kind(nowMs: store.now.timeIntervalSince1970 * 1000) != .ok { return "not read" }
+            return w.readingDate(m).map { Water.ago($0, now: store.now) }
+        }
+        // The pull's age only while every reading drawn is current.
+        let allCurrent = [w.river, supply].compactMap { $0 }.allSatisfy { w.isCurrent($0, now: store.now) }
         Button { store.selectedTab = .water } label: {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Water").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    if let t = w.pulledAt { Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint) }
+                    if !w.enabled { Text("readings off").font(Theme.small).foregroundStyle(Theme.faint) }
+                    else if let t = w.pulledAt, allCurrent { Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint) }
                     Spacer()
                     Text("Details").font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
                     Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.on)
                 }
                 HStack(alignment: .top, spacing: 0) {
-                    Station(art: w.river?.running == true ? "art-motor-on" : "art-motor-off", title: "River",
-                            sub: word(w.river), on: w.river?.running == true)
-                    Pipe(on: w.river?.running == true).padding(.top, 28)
-                    Station(art: supply?.running == true ? "art-motor-on" : "art-motor-off", title: "Other farm",
-                            sub: supply.map { "7.5 HP \(word($0).lowercased())" } ?? "No reading", on: supply?.running == true)
-                    Pipe(on: supply?.running == true).padding(.top, 28)
+                    Station(art: live(w.river) ? "art-motor-on" : "art-motor-off", title: "River",
+                            sub: word(w.river), on: live(w.river), age: aged(w.river))
+                    Pipe(on: live(w.river)).padding(.top, 28)
+                    Station(art: live(supply) ? "art-motor-on" : "art-motor-off", title: "Other farm",
+                            sub: supply.map { "7.5 HP \(word($0).lowercased())" } ?? "No reading", on: live(supply), age: aged(supply))
+                    Pipe(on: live(supply)).padding(.top, 28)
                     Station(art: "art-kulam", title: "Main farm", sub: say.running ? "Watering" : "Not watering", on: say.running)
                 }
                 if let drip {
                     HStack(spacing: 8) {
-                        Image(drip.running == true ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 22, height: 22)
-                        Text([drip.name, word(drip), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }]
+                        Image(live(drip) ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 22, height: 22)
+                        Text([drip.name, word(drip), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }, aged(drip)]
                                 .compactMap { $0 }.joined(separator: " · "))
-                            .font(Theme.font(12.5, drip.running == true ? .semibold : .regular, relativeTo: .caption))
-                            .foregroundStyle(drip.running == true ? Theme.on : Theme.muted).lineLimit(1)
+                            .font(Theme.font(12.5, live(drip) ? .semibold : .regular, relativeTo: .caption))
+                            .foregroundStyle(live(drip) ? Theme.on : Theme.muted).lineLimit(1)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 7)
                     .background(Theme.panel2, in: Capsule())
@@ -223,9 +237,15 @@ struct IrrigationRingCard: View {
                     } else if let last {
                         let planned = Double(last.plannedMin ?? 0)
                         let got = Double(last.deliveredMin ?? (last.finished ? last.plannedMin ?? 0 : 0))
-                        Ring(fraction: planned > 0 ? got / planned : 1, color: last.finished ? Theme.brand : Theme.warn,
+                        // Caught part-way by the last read: "so far", neither green nor amber.
+                        let readAt = Irrigation.logReadAt(c, now: store.now), zone = FarmTime.zone(c.timeZone)
+                        let open = Irrigation.mayStillRun(last, readAt: readAt, zone: zone)
+                        let outcome = Irrigation.outcome(last, readAt: readAt, now: store.now, zone: zone)
+                            .trimmingCharacters(in: CharacterSet(charactersIn: ", "))
+                        Ring(fraction: planned > 0 ? got / planned : 1,
+                             color: last.finished ? Theme.brand : open ? Theme.muted : Theme.warn,
                              label: last.deliveredMin.map(Format.minutes) ?? last.amount ?? "—",
-                             sub: last.finished ? "last run" : "stopped")
+                             sub: last.finished ? "last run" : outcome)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(say.running ? say.title : say.title.replacingOccurrences(of: "Last: ", with: ""))
@@ -283,32 +303,39 @@ struct SwitchTile: View {
     @Environment(FarmStore.self) private var store
     let entity: Entity
     var name: String? = nil
+    /// Own presses only: a switch flipped by someone else must not buzz this phone.
+    @State private var presses = 0
 
     var body: some View {
         let on = store.displayOn(entity)
         let busy = store.pending[entity.id] != nil
-        Button { store.toggle(entity) } label: {
+        let can = store.canOperate(entity)
+        Button { presses += 1; store.toggle(entity) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Image(systemName: Theme.symbol(entity.domain)).font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(on ? .white : Theme.muted)
                     .frame(width: 38, height: 38)
                     .background(on ? Color.white.opacity(0.2) : Theme.panel2, in: Circle())
+                    .opacity(can ? 1 : 0.6)
                 Spacer(minLength: 10)
                 Text(name ?? entity.name).font(Theme.font(14, .bold, relativeTo: .subheadline))
                     .foregroundStyle(on ? .white : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
                 Text("\(store.areaName(entity.area)) · \(on ? "On" : "Off")").font(Theme.font(12, .regular, relativeTo: .caption))
-                    .foregroundStyle(on ? .white.opacity(0.85) : Theme.muted).lineLimit(1)
+                    .foregroundStyle(on ? .white : Theme.muted).lineLimit(1)
             }
             .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
             .padding(14)
             .background(on ? Theme.brand : Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous).strokeBorder(on ? .clear : Theme.edge, lineWidth: 1))
-            .shadow(color: Theme.cardShadow, radius: 10, y: 4)
-            .opacity(busy ? 0.7 : store.canOperate(entity) ? 1 : 0.55)
+            // Not pressable: flat, the icon dimmed, but the words at full
+            // strength. A whole-tile fade left the name at 2.2:1 and hid the
+            // state a viewer came to read.
+            .shadow(color: can ? Theme.cardShadow : .clear, radius: 10, y: 4)
+            .opacity(busy ? 0.7 : 1)
         }
-        .buttonStyle(.plain)
-        .disabled(!store.canOperate(entity))
-        .sensoryFeedback(.impact(weight: .light), trigger: on)
+        .buttonStyle(TileButtonStyle())
+        .disabled(!can)
+        .sensoryFeedback(.impact(weight: .light), trigger: presses)
         .accessibilityLabel(entity.name)
         .accessibilityValue(on ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
@@ -390,8 +417,7 @@ struct Hairline: View {
 /// "12h ago" for a server-millisecond stamp.
 func ago(_ ms: Double?, now: Date) -> String? {
     guard let ms, ms > 0 else { return nil }
-    let s = now.timeIntervalSince1970 - ms / 1000
-    return s < 60 ? "just now" : "\(Format.age(max(0, s))) ago"
+    return Water.ago(Date(timeIntervalSince1970: ms / 1000), now: now)
 }
 
 /* ---- irrigation ---- */
@@ -403,6 +429,11 @@ struct IrrigationNowCard: View {
     var body: some View {
         let c = store.irrigation
         let zone = FarmTime.zone(c.timeZone)
+        // Why Refresh (and Run) are off, said once when the quiet bridge is both reasons.
+        let reads = store.gate(.irrigation), valves = store.gate(.irrigationControl)
+        let both = store.canRunIrrigation && !reads.ok && reads.bridge && !valves.ok && valves.bridge
+        // Nothing is known before meta arrives: no "not reporting" on launch.
+        let known = store.metaLoaded
         Block(title: "Now", context: c.device) {
             if store.canControl { RefreshButton() }
         } content: {
@@ -413,9 +444,9 @@ struct IrrigationNowCard: View {
             } else {
                 WaterNow(cache: c, zone: zone, now: store.now)
             }
-            if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now) }
-            if store.canControl, !store.gate(.irrigation).ok {
-                Note(text: store.gate(.irrigation).why, tone: .warn).padding(.horizontal, 18).padding(.bottom, 10)
+            if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now, quiet: both || !known) }
+            if store.canControl, !reads.ok, known {
+                Note(text: both ? Gate.bridgeDownBoth : reads.why, tone: .warn).padding(.horizontal, 18).padding(.bottom, 10)
             }
         }
     }
@@ -471,8 +502,14 @@ struct WaterNow: View {
                 Text(s.detail).font(Theme.font(14, .regular, relativeTo: .subheadline)).lineSpacing(2)
                     .foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
             }
+            // A fault names the valve and what went wrong, so it wraps rather
+            // than riding on a fixed-width tag that can outgrow the card.
             if s.running, let faults = cache.program?.faults, !faults.isEmpty {
-                ForEach(faults, id: \.self) { Tag(text: $0, kind: .bad) }
+                ForEach(faults, id: \.self) { f in
+                    Label(f, systemImage: "exclamationmark.triangle.fill")
+                        .font(Theme.font(12.5, .bold, relativeTo: .caption)).foregroundStyle(Theme.bad)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let next = cache.program?.next {
                 Rectangle().fill(Theme.tintLine).frame(height: 1).padding(.vertical, 2)
@@ -513,7 +550,9 @@ struct WaterNow: View {
         }
         if let last = Irrigation.runs(cache).first {
             var bits: [String] = []
-            if let a = last.amount { bits.append(last.finished ? "\(a), finished" : "\(a), cut short") }
+            if let a = last.amount {
+                bits.append(last.finished ? "\(a), finished" : a + Irrigation.outcome(last, readAt: Irrigation.logReadAt(cache, now: now), now: now, zone: zone))
+            }
             if !last.valves.isEmpty { bits.append(last.valves) }
             if let w = FarmTime.when(last.start, now: now, zone: zone) { bits.append("started \(w)") }
             return Say(running: false, title: "Last: \(last.name)", detail: bits.joined(separator: " · "),
@@ -534,6 +573,8 @@ struct IrrigationControls: View {
     let cache: IrrigationCache
     let zone: TimeZone
     let now: Date
+    /// The card already says why (a quiet bridge closes reads and valves alike).
+    var quiet = false
     @State private var picking = false
     @State private var confirmStop = false
 
@@ -544,16 +585,18 @@ struct IrrigationControls: View {
         let waiting = store.irrigationPending != nil
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
+                // A second manual run is refused by the farm while one is going.
+                // Disabled reads grey on grey at full strength, not a faded
+                // green (white on a 50% brand was 2.0:1).
+                let canRun = refusal == nil && !manual
                 Button { picking = true } label: {
                     Label("Run valves…", systemImage: "drop")
                         .frame(maxWidth: .infinity, minHeight: Theme.hit)
-                        .foregroundStyle(.white)
-                        .background(Theme.brand, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                        .foregroundStyle(canRun ? .white : Theme.muted)
+                        .background(canRun ? Theme.brand : Theme.panel3, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                // A second manual run is refused by the farm while one is going.
-                .disabled(refusal != nil || manual)
-                .opacity(refusal != nil || manual ? 0.5 : 1)
+                .buttonStyle(TileButtonStyle())
+                .disabled(!canRun)
                 if manual {
                     Button { confirmStop = true } label: {
                         HStack(spacing: 6) {
@@ -569,7 +612,7 @@ struct IrrigationControls: View {
                 }
             }
             .font(Theme.font(15, .semibold, relativeTo: .body))
-            if let refusal, !refusal.isEmpty, !waiting { Note(text: refusal, tone: .warn) }
+            if let refusal, !refusal.isEmpty, !waiting { if !quiet { Note(text: refusal, tone: .warn) } }
             else if store.isAdmin, let problem = store.mobitechProblem {
                 // Where it matters: an admin about to press Run learns the
                 // session is missing or rejected, and where to fix it.
@@ -580,9 +623,10 @@ struct IrrigationControls: View {
                      ? "Sent — confirming with the controller. Run and Stop unlock when it shows the change."
                      : "Sent to the farm — waiting for the controller to answer.")
             }
+            else if manual { Note(text: "One manual run at a time.") }
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
-        .sheet(isPresented: $picking) { RunValvesSheet(cache: cache) }
+        .sheet(isPresented: $picking) { RunValvesSheet(cache: cache).environment(store) }
         .confirmationDialog("Stop the manual run?", isPresented: $confirmStop, titleVisibility: .visible) {
             Button("Stop watering", role: .destructive) { Haptics.warn(); Task { await store.stopIrrigation() } }
         } message: {
@@ -674,113 +718,6 @@ struct RunValvesSheet: View {
     private func summary(_ valves: [IrrigationValve]) -> String {
         let names = picked.compactMap { id in valves.first { $0.id == id }?.name }
         return "Water \(names.joined(separator: ", ")) for \(Format.minutes(minutes))?"
-    }
-}
-
-/// The newest day the logs cover: runs, water, pump, energy.
-struct DayFigures: View {
-    let day: Irrigation.Day
-    let zone: TimeZone
-    let now: Date
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if day.stopped > 0 { Tag(text: "\(day.stopped) cut short", kind: .warn) }
-            HStack(alignment: .top, spacing: 10) {
-                Figure(value: "\(day.runs.count)", label: day.runs.count == 1 ? "Run" : "Runs")
-                Figure(value: Format.minutes(day.waterMin), label: "Water")
-                Figure(value: day.pump.map { Format.minutes($0.pumpMin) } ?? "—", label: "Pump")
-                Figure(value: day.pump?.kwh.map { String(format: "%.1f", $0) } ?? "—", unit: day.pump?.kwh == nil ? nil : "kWh",
-                       label: "Energy")
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 14)
-    }
-}
-
-/// Three-phase supply and pressure, from the last live reading.
-struct SupplyRow: View {
-    let cache: IrrigationCache
-    let zone: TimeZone
-    let now: Date
-
-    var body: some View {
-        let supply = Irrigation.supply(cache)
-        let pressure = Irrigation.pressure(cache)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                if let supply, supply.hasVoltage {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(alignment: .firstTextBaseline, spacing: 3) {
-                            Text(supply.phaseV.map { String(Int($0.rounded())) }.joined(separator: " · "))
-                                .font(Theme.font(18, .bold, relativeTo: .title3).monospacedDigit()).tracking(-0.5)
-                                .foregroundStyle(supply.missingPhase || !supply.powerOn ? Theme.bad : Theme.ink)
-                            Text("V").font(Theme.font(12, .semibold, relativeTo: .caption)).foregroundStyle(Theme.faint)
-                        }
-                        Text("Supply" + (supply.at.map { " · \($0)" } ?? "")).font(Theme.font(10.5, .bold, relativeTo: .caption2))
-                            .tracking(1).textCase(.uppercase).foregroundStyle(Theme.faint)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if let pressure {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(pressure.value).font(Theme.font(18, .bold, relativeTo: .title3).monospacedDigit())
-                            .tracking(-0.5).foregroundStyle(Theme.ink)
-                        Text("Pressure" + (FarmTime.when(pressure.at, now: now, zone: zone).map { " · \($0)" } ?? ""))
-                            .font(Theme.font(10.5, .bold, relativeTo: .caption2)).tracking(1).textCase(.uppercase)
-                            .foregroundStyle(Theme.faint).lineLimit(1).minimumScaleFactor(0.8)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            if let supply {
-                HStack(spacing: 14) {
-                    if !supply.powerOn { Tag(text: "No power", kind: .bad) }
-                    else if supply.missingPhase { Tag(text: "Phase missing — \(supply.livePhases) of 3 live", kind: .bad) }
-                    else if let imb = supply.imbalancePct, imb >= Supply.imbalanceWarn {
-                        Tag(text: "\(imb.formatted(.number.precision(.fractionLength(0...1))))% phase imbalance", kind: .warn)
-                    }
-                    else if supply.hasVoltage { Tag(text: "All three phases", kind: .on) }
-                    if let drawing = supply.pumpDrawing {
-                        Tag(text: drawing ? "Pump drawing current" : "Pump off", kind: drawing ? .on : .plain)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct RunRow: View {
-    let run: ProgramRun
-    /// Set when the run is on a different day from the header's.
-    var otherDay: String?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(String(run.start.dropFirst(11).prefix(5)))
-                if let otherDay { Text(otherDay).font(Theme.font(11, .medium, relativeTo: .caption2)) }
-            }
-            .font(Theme.font(12.5, .semibold, relativeTo: .caption).monospacedDigit())
-            .foregroundStyle(Theme.faint).frame(width: 48, alignment: .leading)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(run.name).font(Theme.font(14, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                if !run.valves.isEmpty {
-                    Text(run.valves).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if let a = run.amount {
-                Text(a).font(Theme.font(13, .bold, relativeTo: .footnote).monospacedDigit())
-                    .foregroundStyle(run.finished ? Theme.ink : Theme.warn)
-                    .lineLimit(1).fixedSize()
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
     }
 }
 
