@@ -197,8 +197,11 @@ def irrigation_command(event: db_fn.Event[Any]) -> None:
         max_minutes = 60
 
     def reads():
-        return dcon.Dcon(dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(),
-                                              DCON_TOKEN_ID.value.strip()))
+        # The dashboard checks the token like a command does: read with the
+        # same session, SNOF's own when an admin has signed in.
+        token = irrigation_control.pick_token(store.reference(irrigation_control.TOKEN_PATH).get(),
+                                              DCON_TOKEN_ID.value) or DCON_TOKEN_ID.value.strip()
+        return dcon.Dcon(dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(), token))
 
     class _LazyReads:
         # Build the read client only if a command gets that far: a switched-off

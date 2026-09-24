@@ -37,4 +37,15 @@ final class MobitechTests: XCTestCase {
         XCTAssertEqual(Mobitech.session(from: Data("<html>".utf8), sent: tok),
                        .failure(.refused("Mobitech's answer was not understood")))
     }
+
+    func testCodeAnswerAndTheDashboardProof() {
+        XCTAssertNil(Mobitech.codeRefusal(status: 200, data: Data("{\"message\":\"Success\",\"mobile\":\"x\"}".utf8)))
+        XCTAssertEqual(Mobitech.codeRefusal(status: 200, data: Data("{\"message\":\"Invalid mobile\"}".utf8)), "Invalid mobile")
+        XCTAssertEqual(Mobitech.codeRefusal(status: 500, data: Data()), "Mobitech answered 500")
+        let d = Mobitech.dashboardRequest(token: "abc:APA91b@ios")
+        XCTAssertEqual(String(data: d.httpBody!, encoding: .utf8), "action=dashboard&p=app&token_id=abc%3AAPA91b%40ios&product=DCON")
+        XCTAssertTrue(Mobitech.servesController(Data("{\"MCON1\":{\"timers\":{}}}".utf8)))
+        XCTAssertFalse(Mobitech.servesController(Data("[]".utf8)))
+        XCTAssertFalse(Mobitech.servesController(Data("{\"state\":\"failed\"}".utf8)))
+    }
 }

@@ -48,6 +48,7 @@ from typing import Any
 import dcon
 
 TOKEN_PATH = "private/mobitech/token"
+STATUS = "mobitech_status"
 QUEUE = "irrigation_commands"
 RESULTS = "irrigation_command_results"
 META = "meta/irrigationControl"
@@ -295,6 +296,13 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
                 message = text
             # Mobitech answers a dead app session token with a bare "Bad
             # request" — identical to a fake one (proven 2026-09-24). Say so.
+            try:
+                if status < 400:
+                    store.reference(f"{root}/{STATUS}").update({"lastOk": SERVER_TIMESTAMP})
+                elif status == 400 and message.strip().lower() == "bad request":
+                    store.reference(f"{root}/{STATUS}").update({"lastRejected": SERVER_TIMESTAMP})
+            except Exception:             # noqa: BLE001 — status is best-effort
+                pass
             if status == 400 and message.strip().lower() == "bad request":
                 message = "the Mobitech session has expired — an admin signs in to Mobitech again (Admin on the web, Account in the app)"
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),

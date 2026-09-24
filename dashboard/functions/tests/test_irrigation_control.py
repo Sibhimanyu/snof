@@ -53,6 +53,11 @@ class Ref:
     def transaction(self, fn):
         self.set(fn(self.get()))
 
+    def update(self, patch):
+        cur = self.get() or {}
+        cur.update(patch)
+        self.set(cur)
+
 
 class Store:
     def __init__(self, data=None):
@@ -161,6 +166,7 @@ def test_run_sends_the_template_and_records_it():
     assert store.reference(f"{ROOT}/irrigation_command_results/-a").get()["ok"] is True
     assert store.reference(f"{ROOT}/irrigation_commands/-a").get() is None, "handled node is deleted"
     assert store.reference(f"{ROOT}/meta/irrigationControl/sent").get() == 1
+    assert store.reference(f"{ROOT}/mobitech_status/lastOk").get() is not None
 
 
 def test_a_redelivered_trigger_never_sends_twice():
@@ -265,6 +271,7 @@ def test_a_dead_app_token_says_so_and_does_not_hang_confirming():
     reads = Reads()
     result, c = run(store, "-a", cmd(), reads=reads, commander=DeadToken(reads))
     assert result["ok"] is False and "session has expired" in result["message"], result
+    assert store.reference(f"{ROOT}/mobitech_status/lastRejected").get() is not None, "the apps must learn it"
     assert "confirming" not in result or result["confirming"] is False
     assert store.reference(f"{ROOT}/irrigation_lock").get() is None
 

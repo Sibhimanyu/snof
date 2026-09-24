@@ -1450,7 +1450,11 @@ function irrigationView() {
             irrigStatusTag(v.status), valveArt(v.name, v.type, v.status))).join('') + `</div></section>` : '')
     : '';
 
-  return head('Irrigation', 'Build a report from the irrigation controller.', '', 'Mobitech DCON') +
+  // Admins see, where it matters, when valve control has no Mobitech session.
+  const mb = isAdmin ? mobitechState() : { kind: 'ok' };
+  const mbNote = mb.kind === 'ok' ? ''
+    : `<p class="more-note note-off">${escapeHtml(mb.text)} <a href="#/admin">Sign in to Mobitech</a></p>`;
+  return head('Irrigation', 'Build a report from the irrigation controller.', '', 'Mobitech DCON') + mbNote +
     sectionHead('n-irrigation', 'Generate report') + builder + repsSec + cacheSec +
     `<p class="more-note">Read-only pulls — this page cannot operate pumps or valves.</p>`;
 }
@@ -1584,17 +1588,28 @@ function adminRow(uid, person) {
 }
 
 /* ---- Mobitech sign-in (admins) ----
- * Valve commands need a Mobitech *session*. The app creates one exactly the
- * way Mobitech's own iOS app does (captured 2026-09-24): ask for an SMS code
- * (POST /v1/otp/), then log in with it and a device token of our own making
- * (POST /v1/http/ action=login type=otp). Mobitech answers `state: ok` and
- * echoes the token as `id`; that is what commands are sent with. The browser
- * talks to Mobitech directly (it allows any origin; it refuses Google Cloud,
- * so a function could not), then stores the token where no client can read
- * it (/private/mobitech) and a non-secret line for everyone to see
- * (farms/<farm>/mobitech_status). The number and the code are never stored. */
+ * Ground truth: docs/mobitech-app.md (the Mobitech iOS app, captured with
+ * mitmproxy on 2026-09-24). Mobitech does not issue a credential. The app
+ * *registers* a device token (its FCM push token + "@ios") against the user:
+ *
+ *   POST /v1/otp/     {"mobile":"91<10>"} as the whole form body -> {"message":"Success",…}
+ *   POST /v1/http/    action=login&type=otp&otp&mobile&token=<t>@ios&product=DCON
+ *                     &app_id=com.mobitech.drip -> {"state":"ok","id":"<t>@ios",…}
+ *
+ * Only two calls check that token: action=dashboard (form token_id) and
+ * POST /v1/command/ (header authorization). So SNOF registers a token of its
+ * own — a session of its own that the phone's sign-outs cannot end — and
+ * proves it with a dashboard read (read-only) before storing it.
+ *
+ * The browser talks to Mobitech directly (it allows any origin; it refuses
+ * Google Cloud). The token goes where no client can read it
+ * (/private/mobitech); a non-secret line goes to farms/<farm>/mobitech_status,
+ * where whatever sends the commands also records lastOk / lastRejected.
+ * The number and the code are never stored. Unproven until first used:
+ * whether Mobitech accepts a token that is not a real FCM token, and
+ * whether it lets one user keep two sessions (the phone may be signed out). */
 const MOBITECH = 'https://dcon.mobitechwireless.com';
-let mbStep = 'mobile';   // mobile | code
+let mbStep = 'idle';     // idle | mobile | code
 let mbMobile = '', mbCode = '', mbBusy = false, mbError = '', mbInfo = '';
 let mbToken = '';
 
@@ -1607,22 +1622,25 @@ function mobitechDeviceToken() {
 }
 
 const mobitechDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+const mbForm = (fields) => ({ method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: typeof fields === 'string' ? fields : new URLSearchParams(fields) });
+async function mbJson(r) { const t = await r.text(); try { return JSON.parse(t); } catch { return null; } }
 
 async function mobitechSendCode() {
   const mobile = mobitechDigits(mbMobile);
   if (!/^\d{10}$/.test(mobile)) { mbError = 'Enter the 10-digit mobile number on the Mobitech account.'; render(); return; }
   mbBusy = true; mbError = ''; mbInfo = ''; render();
   try {
-    // Byte for byte what the app sends: a JSON object as the whole
-    // form-encoded body.
-    const r = await fetch(`${MOBITECH}/v1/otp/`, { method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: JSON.stringify({ mobile: `91${mobile}` }) });
-    if (!r.ok) throw new Error(`Mobitech answered ${r.status}`);
+    // Byte for byte what the app sends: a JSON object as the whole form body.
+    const r = await fetch(`${MOBITECH}/v1/otp/`, mbForm(JSON.stringify({ mobile: `91${mobile}` })));
+    const j = await mbJson(r);
+    if (!r.ok || (j && j.message && j.message !== 'Success')) {
+      throw new Error((j && j.message) || `Mobitech answered ${r.status}`);
+    }
     mbStep = 'code'; mbCode = ''; mbToken = mobitechDeviceToken();
     mbInfo = `Mobitech sent a code to the number ending ${mobile.slice(-4)}.`;
   } catch (err) {
-    mbError = `Could not ask Mobitech for a code: ${err.message}`;
+    mbError = `No code sent: ${err.message}`;
   }
   mbBusy = false; render();
 }
@@ -1633,25 +1651,28 @@ async function mobitechSignIn() {
   if (!/^\d{4,8}$/.test(otp)) { mbError = 'Enter the code from the SMS.'; render(); return; }
   mbBusy = true; mbError = ''; render();
   try {
-    const body = new URLSearchParams({ action: 'login', type: 'otp', otp, mobile,
-      token: mbToken || mobitechDeviceToken(), product: 'DCON', app_id: 'com.mobitech.drip' });
-    const r = await fetch(`${MOBITECH}/v1/http/?`, { method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
-    const text = await r.text();
-    let who = {};
-    try { who = JSON.parse(text); } catch { /* not JSON */ }
-    if (!r.ok || who.state !== 'ok') {
-      throw new Error(who.msg || who.message || who.reason || 'the code was not accepted');
+    const sent = mbToken || mobitechDeviceToken();
+    const r = await fetch(`${MOBITECH}/v1/http/?`, mbForm({ action: 'login', type: 'otp', otp, mobile,
+      token: sent, product: 'DCON', app_id: 'com.mobitech.drip' }));
+    const who = await mbJson(r);
+    if (!r.ok || !who || who.state !== 'ok') {
+      throw new Error((who && (who.msg || who.message || who.reason)) || 'the code was not accepted');
     }
-    const token = String(who.id || body.get('token'));
-    if (!token.endsWith('@ios')) throw new Error('Mobitech did not return a session');
+    const token = String(who.id || sent);
+    if (!token.endsWith('@ios')) throw new Error('Mobitech did not register a session');
+    // Prove it: the dashboard is one of the two calls that check the token,
+    // and a read changes nothing. A rejected token gets no controller back.
+    const d = await mbJson(await fetch(`${MOBITECH}/v1/http/`,
+      mbForm({ action: 'dashboard', p: 'app', token_id: token, product: 'DCON' })));
+    const ok = d && typeof d === 'object' && Object.values(d).some((v) => v && typeof v === 'object' && !Array.isArray(v));
+    if (!ok) throw new Error('Mobitech took the code but will not serve the controller to this session');
     const db = firebase.database();
     const at = firebase.database.ServerValue.TIMESTAMP;
     await db.ref('private/mobitech').set({ token, at, uid: currentUser.uid });
     await db.ref(`farms/${FARM}/mobitech_status`).set({ at, uid: currentUser.uid,
       name: String(who.name || '').slice(0, 64), user: String(who.uname || '').slice(0, 64),
       mobileLast4: mobile.slice(-4) });
-    mbStep = 'mobile'; mbMobile = ''; mbCode = ''; mbToken = ''; mbInfo = '';
+    mbStep = 'idle'; mbMobile = ''; mbCode = ''; mbToken = ''; mbInfo = '';
     toast('ok', `Signed in to Mobitech as ${who.name || who.uname || 'the farm account'}. Valve commands use this session.`);
   } catch (err) {
     mbError = `Not signed in: ${err.message}`;
@@ -1659,31 +1680,75 @@ async function mobitechSignIn() {
   mbBusy = false; render();
 }
 
+/** Stop SNOF using its session. The Mobitech logout call needs the token,
+ *  which no client can read, so the session stays registered at Mobitech
+ *  but unused; signing in again replaces it. */
+async function mobitechSignOut() {
+  mbBusy = true; render();
+  try {
+    await firebase.database().ref('private/mobitech').remove();
+    await firebase.database().ref(`farms/${FARM}/mobitech_status`).remove();
+    toast('ok', 'Signed SNOF out of Mobitech. Valve commands are off until someone signs in again.');
+  } catch (err) {
+    toast('err', `Could not sign out: ${err.message}`);
+  }
+  mbBusy = false; render();
+}
+
+const mbWhen = (ms) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+/** What SNOF's Mobitech session is doing, in one line, for any page. */
+function mobitechState() {
+  const st = state.mobitechStatus || {};
+  if (!st.at) return { kind: 'none', text: 'SNOF is not signed in to Mobitech, so valve commands cannot be sent.' };
+  if (st.lastRejected && st.lastRejected > Math.max(st.at, st.lastOk || 0)) {
+    return { kind: 'rejected', text: `Mobitech rejected SNOF's session at ${mbWhen(st.lastRejected)}. Sign in again to send valve commands.` };
+  }
+  return { kind: 'ok', text: '' };
+}
+
 function mobitechPanel() {
   const st = state.mobitechStatus || {};
-  const since = st.at ? new Date(st.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-  const now = st.at
-    ? `<p class="more-note">Signed in as <strong>${escapeHtml(st.name || st.user || 'the farm account')}</strong>` +
-      `${st.user ? ` (${escapeHtml(st.user)})` : ''} · number ending ${escapeHtml(st.mobileLast4 || '····')} · ${escapeHtml(since)}. ` +
-      `Valve commands are sent with this session. Sign in again if they report an expired token.</p>`
-    : `<p class="more-note note-off">Not signed in yet: valve commands need a Mobitech session.</p>`;
-  const form = mbStep === 'mobile'
-    ? `<div class="rep-builder" data-key="mobitech">
+  const m = mobitechState();
+  const who = st.at ? `${escapeHtml(st.name || st.user || 'the farm account')}${st.user && st.name ? ` (${escapeHtml(st.user)})` : ''}` : '';
+  const facts = st.at ? `<div class="mb-facts">
+      <div><span>Signed in as</span><strong>${who}</strong></div>
+      <div><span>Number</span><strong>ending ${escapeHtml(st.mobileLast4 || '····')}</strong></div>
+      <div><span>Since</span><strong>${escapeHtml(mbWhen(st.at))}</strong></div>
+      <div><span>Last command</span><strong>${st.lastOk ? `accepted ${escapeHtml(mbWhen(st.lastOk))}` : 'none yet'}</strong></div>
+    </div>` : '';
+  const status = m.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(m.text)}</p>`;
+  let form = '';
+  if (mbStep === 'mobile') {
+    form = `<div class="rep-builder" data-key="mobitech">
         <label class="rep-field"><span>Mobitech mobile number</span>
           <input id="mb-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
                  value="${escapeHtml(mbMobile)}" data-act="mb-mobile"></label>
         <button class="btn btn-primary" data-act="mb-send"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Sending…' : 'Send code'}</button>
-      </div>`
-    : `<div class="rep-builder" data-key="mobitech">
+        <button class="btn btn-ghost" data-act="mb-cancel"${mbBusy ? ' disabled' : ''}>Cancel</button>
+      </div>
+      <p class="more-note">Signing SNOF in may sign the Mobitech app on the phone out, if Mobitech allows one session per account.</p>`;
+  } else if (mbStep === 'code') {
+    form = `<div class="rep-builder" data-key="mobitech">
         <label class="rep-field"><span>Code from the SMS</span>
           <input id="mb-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
                  value="${escapeHtml(mbCode)}" data-act="mb-code"></label>
         <button class="btn btn-primary" data-act="mb-signin"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Signing in…' : 'Sign in'}</button>
         <button class="btn btn-ghost" data-act="mb-back"${mbBusy ? ' disabled' : ''}>Use another number</button>
       </div>`;
-  return sectionHead('n-admin', 'Mobitech account') + now + form +
-    (mbInfo ? `<p class="more-note">${escapeHtml(mbInfo)}</p>` : '') +
-    (mbError ? `<p class="more-note note-off">${escapeHtml(mbError)}</p>` : '');
+  } else {
+    form = `<div class="mb-actions">
+        <button class="btn btn-primary" data-act="mb-start">${st.at ? 'Sign in again' : 'Sign in to Mobitech'}</button>
+        ${st.at ? `<button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
+      </div>`;
+  }
+  return sectionHead('n-admin', 'Mobitech account') +
+    `<section class="panel mb-panel">
+      <p class="mb-lead">SNOF signs in to Mobitech with its own session, so a sign-out on the phone does not stop valve control. The number and the SMS code are never stored.</p>
+      ${facts}${status}${form}
+      ${mbInfo ? `<p class="more-note">${escapeHtml(mbInfo)}</p>` : ''}
+      ${mbError ? `<p class="more-note note-off">${escapeHtml(mbError)}</p>` : ''}
+    </section>`;
 }
 
 function adminView() {
@@ -1910,6 +1975,13 @@ function wire(all) {
   view.querySelectorAll('[data-act="mb-back"]').forEach((btn) => {
     btn.onclick = () => { mbStep = 'mobile'; mbCode = ''; mbToken = ''; mbInfo = ''; mbError = ''; render(); };
   });
+  view.querySelectorAll('[data-act="mb-start"]').forEach((btn) => {
+    btn.onclick = () => { mbStep = 'mobile'; mbError = ''; mbInfo = ''; render(); };
+  });
+  view.querySelectorAll('[data-act="mb-cancel"]').forEach((btn) => {
+    btn.onclick = () => { mbStep = 'idle'; mbMobile = ''; mbError = ''; render(); };
+  });
+  view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
 
   view.querySelectorAll('[data-act="admin-invite"]').forEach((btn) => {
     btn.onclick = () => sendInvite();

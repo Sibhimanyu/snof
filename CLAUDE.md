@@ -23,6 +23,10 @@ Architecture and data shape are in README.md.
 
 ## Hard rules
 
+- **SNOF has its own Mobitech session** (owner's decision (c), 2026-09-24;
+  rebuilt on docs/mobitech-app.md): sign-in is proved with a dashboard read
+  before it is kept, senders record lastOk/lastRejected, admins can sign
+  SNOF out. (a) and (b) are still open: commands stay FON/OFF.
 - **The Mobitech command session comes from signing in** (2026-09-24):
   admins sign in to Mobitech with an SMS code from Admin (web) or Account
   (iOS); the token goes to `/private/mobitech` (admins write, no client

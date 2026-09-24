@@ -241,6 +241,12 @@
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
   if(params.get('noirrig')) delete data.irrigation;
+  // ?mobitech=ok|rejected seeds SNOF's Mobitech status line (never a token).
+  if(params.get('mobitech')){
+    const now=Date.now();
+    data.mobitech_status={at:now-86400000,uid:'u1',name:'Sibhi',user:'sibhi',mobileLast4:'4321',lastOk:now-3600000};
+    if(params.get('mobitech')==='rejected') data.mobitech_status.lastRejected=now-600000;
+  }
   const M=(label,value,unit,note)=>({label,value,unit:unit||'',note:note||''});
   const SEC=(kind,title,rows,extra)=>({kind,title,note:'',source:'dcon',status:'ok',error:'',rows:rows||[],...(extra||{})});
   const PRESS=[{at:'2026-02-20 06:00',value:'1.8',unit:'bar'},{at:'2026-02-20 12:00',value:'2.4',unit:'bar'},
@@ -416,8 +422,13 @@
       // a plain path (not a push), so log it and resolve rather than
       // reimplementing the RTDB rules engine here.
       set:(v,done)=>{ console.log('WRITE',path,JSON.stringify(v));
+        // The Mobitech status line is shown back, as real RTDB would.
+        if(path.endsWith('/mobitech_status')){
+          const now=Date.now(); data.mobitech_status=JSON.parse(JSON.stringify(v),(k,x)=>x&&x['.sv']?now:x);
+          setTimeout(()=>fire(path,data.mobitech_status),0); }
         if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
       remove:(done)=>{ console.log('REMOVE',path);
+        if(path.endsWith('/mobitech_status')){ delete data.mobitech_status; setTimeout(()=>fire(path,null),0); }
         if(done) setTimeout(()=>done(null),0); return Promise.resolve(); },
       get:()=>getImpl(path),
       limitToLast:()=>({on:(ev,cb,err)=>onImpl(path,cb,err),off:()=>{}}),

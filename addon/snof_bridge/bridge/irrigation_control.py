@@ -59,6 +59,7 @@ _LOGGER = logging.getLogger(__name__)
 # the dashboard or the app. The add-on option dcon_command_auth is only the
 # fallback: the session behind a hand-copied token ends and cannot be renewed.
 TOKEN_PATH = "private/mobitech/token"
+STATUS = "mobitech_status"
 
 QUEUE = "irrigation_commands"
 RESULTS = "irrigation_command_results"
@@ -245,7 +246,10 @@ class IrrigationControl:
     async def _read(self, call: str) -> Any:
         import aiohttp
         c = self._cfg
-        fields = form_for(call, {}, c.dcon_serial, c.dcon_token_id, c.dcon_product or "DCON")
+        # The dashboard checks the token (token_id) exactly as commands do, so
+        # it reads with the same session: SNOF's own when signed in.
+        token = pick_token(await self._signed_in(), c.dcon_token_id)
+        fields = form_for(call, {}, c.dcon_serial, token, c.dcon_product or "DCON")
         async with self._session.post(f"{c.dcon_base}/v1/http/", data=fields,
                                       timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)) as resp:
             if resp.status >= 400:
@@ -259,12 +263,23 @@ class IrrigationControl:
             self._nodes = (time.monotonic(), valves)
         return valves
 
-    async def _command_token(self) -> str:
+    async def _signed_in(self) -> Any:
         try:
-            signed_in = await self._rtdb.get(TOKEN_PATH)
+            return await self._rtdb.get(TOKEN_PATH)
         except Exception:
-            signed_in = None
-        return pick_token(signed_in, self._cfg.dcon_command_auth)
+            return None
+
+    async def _command_token(self) -> str:
+        return pick_token(await self._signed_in(), self._cfg.dcon_command_auth)
+
+    async def _record_session(self, accepted: bool) -> None:
+        """lastOk / lastRejected on the status line the apps show, so a
+        session Mobitech has dropped reads as that, not as a broken farm."""
+        try:
+            await self._rtdb.patch(f"{self._cfg.root}/{STATUS}",
+                                   {"lastOk" if accepted else "lastRejected": {".sv": "timestamp"}})
+        except Exception:
+            _LOGGER.debug("Could not record the Mobitech session state", exc_info=True)
 
     async def _send(self, command: str) -> tuple[int, str]:
         import aiohttp
@@ -312,6 +327,10 @@ class IrrigationControl:
                 message = text
             # Mobitech answers a dead app session token with a bare "Bad
             # request" — identical to a fake one (proven 2026-09-24). Say so.
+            if status < 400:
+                await self._record_session(True)
+            elif status == 400 and message.strip().lower() == "bad request":
+                await self._record_session(False)
             if status == 400 and message.strip().lower() == "bad request":
                 message = "the Mobitech session has expired — an admin signs in to Mobitech again (Admin on the web, Account in the app)"
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),

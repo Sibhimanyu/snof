@@ -327,6 +327,11 @@ private struct IrrigationControls: View {
             }
             .font(Theme.font(15, .semibold, relativeTo: .body))
             if let refusal, !refusal.isEmpty, !waiting { Note(text: refusal, tone: .warn) }
+            else if store.isAdmin, let problem = store.mobitechProblem {
+                // Where it matters: an admin about to press Run learns the
+                // session is missing or rejected, and where to fix it.
+                Note(text: problem + " Sign in from Account.", tone: .warn)
+            }
             else if waiting {
                 Note(text: store.irrigationConfirming
                      ? "Sent — confirming with the controller. Run and Stop unlock when it shows the change."

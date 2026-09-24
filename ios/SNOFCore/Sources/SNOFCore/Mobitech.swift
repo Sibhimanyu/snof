@@ -1,9 +1,12 @@
 import Foundation
 
-/* Signing in to Mobitech, the way Mobitech's own iOS app does (captured
- * 2026-09-24), so valve commands have a live session that anyone can renew
- * from the app instead of a hand-copied token that dies. Mirrors the
- * dashboard's mobitechSendCode / mobitechSignIn in app.js.
+/* Signing in to Mobitech. Ground truth: docs/mobitech-app.md (the Mobitech
+ * iOS app, captured with mitmproxy, 2026-09-24). Mobitech issues no
+ * credential: the app *registers* a device token (its FCM push token + "@ios")
+ * against the user, and only two calls check it, action=dashboard (form
+ * token_id) and POST /v1/command/ (header authorization). SNOF registers a
+ * token of its own, so the phone's sign-outs cannot end valve control, and
+ * proves it with a dashboard read before storing it. Mirrors app.js.
  *
  *   1. POST /v1/otp/     body: {"mobile":"91XXXXXXXXXX"} sent as the whole
  *                        form-encoded body. Mobitech texts a code.
@@ -58,6 +61,35 @@ public enum Mobitech {
             .joined(separator: "&").utf8)
         r.timeoutInterval = 30
         return r
+    }
+
+    /// Mobitech's answer to the code request: {"message":"Success",…}.
+    /// nil when it sent one; otherwise what it said.
+    public static func codeRefusal(status: Int, data: Data) -> String? {
+        let msg = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["message"] as? String
+        if status == 200 && (msg == nil || msg == "Success") { return nil }
+        return msg ?? "Mobitech answered \(status)"
+    }
+
+    /// The dashboard read that proves a token: it is one of the two calls
+    /// that check it, and a read changes nothing.
+    public static func dashboardRequest(token: String) -> URLRequest {
+        var r = URLRequest(url: base.appendingPathComponent("v1/http/"))
+        r.httpMethod = "POST"
+        r.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "content-type")
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        let enc = token.addingPercentEncoding(withAllowedCharacters: allowed) ?? token
+        r.httpBody = Data("action=dashboard&p=app&token_id=\(enc)&product=DCON".utf8)
+        r.timeoutInterval = 30
+        return r
+    }
+
+    /// Did the dashboard hand back a controller ({"<serial>": {…}})? A token
+    /// Mobitech will not serve gets nothing of the kind.
+    public static func servesController(_ data: Data) -> Bool {
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return obj.values.contains { $0 is [String: Any] }
     }
 
     public struct Session: Equatable, Sendable {

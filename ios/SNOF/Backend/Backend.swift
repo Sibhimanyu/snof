@@ -84,6 +84,9 @@ protocol FarmBackend: AnyObject {
     /// Store a Mobitech session: the token where no client can read it
     /// (/private/mobitech) and a non-secret status line. Admins only.
     func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws
+    /// Stop SNOF using its session: remove the token and the status line.
+    /// (Mobitech's own logout needs the token, which no client can read.)
+    func clearMobitechSession() async throws
     /// Drop writes the server has not acknowledged yet. Called when a control
     /// times out, so a toggle queued while offline cannot fire minutes later.
     func cancelUnsentWrites()

@@ -192,7 +192,8 @@ final class FarmStore {
             let d = v as? [String: Any]
             mobitechStatus = d.flatMap { d in Parse.double(d["at"]).map {
                 MobitechStatus(at: $0, name: Parse.string(d["name"]) ?? "", user: Parse.string(d["user"]) ?? "",
-                               mobileLast4: Parse.string(d["mobileLast4"]) ?? "") } }
+                               mobileLast4: Parse.string(d["mobileLast4"]) ?? "",
+                               lastOk: Parse.double(d["lastOk"]), lastRejected: Parse.double(d["lastRejected"])) } }
         case .irrigationLock(let v):
             irrigationLockUntil = Parse.double((v as? [String: Any])?["until"])
         case .controller(let b): canControl = b
@@ -450,7 +451,20 @@ final class FarmStore {
     /// The Run/Stop the NUC has not answered yet.
     /* ---- Mobitech sign-in (admins) ---- */
 
-    struct MobitechStatus: Equatable { let at: Double; let name: String; let user: String; let mobileLast4: String }
+    struct MobitechStatus: Equatable {
+        let at: Double; let name: String; let user: String; let mobileLast4: String
+        /// Written by whatever sends the commands: Mobitech accepted / rejected SNOF's session.
+        let lastOk: Double?; let lastRejected: Double?
+        /// Rejected more recently than it was signed in or last accepted.
+        var rejected: Bool { (lastRejected ?? 0) > max(at, lastOk ?? 0) }
+    }
+
+    /// One line for any screen, or nil when SNOF's session is fine.
+    var mobitechProblem: String? {
+        guard let st = mobitechStatus else { return "SNOF is not signed in to Mobitech, so valve commands cannot be sent." }
+        guard st.rejected, let when = st.lastRejected else { return nil }
+        return "Mobitech rejected SNOF's session at \(Date(timeIntervalSince1970: when / 1000).formatted(date: .abbreviated, time: .shortened)). Sign in again to send valve commands."
+    }
     private(set) var mobitechStatus: MobitechStatus?
     /// The device token for the login in progress: made when the code is
     /// requested, sent with the code. Never stored.
@@ -461,9 +475,9 @@ final class FarmStore {
         guard isAdmin else { show(.err, "Only farm admins can sign in to Mobitech."); return false }
         guard let mobile = Mobitech.mobile(raw) else { show(.err, "Enter the 10-digit mobile number on the Mobitech account."); return false }
         do {
-            let (_, resp) = try await URLSession.shared.data(for: Mobitech.codeRequest(mobile: mobile))
-            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-                show(.err, "Mobitech did not send a code (\((resp as? HTTPURLResponse)?.statusCode ?? 0))."); return false
+            let (data, resp) = try await URLSession.shared.data(for: Mobitech.codeRequest(mobile: mobile))
+            if let why = Mobitech.codeRefusal(status: (resp as? HTTPURLResponse)?.statusCode ?? 0, data: data) {
+                show(.err, "No code sent: \(why)"); return false
             }
             mobitechPendingToken = Mobitech.deviceToken()
             return true
@@ -484,6 +498,13 @@ final class FarmStore {
             case .failure(.refused(let why)):
                 show(.err, "Not signed in: \(why)"); return false
             case .success(let session):
+                // Prove it before storing: a dashboard read (read-only) is one
+                // of the two calls that check the token.
+                let (dash, _) = try await URLSession.shared.data(for: Mobitech.dashboardRequest(token: session.token))
+                guard Mobitech.servesController(dash) else {
+                    show(.err, "Not signed in: Mobitech took the code but will not serve the controller to this session.")
+                    return false
+                }
                 try await backend.saveMobitechSession(session, mobileLast4: String(mobile.suffix(4)), uid: uid)
                 mobitechPendingToken = nil
                 show(.ok, "Signed in to Mobitech as \(session.name.isEmpty ? session.user : session.name). Valve commands use this session.")
@@ -491,6 +512,16 @@ final class FarmStore {
             }
         } catch {
             show(.err, "Not signed in: \(error.localizedDescription)"); return false
+        }
+    }
+
+    /// Stop SNOF using its Mobitech session.
+    func mobitechSignOut() async {
+        do {
+            try await backend.clearMobitechSession()
+            show(.ok, "Signed SNOF out of Mobitech. Valve commands are off until someone signs in again.")
+        } catch {
+            show(.err, "Could not sign out: \(error.localizedDescription)")
         }
     }
 
