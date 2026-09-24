@@ -8,10 +8,8 @@ struct AreasView: View {
     var body: some View {
         let matching = store.entities.filter { $0.matches(search, areaName: store.areaName($0.area)) }
         let areas = Sorting.groupByArea(matching, name: store.areaName)
-        let devices = store.devices
-        let bad = devices.filter(\.isOffline).count
-        Page(eyebrow: "Rooms and zones", title: "Areas",
-             subtitle: "\(areas.count) \(areas.count == 1 ? "area" : "areas") · \(devices.count) devices" + (bad > 0 ? " · \(bad) offline" : "")) {
+        Page(title: "Rooms") {
+            RoomsSwitch()
             if !store.firstSnapshot {
                 LoadingBlock()
             } else if areas.isEmpty {
@@ -27,7 +25,7 @@ struct AreasView: View {
                 }
             }
         }
-        .navigationTitle("Areas")
+        .navigationTitle("Rooms")
         .searchable(text: $search, prompt: "Search devices, rooms, states")
     }
 }
@@ -42,10 +40,9 @@ struct AreaDetailView: View {
         let inArea = store.entities.filter { $0.area == areaId }
         let list = inArea.filter { $0.matches(search, areaName: store.areaName(areaId)) }
         let devices = Sorting.byDevice(inArea, names: store.deviceNames)
-        let on = devices.filter(\.isActive).count
         let bad = devices.filter(\.isOffline).count
-        Page(eyebrow: "Area", title: store.areaName(areaId),
-             subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices") · \(on) active" + (bad > 0 ? " · \(bad) unavailable" : "")) {
+        Page(title: store.areaName(areaId),
+             subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices")" + (bad > 0 ? " · \(bad) offline" : "")) {
             if list.isEmpty {
                 // An empty area and an area whose contents the search hid are
                 // different problems, and only one of them is the user's to fix.
@@ -75,5 +72,20 @@ struct AreaDetailView: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar(removing: .title)
         .searchable(text: $search, prompt: "Search this area")
+    }
+}
+
+/// Rooms or the same devices as one list: one tab, a switch at the top.
+struct RoomsSwitch: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        @Bindable var store = store
+        Picker("Show", selection: $store.roomsMode) {
+            Text("Rooms").tag(RoomsMode.rooms)
+            Text("All devices").tag(RoomsMode.devices)
+        }
+        .pickerStyle(.segmented)
+        .sensoryFeedback(.selection, trigger: store.roomsMode)
     }
 }

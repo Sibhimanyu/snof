@@ -9,18 +9,27 @@ struct WaterView: View {
     @Environment(FarmStore.self) private var store
 
     private var water: WaterState { store.water }
+    @State private var account = false
 
     var body: some View {
-        Page(eyebrow: "Water chain", title: "Water",
-             subtitle: "From the river to the main farm's drip lines.",
-             refresh: refresh) {
+        Page(title: "Water", refresh: refresh) {
             if let why = store.waterGateWhy { Note(text: why, tone: .warn) }
-            Note(text: pulledLine)
-            Stage(n: 1, title: "River", lead: "The river motor pumps to the other farm.") { river }
+            Stage(n: 1, title: "River", lead: "") { river }
             Flow(text: "To the other farm")
-            Stage(n: 2, title: "Other farm", lead: "Two motors on Niagara controllers.") { otherFarm }
+            Stage(n: 2, title: "Other farm", lead: "") { otherFarm }
             Flow(text: "7.5 HP motor to the main farm")
-            Stage(n: 3, title: "Main farm", lead: "The Mobitech DCON controller runs the valves.") { mainFarm }
+            Stage(n: 3, title: "Main farm", lead: "") { mainFarm }
+            if store.isAdmin {
+                AccountRow(title: "Livesky account", problem: store.liveskyProblem) { account = true }
+                    .padding(.top, 10)
+            }
+        }
+        .sheet(isPresented: $account) {
+            NavigationStack {
+                Form { Section { LiveskySignIn() } }
+                    .navigationTitle("Livesky account").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { account = false } } }
+            }
         }
         // Ask now, and every 30 s while this tab is on screen; SwiftUI
         // cancels the task when the tab goes away.
@@ -46,7 +55,7 @@ struct WaterView: View {
 
     @ViewBuilder private var river: some View {
         if store.isAdmin, let problem = store.liveskyProblem {
-            Note(text: problem + " Sign in from Account.", tone: .warn)
+            Note(text: problem, tone: .warn)
         }
         if let r = water.river {
             MotorCard(motor: r, now: store.now,
@@ -117,7 +126,7 @@ private struct Stage<Content: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(Theme.font(19, .bold, relativeTo: .title3)).foregroundStyle(Theme.text)
                         .accessibilityAddTraits(.isHeader)
-                    Text(lead).font(Theme.meta).foregroundStyle(Theme.muted)
+                    if !lead.isEmpty { Text(lead).font(Theme.meta).foregroundStyle(Theme.muted) }
                 }
             }
             content
@@ -140,6 +149,24 @@ struct MotorCard: View {
     let motor: WaterMotor
     let now: Date
     var vendorError: String? = nil
+    @State private var showDetails = false
+
+    private static let headlineKeys: Set<String> = ["Running for", "Off for", "Program", "Zone time left"]
+    private var headline: [(String, String)] { facts.filter { Self.headlineKeys.contains($0.0) } }
+    private var details: [(String, String)] { facts.filter { !Self.headlineKeys.contains($0.0) } }
+
+    private func factGrid(_ items: [(String, String)]) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
+                  alignment: .leading, spacing: 12) {
+            ForEach(items, id: \.0) { k, v in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(k).eyebrowStyle()
+                    Text(v).font(Theme.font(14.5, .semibold, relativeTo: .subheadline).monospacedDigit())
+                        .foregroundStyle(Theme.text)
+                }
+            }
+        }
+    }
 
     var body: some View {
         let m = motor
@@ -158,26 +185,19 @@ struct MotorCard: View {
                 Tag(text: m.running == true ? "Running" : m.running == false ? "Off" : "Unknown",
                     kind: m.running == true ? .on : .plain)
             }
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
-                      alignment: .leading, spacing: 12) {
-                ForEach(facts, id: \.0) { k, v in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(k).eyebrowStyle()
-                        Text(v).font(Theme.font(14.5, .semibold, relativeTo: .subheadline).monospacedDigit())
-                            .foregroundStyle(Theme.text)
-                    }
-                }
-            }
+            if !headline.isEmpty { factGrid(headline) }
             if let p = m.pendingText { Note(text: p, tone: .warn) }
             if !m.trips.isEmpty { Note(text: "Tripped: \(m.trips.joined(separator: ", ")).", tone: .bad) }
             if let z = m.skippedZone { Note(text: "Zone \(z) was skipped: no valve feedback.", tone: .bad) }
-            if !m.event.isEmpty, !["001", "020", ""].contains(m.eventCode), m.skippedZone == nil {
-                Note(text: "Last event: \(m.event.lowercased().capitalizedFirst).")
-            }
             if let e = vendorError, !e.isEmpty { Note(text: "\(e) Showing the last reading.", tone: .warn) }
             Divider().overlay(Theme.line)
-            Text(m.lastReport.map { "Controller report \(Water.ago($0, now: now))" } ?? "No report time")
-                .font(Theme.small).foregroundStyle(Theme.faint)
+            DisclosureGroup(isExpanded: $showDetails) {
+                factGrid(details).padding(.top, 8)
+            } label: {
+                Text(m.lastReport.map { "Reported \(Water.ago($0, now: now))" } ?? "Details")
+                    .font(Theme.small).foregroundStyle(Theme.faint)
+            }
+            .tint(Theme.faint)
         }
         .panel(padding: 16)
         .accessibilityElement(children: .combine)

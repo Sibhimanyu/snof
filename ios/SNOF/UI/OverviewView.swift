@@ -11,32 +11,78 @@ struct OverviewView: View {
     @Environment(FarmStore.self) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
 
+    /// Home (owner, 2026-09-25: "basic and simple to navigate"): one row per
+    /// system, what is not reporting, and what is switched on. Each row opens
+    /// the tab that has the rest.
     var body: some View {
-        Page(eyebrow: Self.today(), title: "Your farm, right now.", refresh: store.irrigationPull) {
+        Page(title: "Home", refresh: store.irrigationPull) {
             if !store.firstSnapshot {
                 LoadingBlock()
             } else if sizeClass == .regular {
                 HStack(alignment: .top, spacing: 16) {
-                    VStack(spacing: 14) { IrrigationGlanceView(); SolarPanel() }
-                    VStack(spacing: 14) { OnNowPanel(); SecurityPanel(); AttentionRow() }.frame(width: 360)
+                    VStack(spacing: 14) { SystemsCard(); AttentionRow() }
+                    VStack(spacing: 14) { OnNowPanel() }.frame(width: 360)
                 }
             } else {
-                IrrigationGlanceView()
-                OnNowPanel()
-                SolarPanel()
-                SecurityPanel()
+                SystemsCard()
                 AttentionRow()
+                OnNowPanel()
             }
         }
-        .navigationTitle("Overview")
+        .navigationTitle("Home")
+    }
+}
+
+/// Irrigation, water and solar, one line each.
+struct SystemsCard: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        let c = store.irrigation
+        let zone = FarmTime.zone(c.timeZone)
+        let say = WaterNow.say(cache: c, zone: zone, now: store.now)
+        let w = store.water
+        let solar = SolarGlance.find(store.entities)
+        VStack(spacing: 0) {
+            row("Irrigation", value: c.isEmpty ? "No data yet" : say.running ? "Watering · \(say.title)" : "Not watering",
+                meta: c.isEmpty ? "" : say.running ? say.detail : say.title + (say.detail.isEmpty ? "" : " · " + (say.detail.components(separatedBy: " · ").last ?? "")),
+                on: say.running) { store.selectedTab = .irrigation }
+            if w.river != nil || !w.motors.isEmpty {
+                let motors = [w.river] + w.motors.map { Optional($0) }
+                let any = motors.contains { $0?.running == true }
+                let bits: [String] = [("River", w.river), ("7.5 HP", w.supply.first), ("Drip", w.motors.first { $0.role == "drip" })]
+                    .compactMap { label, m in m.map { "\(label) \($0.running == true ? "on" : $0.running == false ? "off" : "?")" } }
+                Hairline()
+                row("Water", value: any ? "Motors running" : "All motors off", meta: bits.joined(separator: " · "), on: any) {
+                    store.selectedTab = .water
+                }
+            }
+            if let solar {
+                Hairline()
+                row("Solar", value: solar.watts.map { $0 >= 1000 ? String(format: "%.2f kW now", $0 / 1000) : "\(Int($0)) W now" } ?? "No reading",
+                    meta: solar.today.flatMap { $0.isBad ? nil : "\($0.state ?? "") \($0.attrs.unit ?? "") today" } ?? "", on: false) {
+                    store.selectedTab = .areas
+                }
+            }
+        }
+        .modifier(Panel(padding: 0))
     }
 
-    /// "Thursday · 24 September".
-    static func today() -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = "EEEE · d MMMM"
-        return f.string(from: Date())
+    private func row(_ title: String, value: String, meta: String, on: Bool, go: @escaping () -> Void) -> some View {
+        Button { Haptics.select(); go() } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).eyebrowStyle()
+                    Text(value).font(Theme.font(16, .bold, relativeTo: .headline)).foregroundStyle(on ? Theme.on : Theme.text)
+                    if !meta.isEmpty { Text(meta).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -46,7 +92,7 @@ struct AreaRoute: Hashable { let id: String }
 
 /// A panel with a title row: title, a quiet context line, and an optional
 /// trailing control. The Overview's one panel shape.
-private struct Block<Trailing: View, Content: View>: View {
+struct Block<Trailing: View, Content: View>: View {
     let title: String
     var context: String? = nil
     var divided = true
@@ -82,7 +128,7 @@ extension Block where Trailing == EmptyView {
 }
 
 /// A number with its label under it, the Overview's unit of "how much".
-private struct Figure: View {
+struct Figure: View {
     let value: String
     var unit: String? = nil
     let label: String
@@ -107,13 +153,13 @@ private struct Figure: View {
     }
 }
 
-private struct Hairline: View {
+struct Hairline: View {
     var inset: CGFloat = 0
     var body: some View { Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, inset) }
 }
 
 /// "12h ago" for a server-millisecond stamp.
-private func ago(_ ms: Double?, now: Date) -> String? {
+func ago(_ ms: Double?, now: Date) -> String? {
     guard let ms, ms > 0 else { return nil }
     let s = now.timeIntervalSince1970 - ms / 1000
     return s < 60 ? "just now" : "\(Format.age(max(0, s))) ago"
@@ -121,67 +167,105 @@ private func ago(_ ms: Double?, now: Date) -> String? {
 
 /* ---- irrigation ---- */
 
-struct IrrigationGlanceView: View {
+/// What the controller is doing, with Run / Stop for admins.
+struct IrrigationNowCard: View {
     @Environment(FarmStore.self) private var store
 
     var body: some View {
         let c = store.irrigation
         let zone = FarmTime.zone(c.timeZone)
-        let now = store.now
-        let updated = ago(c.lastUpdated, now: now)
-        Block(title: "Irrigation",
-              context: [c.device, updated.map { "updated \($0)" }].compactMap { $0 }.joined(separator: " · ")) {
+        Block(title: "Now", context: c.device) {
             if store.canControl { RefreshButton() }
         } content: {
             if c.isEmpty {
-                EmptyBlock(title: "No irrigation data yet",
-                           message: store.canControl ? "Press Refresh to pull the controller's state and today's runs."
-                               : "Nothing has been pulled from the controller yet.",
+                EmptyBlock(title: "No data yet",
+                           message: store.canControl ? "Press Refresh to ask the controller." : "Nothing has been pulled yet.",
                            symbol: "drop", framed: false)
             } else {
-                WaterNow(cache: c, zone: zone, now: now)
-                if store.canRunIrrigation { IrrigationControls(cache: c, zone: zone, now: now) }
-                if let day = Irrigation.latestDay(c) {
-                    Hairline()
-                    DayFigures(day: day, zone: zone, now: now)
-                }
-                if Irrigation.supply(c) != nil || Irrigation.pressure(c) != nil {
-                    Hairline()
-                    SupplyRow(cache: c, zone: zone, now: now)
-                }
-                let runs = Array(Irrigation.runs(c).prefix(4))
-                if !runs.isEmpty {
-                    Hairline()
-                    let first = runs[0].day
-                    Text("Recent runs · " + FarmTime.dayLabel(first, now: now, zone: zone)).eyebrowStyle()
-                        .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 4)
-                    ForEach(Array(runs.enumerated()), id: \.offset) { i, r in
-                        if i > 0 { Hairline(inset: 18) }
-                        RunRow(run: r, otherDay: r.day == first ? nil : FarmTime.dayLabel(r.day, now: now, zone: zone))
-                    }
-                }
+                WaterNow(cache: c, zone: zone, now: store.now)
             }
+            if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now) }
             if store.canControl, !store.gate(.irrigation).ok {
-                Hairline()
-                Note(text: store.gate(.irrigation).why, tone: .warn).padding(.horizontal, 18).padding(.vertical, 6)
+                Note(text: store.gate(.irrigation).why, tone: .warn).padding(.horizontal, 18).padding(.bottom, 10)
             }
-            Hairline()
-            Button { store.selectedTab = .irrigation } label: {
-                HStack {
-                    Text("Reports and history")
-                    Spacer()
-                    Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
-                }
-                .font(Theme.font(13.5, .bold, relativeTo: .subheadline)).foregroundStyle(Theme.on)
-                .padding(.horizontal, 18).frame(minHeight: 48)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
     }
 }
 
-private struct RefreshButton: View {
+/// Every valve with its picture; the ones the running program has open are marked.
+struct IrrigationValvesCard: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        let c = store.irrigation
+        let rows = (c.valveNames.isEmpty ? c.valves : c.valveNames)
+            .filter { $0["id"] != nil }
+            .sorted { (Int($0["id"] ?? "") ?? 0) < (Int($1["id"] ?? "") ?? 0) }
+        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
+        let open = Set(say.running ? (c.program?.valves ?? "").lowercased().components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) } : [])
+        if !rows.isEmpty {
+            Block(title: "Valves", context: "\(rows.count)") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                    ForEach(rows, id: \.self) { r in
+                        let name = r["name"] ?? "Valve \(r["id"] ?? "")"
+                        let on = open.contains(name.lowercased())
+                        HStack(spacing: 8) {
+                            if let art = ValveArt.key(name: name, type: r["type"], status: on ? "on" : "off") {
+                                Image("art-\(art)").resizable().scaledToFit().frame(width: 24, height: 24)
+                            } else {
+                                Image(systemName: "spigot").font(.system(size: 13)).foregroundStyle(Theme.faint).frame(width: 24)
+                            }
+                            Text(name).font(Theme.font(12.5, .semibold, relativeTo: .caption)).foregroundStyle(Theme.text)
+                                .lineLimit(1).minimumScaleFactor(0.85)
+                            Spacer(minLength: 0)
+                            if on { Circle().fill(Theme.brand).frame(width: 7, height: 7) }
+                        }
+                        .padding(.horizontal, 9).frame(minHeight: 44)
+                        .background(Theme.panel2, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous)
+                            .strokeBorder(on ? Theme.brand.opacity(0.5) : .clear, lineWidth: 1))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityValue(on ? "open" : "")
+                    }
+                }
+                .padding(12)
+            }
+        }
+    }
+}
+
+/// The newest day the logs cover: four figures and the last runs.
+struct IrrigationDayCard: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        let c = store.irrigation
+        let zone = FarmTime.zone(c.timeZone)
+        let runs = Array(Irrigation.runs(c).prefix(4))
+        if let day = Irrigation.latestDay(c) {
+            Block(title: FarmTime.dayLabel(day.day, now: store.now, zone: zone)) {
+                DayFigures(day: day, zone: zone, now: store.now)
+                ForEach(Array(runs.enumerated()), id: \.offset) { i, r in
+                    Hairline(inset: 18)
+                    RunRow(run: r, otherDay: r.day == day.day ? nil : FarmTime.dayLabel(r.day, now: store.now, zone: zone))
+                }
+            }
+        }
+    }
+}
+
+struct IrrigationSupplyCard: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        let c = store.irrigation
+        if Irrigation.supply(c) != nil || Irrigation.pressure(c) != nil {
+            Block(title: "Supply") { SupplyRow(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now) }
+        }
+    }
+}
+
+struct RefreshButton: View {
     @Environment(FarmStore.self) private var store
 
     var body: some View {
@@ -208,7 +292,7 @@ private struct RefreshButton: View {
 }
 
 /// Watering now, or what ran last — the one tinted surface in the app.
-private struct WaterNow: View {
+struct WaterNow: View {
     let cache: IrrigationCache
     let zone: TimeZone
     let now: Date
@@ -251,9 +335,11 @@ private struct WaterNow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private struct Say { var running: Bool; var title: String; var detail: String; var checked: String? }
+    struct Say { var running: Bool; var title: String; var detail: String; var checked: String? }
 
-    private var state: Say {
+    private var state: Say { Self.say(cache: cache, zone: zone, now: now) }
+
+    static func say(cache: IrrigationCache, zone: TimeZone, now: Date) -> Say {
         // The controller's own answer, if a recent pull has one, counted
         // down from when it was asked. Past its end it is a last run.
         if let p = cache.program, p.running, !p.name.isEmpty {
@@ -287,7 +373,7 @@ private struct WaterNow: View {
 
 /// Admins only: open valves for a while, or end a manual run. Every press
 /// is confirmed, and the NUC reads the controller before it sends anything.
-private struct IrrigationControls: View {
+struct IrrigationControls: View {
     @Environment(FarmStore.self) private var store
     let cache: IrrigationCache
     let zone: TimeZone
@@ -330,7 +416,7 @@ private struct IrrigationControls: View {
             else if store.isAdmin, let problem = store.mobitechProblem {
                 // Where it matters: an admin about to press Run learns the
                 // session is missing or rejected, and where to fix it.
-                Note(text: problem + " Sign in from Account.", tone: .warn)
+                Note(text: problem, tone: .warn)
             }
             else if waiting {
                 Note(text: store.irrigationConfirming
@@ -350,7 +436,7 @@ private struct IrrigationControls: View {
 }
 
 /// Pick up to five irrigation valves and a duration, then confirm.
-private struct RunValvesSheet: View {
+struct RunValvesSheet: View {
     @Environment(FarmStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let cache: IrrigationCache
@@ -435,20 +521,14 @@ private struct RunValvesSheet: View {
 }
 
 /// The newest day the logs cover: runs, water, pump, energy.
-private struct DayFigures: View {
+struct DayFigures: View {
     let day: Irrigation.Day
     let zone: TimeZone
     let now: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(FarmTime.dayLabel(day.day, now: now, zone: zone)).eyebrowStyle()
-                Spacer()
-                if day.stopped > 0 {
-                    Tag(text: "\(day.stopped) stopped early", kind: .warn)
-                }
-            }
+            if day.stopped > 0 { Tag(text: "\(day.stopped) stopped early", kind: .warn) }
             HStack(alignment: .top, spacing: 10) {
                 Figure(value: "\(day.runs.count)", label: day.runs.count == 1 ? "Run" : "Runs")
                 Figure(value: Format.minutes(day.waterMin), label: "Water")
@@ -456,17 +536,13 @@ private struct DayFigures: View {
                 Figure(value: day.pump?.kwh.map { String(format: "%.1f", $0) } ?? "—", unit: day.pump?.kwh == nil ? nil : "kWh",
                        label: "Energy")
             }
-            if let pump = day.pump, pump.supplyMin > 0 {
-                Text("Power was on for \(Format.minutes(pump.supplyMin)); the pump used \(Int((Double(pump.pumpMin) / Double(pump.supplyMin) * 100).rounded()))% of it.")
-                    .font(Theme.meta).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
-            }
         }
         .padding(.horizontal, 18).padding(.vertical, 14)
     }
 }
 
 /// Three-phase supply and pressure, from the last live reading.
-private struct SupplyRow: View {
+struct SupplyRow: View {
     let cache: IrrigationCache
     let zone: TimeZone
     let now: Date
@@ -519,7 +595,7 @@ private struct SupplyRow: View {
     }
 }
 
-private struct RunRow: View {
+struct RunRow: View {
     let run: ProgramRun
     /// Set when the run is on a different day from the header's.
     var otherDay: String?
@@ -566,7 +642,7 @@ struct OnNowPanel: View {
                   context: on.isEmpty ? "\(operable) switches, lights and fans reporting"
                       : "\(on.count) of \(operable) switches, lights and fans",
                   divided: !on.isEmpty || (store.canControl && (!store.gate(.control).ok || !store.connected))) {
-                LinkButton(label: "All", run: { store.showDevices(status: .active) })
+                LinkButton(label: "All", run: { store.showDevices(status: .all) })
             } content: {
                 let gate = store.gate(.control)
                 if store.canControl, !gate.ok || !store.connected {
@@ -579,7 +655,7 @@ struct OnNowPanel: View {
                 }
                 if on.count > 6 {
                     Hairline()
-                    Button { store.showDevices(status: .active) } label: {
+                    Button { store.showDevices(status: .all) } label: {
                         HStack {
                             Text("\(on.count - 6) more on")
                             Spacer()
@@ -741,29 +817,19 @@ struct AreaCard: View {
     var body: some View {
         // Devices, like the tiles: one switched-off printer is one offline.
         let devices = Sorting.byDevice(entities, names: store.deviceNames)
-        let on = devices.filter(\.isActive).count
         let bad = devices.filter(\.isOffline).count
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
                 Text(name).font(Theme.font(15.5, .bold, relativeTo: .headline)).tracking(-0.4)
                     .foregroundStyle(Theme.text).lineLimit(2)
                 Spacer(minLength: 6)
-                Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Theme.muted)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
             }
-            Text("\(devices.count) \(devices.count == 1 ? "device" : "devices")")
-                .font(Theme.meta).foregroundStyle(Theme.muted).padding(.top, 2)
-            Spacer(minLength: 18)
-            // Own line, never hyphenated: on a narrow card the words would
-            // otherwise wrap mid-word.
-            HStack(spacing: 10) {
-                if on > 0 { Text("\(on) active").foregroundStyle(Theme.on) }
-                if bad > 0 { Text("\(bad) unavailable").foregroundStyle(Theme.bad) }
-                else { Text("All reporting").foregroundStyle(Theme.on) }
-            }
-            .font(Theme.font(12, .bold, relativeTo: .caption)).lineLimit(1).minimumScaleFactor(0.85)
+            (Text("\(devices.count) \(devices.count == 1 ? "device" : "devices")")
+                + (bad > 0 ? Text(" · ") + Text("\(bad) offline").foregroundColor(Theme.bad).bold() : Text("")))
+                .font(Theme.meta).foregroundStyle(Theme.muted)
         }
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(14)
         .card()
         .contentShape(Rectangle())

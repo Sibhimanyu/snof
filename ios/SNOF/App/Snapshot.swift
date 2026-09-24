@@ -24,7 +24,7 @@ enum Snapshot {
         Self.store = store
         switch value("-tab") {
         case "areas": store.selectedTab = .areas
-        case "devices": store.selectedTab = .devices
+        case "devices": store.selectedTab = .areas; store.roomsMode = .devices
         case "irrigation": store.selectedTab = .irrigation
         case "water": store.selectedTab = .water
         default: break

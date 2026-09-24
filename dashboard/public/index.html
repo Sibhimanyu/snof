@@ -92,7 +92,7 @@
 </div>
 
 <!-- ---------- app shell ----------
-     One top bar on every width: wordmark, the six destinations, and the
+     One top bar on every width: wordmark, the four destinations, and the
      account. Below 900px the destinations move to the bottom tab bar and the
      bridge state takes their place up top, because on a phone "is this live?"
      is the first question. Both navs carry data-nav; render() marks both. -->
@@ -106,12 +106,10 @@
       </a>
 
       <nav class="topnav" aria-label="Main">
-        <a class="topnav-item" href="#/" data-nav="overview">Overview</a>
-        <a class="topnav-item" href="#/areas" data-nav="areas">Areas</a>
-        <a class="topnav-item" href="#/devices" data-nav="devices">All devices</a>
+        <a class="topnav-item" href="#/" data-nav="overview">Home</a>
         <a class="topnav-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
         <a class="topnav-item" href="#/water" data-nav="water">Water</a>
-        <a class="topnav-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
+        <a class="topnav-item" href="#/areas" data-nav="areas">Rooms</a>
       </nav>
 
       <div class="topbar-right">
@@ -135,6 +133,7 @@
               <svg viewBox="0 0 24 24" class="ico ico-sm ico-moon"><use href="#i-moon"/></svg>
               <span id="theme-menu-text">Switch theme</span>
             </button>
+            <a class="acct-item nav-admin" href="#/admin" role="menuitem" hidden>Admin: people and access</a>
             <button id="signout-menu" class="acct-item" role="menuitem">Sign out</button>
           </div>
         </div>
@@ -150,16 +149,13 @@
       <input id="search" type="search" aria-label="Search devices and areas" placeholder="Search devices, rooms, states…" autocomplete="off" spellcheck="false">
     </div>
     <main id="view" class="view" tabindex="-1"></main>
-    <footer class="foot"><span id="stats" role="status">Connecting…</span></footer>
   </div>
 
   <nav class="tabbar" aria-label="Main">
-    <a class="tab-item" href="#/" data-nav="overview">Overview</a>
-    <a class="tab-item" href="#/areas" data-nav="areas">Areas</a>
-    <a class="tab-item" href="#/devices" data-nav="devices">Devices</a>
+    <a class="tab-item" href="#/" data-nav="overview">Home</a>
     <a class="tab-item" href="#/irrigation" data-nav="irrigation">Irrigation</a>
     <a class="tab-item" href="#/water" data-nav="water">Water</a>
-    <a class="tab-item nav-admin" href="#/admin" data-nav="admin" hidden>Admin</a>
+    <a class="tab-item" href="#/areas" data-nav="areas">Rooms</a>
   </nav>
 </div>
 

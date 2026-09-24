@@ -30,15 +30,15 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await c.close();
 }
 
-// B. Keyboard user tabs to a filter chip and presses it.
+// B. Rooms and All devices are one tab with a switch (2026-09-25).
 {
-  const [p,c]=await open('#/devices');
-  await p.waitForSelector('.chip');
-  await p.evaluate(()=>{document.querySelectorAll('.chip')[1].focus();});
-  const before=await p.evaluate(()=>document.activeElement.dataset.domain);
-  await p.evaluate(()=>{document.querySelectorAll('.chip')[1].click();});
-  const after=await p.evaluate(()=>({tag:document.activeElement.tagName,d:document.activeElement.dataset?.domain}));
-  check('filter chip keeps focus after being pressed', after.d===before, `before=${before} after=${JSON.stringify(after)}`);
+  const [p,c]=await open('#/areas');
+  await p.waitForSelector('.seg-nav');
+  await p.click('.seg-nav a[href="#/devices"]');
+  await p.waitForSelector('.dgroups');
+  const r=await p.evaluate(()=>({hash:location.hash, tab:document.querySelector('.tab-item.on, .topnav-item.on')?.textContent,
+    chips:document.querySelectorAll('.chip').length}));
+  check('Rooms switch opens All devices under the Rooms tab', r.hash==='#/devices'&&r.tab==='Rooms'&&r.chips===0, JSON.stringify(r));
   await c.close();
 }
 
@@ -146,7 +146,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 // and the result lands as a report card. No timer, no vendor credentials.
 {
   const [p,c]=await open('#/irrigation');
-  await p.waitForSelector('.rep-builder');
+  await p.waitForSelector('[data-act="irr-builder"]'); await p.click('[data-act="irr-builder"]'); await p.waitForSelector('.rep-builder');
   const r=await p.evaluate(()=>({
     title:document.querySelector('.page-title')?.textContent,
     options:[...document.querySelectorAll('#irr-type option')].map(o=>o.value),
@@ -232,9 +232,9 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // Viewers see results but get no builder: reports hit billable vendor APIs.
   const [p,c]=await open('?viewer=1#/irrigation');
   await p.waitForSelector('.page-title');
-  const r=await p.evaluate(()=>({builder:!!document.querySelector('.rep-builder'),
-    note:document.body.textContent.includes('limited to controllers')}));
-  check('viewers get results but no builder', !r.builder&&r.note===true);
+  const r=await p.evaluate(()=>({builder:!!document.querySelector('.rep-builder, [data-act="irr-builder"]'),
+    run:!!document.querySelector('[data-act="run-open"]'), refresh:!!document.querySelector('[data-act="irr-refresh"]')}));
+  check('viewers get results but no builder, Refresh or Run', !r.builder&&!r.run&&!r.refresh, JSON.stringify(r));
   await c.close();
 }
 // Regression: control was offered while allow_control was false on the bridge.
@@ -271,7 +271,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 // switch is meta/reports.enabled.
 {
   const [p,c]=await open('?reportsoff=1#/irrigation');
-  await p.waitForSelector('.rep-builder');
+  await p.waitForSelector('[data-act="irr-builder"]'); await p.click('[data-act="irr-builder"]'); await p.waitForSelector('.rep-builder');
   const before=await p.evaluate(()=>({
     disabled:document.querySelector('[data-act="irr-gen"]').disabled,
     why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
@@ -291,7 +291,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 }
 {
   const [p,c]=await open('?stale=1#/irrigation');
-  await p.waitForSelector('.rep-builder');
+  await p.waitForSelector('[data-act="irr-builder"]'); await p.click('[data-act="irr-builder"]'); await p.waitForSelector('.rep-builder');
   const r=await p.evaluate(()=>({
     disabled:document.querySelector('[data-act="irr-gen"]').disabled,
     why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
@@ -304,8 +304,47 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 {
   const [p,c]=await open('?noirrig=1#/irrigation');
   await p.waitForSelector('.page-title');
-  const t=await p.evaluate(()=>document.querySelector('.empty h3')?.textContent);
-  check('empty history explains itself', t==='No reports yet', `${t}`);
+  const t=await p.evaluate(()=>document.querySelector('.irr-reports .more-note')?.textContent);
+  check('empty history explains itself', t==='No reports yet.', `${t}`);
+  await c.close();
+}
+// Valve control lives on the Irrigation tab (2026-09-25), for admins, with
+// the same limits as the rules: irrigation valves only, at most five.
+{
+  const [p,c]=await open('?live=1&mobitech=ok#/irrigation');
+  await p.waitForSelector('[data-act="run-open"]');
+  const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND'))writes.push(m.text());});
+  p.on('dialog',d=>d.accept());
+  await p.click('[data-act="run-open"]');
+  const r=await p.evaluate(()=>({pickable:[...document.querySelectorAll('[data-act="run-pick"]')].map(b=>b.dataset.valve),
+    all:document.querySelectorAll('.vchip').length}));
+  check('only irrigation valves are pickable', r.pickable.length>0&&!r.pickable.includes('1')&&!r.pickable.includes('2')&&!r.pickable.includes('3'),
+    `${r.pickable.length} of ${r.all}`);
+  for(const v of r.pickable.slice(0,6)) await p.click(`[data-act="run-pick"][data-valve="${v}"]`,{force:true});
+  const picked=await p.evaluate(()=>document.querySelectorAll('.vchip.picked').length);
+  check('picking stops at five valves', picked===5, `picked=${picked}`);
+  await p.click('[data-act="run-go"]');
+  await p.waitForTimeout(200);
+  const cmd=writes.find(w=>w.includes('"action":"run"'))||'';
+  check('Run writes one command with valves and minutes', /"valves":"\d+(,\d+){4}"/.test(cmd)&&/"minutes":15/.test(cmd), cmd.slice(8,120));
+  const locked=await p.evaluate(()=>document.querySelector('[data-act="run-open"]').disabled);
+  check('Run locks while the farm answers', locked===true);
+  await c.close();
+}
+{
+  const [p,c]=await open('?live=1&mobitech=ok&watering=1#/irrigation');
+  await p.waitForSelector('.now.is-on');
+  const r=await p.evaluate(()=>({run:document.querySelector('[data-act="run-open"]').disabled, stop:!!document.querySelector('[data-act="irr-stop"]'),
+    open:document.querySelectorAll('.vchip.is-on').length}));
+  check('a manual run offers Stop and blocks a second Run', r.run&&r.stop, JSON.stringify(r));
+  check('the running valves are marked open', r.open===2, `${r.open}`);
+  await c.close();
+}
+{
+  const [p,c]=await open('?live=1&irroff=1#/irrigation');
+  await p.waitForSelector('.now');
+  const r=await p.evaluate(()=>({run:document.querySelector('[data-act="run-open"]').disabled, why:document.querySelector('.now .note-off')?.textContent||''}));
+  check('valve control switched off disables Run and says so', r.run&&/switched off/.test(r.why), r.why);
   await c.close();
 }
 await b.close();

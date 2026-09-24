@@ -11,7 +11,9 @@ enum Phase: Equatable {
     case app
 }
 
-enum AppTab: Hashable { case overview, areas, devices, irrigation, water }
+enum AppTab: Hashable { case overview, irrigation, water, areas }
+/// The Rooms tab shows rooms, or the same devices as one list.
+enum RoomsMode: Hashable { case rooms, devices }
 
 enum StatusFilter: String, CaseIterable, Identifiable {
     case all, active, offline
@@ -79,6 +81,7 @@ final class FarmStore {
 
     var toast: Toast?
     var selectedTab: AppTab = .overview
+    var roomsMode: RoomsMode = .rooms
     var deviceStatus: StatusFilter = .all
     var deviceDomain: String?
 
@@ -713,9 +716,10 @@ final class FarmStore {
     /* ---- navigation from overview ---- */
 
     func showDevices(status: StatusFilter, domain: String? = nil) {
-        deviceStatus = status
+        deviceStatus = status == .active ? .all : status
         deviceDomain = domain
-        selectedTab = .devices
+        roomsMode = .devices
+        selectedTab = .areas
     }
 
     /* ---- toasts ---- */

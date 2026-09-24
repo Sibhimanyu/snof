@@ -21,8 +21,6 @@ struct DevicesView: View {
             case .offline: return $0.isBad
             }
         }
-        let domains = Dictionary(grouping: scoped, by: \.domain).mapValues(\.count)
-            .sorted { $0.key < $1.key }
         let list = scoped.filter {
             (store.deviceDomain == nil || $0.domain == store.deviceDomain) &&
             $0.matches(search, areaName: store.areaName($0.area))
@@ -31,33 +29,15 @@ struct DevicesView: View {
         let whole = Dictionary(store.devices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let filtering = !search.isEmpty || store.deviceDomain != nil || store.deviceStatus == .offline
 
-        Page(eyebrow: "Everything in a room", title: "All devices",
-             subtitle: "\(store.devices.count) devices · \(all.count) readings") {
+        Page(title: "Rooms") {
+            RoomsSwitch()
             Picker("Status", selection: $store.deviceStatus) {
-                ForEach(StatusFilter.allCases) { f in
+                ForEach([StatusFilter.all, .offline]) { f in
                     Text("\(f.label) \(count(f, all))").tag(f)
                 }
             }
             .pickerStyle(.segmented)
             .sensoryFeedback(.selection, trigger: store.deviceStatus)
-            .onChange(of: store.deviceStatus) { _, _ in
-                if let d = store.deviceDomain, !scoped.contains(where: { $0.domain == d }) { store.deviceDomain = nil }
-            }
-
-            if domains.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(domains, id: \.key) { d, n in
-                            Chip(label: Entity.humanDomain(d).capitalized, count: n, on: store.deviceDomain == d) {
-                                store.deviceDomain = store.deviceDomain == d ? nil : d
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .padding(.horizontal, -16)
-                .scrollClipDisabled()
-            }
 
             if !store.firstSnapshot {
                 LoadingBlock()
@@ -76,7 +56,7 @@ struct DevicesView: View {
                 .modifier(Panel(padding: 0))
             }
         }
-        .navigationTitle("All devices")
+        .navigationTitle("Rooms")
         .searchable(text: $search, prompt: "Name, entity id, state or room")
     }
 
@@ -108,7 +88,7 @@ struct DeviceGroupRow: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(group.name).font(Theme.font(15, .bold, relativeTo: .subheadline)).tracking(-0.2)
                                 .foregroundStyle(Theme.text).lineLimit(1)
-                            Text("\(store.areaName(group.area)) · \(shown)").font(Theme.meta)
+                            Text(store.areaName(group.area)).font(Theme.meta)
                                 .foregroundStyle(Theme.muted).lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)

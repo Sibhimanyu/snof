@@ -34,7 +34,7 @@ Architecture and data shape are in README.md.
   **no authentication**: its user id (`NIAGARA_USER_ID`) and host
   (`NIAGARA_BASE`) are secrets, and controller ids never leave the
   function. The Livesky 24-hour JWT lives in `/private/livesky` (no client
-  access), renewed by an admin's SMS sign-in. **No motor control exists.**
+  access), renewed by an admin's SMS sign-in (Water tab, "Livesky account"). **No motor control exists.**
   Building it needs the owner's answers first (docs/water.md, "Control").
   It must copy the irrigation_lock model, and `AUTOON` counts as a start.
 
@@ -43,8 +43,8 @@ Architecture and data shape are in README.md.
   before it is kept, senders record lastOk/lastRejected, admins can sign
   SNOF out. (a) and (b) are still open: commands stay FON/OFF.
 - **The Mobitech command session comes from signing in** (2026-09-24):
-  admins sign in to Mobitech with an SMS code from Admin (web) or Account
-  (iOS); the token goes to `/private/mobitech` (admins write, no client
+  admins sign in to Mobitech with an SMS code from the Irrigation tab
+  ("Mobitech account", web and iOS); the token goes to `/private/mobitech` (admins write, no client
   reads) and consumers prefer it over the hand-set option. Never show or log
   it. Details: docs/irrigation-control.md.
 - **No second valve change until the first is confirmed** (owner,
@@ -285,6 +285,20 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   iOS 0.4.0. See DESIGN.md "Soft, iOS-like shape and depth". Dark mode is
   Apple's neutral dark (black / #1c1c1e / #2c2c2e), not the old
   charcoal-green — owner disliked it (iOS 0.4.1).
+- **Simplified structure** (2026-09-25, owner: "so cluttered… too much words";
+  web deployed, iOS 0.7.0). Four tabs on both apps: **Home · Irrigation ·
+  Water · Rooms**; Admin (people only) sits in the web account menu. Home is
+  one row per system (irrigation, water, solar), what is not reporting, and
+  the switches: no farm pulse, area grid, date line or footer stats.
+  **Irrigation holds everything irrigation**: Now (status, Refresh, Run
+  valves / Stop for admins, with the irrigation_lock states), Valves, the
+  last day, Supply, then Reports behind "New report", and the Mobitech
+  account. Valve control is on the Irrigation tab on **both** apps (the web
+  never had it before). Old "Last results" (report data shown as if live) is
+  gone. Rooms has a Rooms / All devices switch; no domain chips, no reading
+  counts. Livesky sign-in lives on Water. Page titles only: no eyebrows or
+  subtitles. Keep web (`app.js`) and iOS (`OverviewView.swift` modules) on
+  the same module list.
 - **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
   SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
   0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with

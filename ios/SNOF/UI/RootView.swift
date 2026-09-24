@@ -32,29 +32,27 @@ struct MainTabs: View {
     @State private var account = false
     @State private var overviewPath: [AreaRoute] = []
     @State private var areasPath: [AreaRoute] = []
-    @State private var devicesPath: [AreaRoute] = []
     @State private var irrigationPath: [AreaRoute] = []
     @State private var waterPath: [AreaRoute] = []
 
     var body: some View {
         @Bindable var store = store
         TabView(selection: $store.selectedTab) {
-            Tab("Overview", systemImage: "house", value: AppTab.overview) {
+            Tab("Home", systemImage: "house", value: AppTab.overview) {
                 stack(path: $overviewPath) { OverviewView() }
             }
-            Tab("Areas", systemImage: "square.grid.2x2", value: AppTab.areas) {
-                stack(path: $areasPath) { AreasView() }
-            }
-            Tab("Devices", systemImage: "list.bullet", value: AppTab.devices) {
-                stack(path: $devicesPath) { DevicesView() }
-            }
-            .badge(store.entities.filter(\.isBad).count > 0 ? Text("") : nil)
             Tab("Irrigation", systemImage: "drop", value: AppTab.irrigation) {
                 stack(path: $irrigationPath) { IrrigationView() }
             }
             Tab("Water", systemImage: "water.waves", value: AppTab.water) {
                 stack(path: $waterPath) { WaterView() }
             }
+            Tab("Rooms", systemImage: "square.grid.2x2", value: AppTab.areas) {
+                stack(path: $areasPath) {
+                    if store.roomsMode == .rooms { AreasView() } else { DevicesView() }
+                }
+            }
+            .badge(store.devices.contains(where: \.isOffline) ? Text("") : nil)
         }
         .tint(Theme.text)
         .toolbarBackground(.bar, for: .tabBar)
@@ -142,22 +140,6 @@ struct AccountSheet: View {
                 Section("Bridge") {
                     LabeledContent("Status", value: store.bridgeStatus.label)
                     LabeledContent("Device control", value: store.meta.bridge?.control == false ? "Switched off" : store.meta.bridge?.control == true ? "On" : "Unknown")
-                }
-                if store.isAdmin {
-                    Section {
-                        LiveskySignIn()
-                    } header: {
-                        Text("Livesky account (river motor)")
-                    } footer: {
-                        Text("The number and the SMS code are never stored. The session is kept by SNOF's cloud function, where no app can read it.")
-                    }
-                    Section {
-                        MobitechSignIn()
-                    } header: {
-                        Text("Mobitech account")
-                    } footer: {
-                        Text("Valve commands and the controller reads that need it use this session. The number and the SMS code are never stored; the session is kept where no app can read it.")
-                    }
                 }
                 Section("Reports") {
                     LabeledContent("Irrigation reports", value: store.meta.reportsEnabled == false ? "Switched off" : "On")
