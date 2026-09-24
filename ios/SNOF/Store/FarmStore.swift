@@ -249,6 +249,7 @@ final class FarmStore {
         // Evaluated against the real clock, not the 5 s tick, at press time.
         Gate.evaluate(c, bridge: meta.bridge, reportsEnabled: meta.reportsEnabled,
                       cloudIrrigationControl: meta.cloudIrrigationControl,
+                      reportsTransport: meta.reportsTransport,
                       nowMs: Date().timeIntervalSince1970 * 1000, skewMs: skewMs)
     }
 

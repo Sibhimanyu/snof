@@ -159,7 +159,10 @@ def _status(store, root: str, ok: bool = False, error: str = "", rtype: str = ""
             refused: bool = False) -> None:
     """meta/reports: what the dashboard reads to say reports are live. A
     patch, so `enabled` — the kill switch — is never touched from here."""
-    patch: dict[str, Any] = {"runtime": "cloud-functions",
+    # transport: "relay" while controller reads go through the NUC (the apps
+    # then close Refresh when the bridge is quiet), "direct" once the function
+    # has a static egress IP Mobitech allowlists (docs/dcon-off-the-nuc.md).
+    patch: dict[str, Any] = {"runtime": "cloud-functions", "transport": DCON_TRANSPORT.value,
                              "lastSeen": reports.SERVER_TIMESTAMP}
     if refused:
         patch["lastRefused"] = reports.SERVER_TIMESTAMP

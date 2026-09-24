@@ -12,7 +12,7 @@ struct WaterView: View {
     @State private var account = false
 
     var body: some View {
-        Page(title: "Water", refresh: refresh) {
+        Page(title: "Water", subtitle: pulledLine, refresh: refresh) {
             if let why = store.waterGateWhy { Note(text: why, tone: .warn) }
             Stage(n: 1, title: "River", lead: "") { river }
             Flow(text: "To the other farm")
@@ -49,9 +49,10 @@ struct WaterView: View {
         return { await store.refreshWater(force: true) }
     }
 
+    /// When it was read, and that it only reads: the owner asked why these
+    /// motors cannot be switched from here (2026-09-24).
     private var pulledLine: String {
-        let read = water.pulledAt.map { "Read from the controllers \(ago(ms: $0))." } ?? "Not read yet."
-        return read + " Read-only: this app cannot switch a motor."
+        (water.pulledAt.map { "Read \(ago(ms: $0))" } ?? "Not read yet") + " · read-only"
     }
 
     @ViewBuilder private var river: some View {
@@ -59,8 +60,10 @@ struct WaterView: View {
             Note(text: problem, tone: .warn)
         }
         if let r = water.river {
+            // Said once: the account note above already carries the session problem.
+            let noted = store.isAdmin && store.liveskyProblem != nil
             MotorCard(motor: r, now: store.now,
-                      vendorError: water.livesky.status.ok == false ? water.livesky.status.error : nil)
+                      vendorError: !noted && water.livesky.status.ok == false ? water.livesky.status.error : nil)
         } else {
             EmptyBlock(title: "No reading from the river motor",
                        message: water.livesky.status.error.isEmpty ? "It appears after the first pull." : water.livesky.status.error,

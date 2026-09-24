@@ -99,6 +99,29 @@ public struct WaterState: Hashable, Sendable {
     public init() {}
 
     public var supply: [WaterMotor] { motors.filter { $0.role == "main-farm" } }
+
+    /// Whether a motor's reading says what it is doing now: its vendor
+    /// answered a recent pull and, for Livesky (the starter reports every few
+    /// seconds), its own report is recent too. Niagara reports on change, so
+    /// an hour-old "motor on" with no "off" since is still the state. A reading
+    /// that is not current is drawn with its age, never as water flowing
+    /// (2026-09-25: Home showed "River · Running" after the Livesky session
+    /// ended). Mirrors waterCurrent() in app.js.
+    public func isCurrent(_ m: WaterMotor?, now: Date) -> Bool {
+        let nowMs = now.timeIntervalSince1970 * 1000
+        guard let m, let pulled = pulledAt, nowMs - pulled <= 10 * 60_000 else { return false }
+        if m.vendor == "livesky" {
+            guard livesky.kind(nowMs: nowMs) == .ok, let at = m.lastReport else { return false }
+            return now.timeIntervalSince(at) < 15 * 60
+        }
+        return niagara.ok != false
+    }
+
+    /// When a reading that is not current was taken: the starter's own report
+    /// for Livesky, the last pull for Niagara (whose reports only mark changes).
+    public func readingDate(_ m: WaterMotor) -> Date? {
+        m.vendor == "livesky" ? m.lastReport : pulledAt.map { Date(timeIntervalSince1970: $0 / 1000) }
+    }
 }
 
 extension Parse {

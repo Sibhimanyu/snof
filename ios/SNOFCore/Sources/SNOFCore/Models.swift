@@ -105,6 +105,9 @@ public struct FarmMeta: Hashable, Sendable {
     /// decision to the bridge's heartbeat as before.
     public var cloudIrrigationControl: Bool?
     public var cloudIrrigationMaxMinutes: Int?
+    /// `meta/reports.transport`: "relay" while controller reads go through the
+    /// NUC, "direct" once the function reaches Mobitech itself. nil = relay.
+    public var reportsTransport: String? = nil
     public init(name: String? = nil, bridge: BridgeMeta? = nil, reportsEnabled: Bool? = nil,
                 cloudIrrigationControl: Bool? = nil, cloudIrrigationMaxMinutes: Int? = nil) {
         self.name = name; self.bridge = bridge; self.reportsEnabled = reportsEnabled

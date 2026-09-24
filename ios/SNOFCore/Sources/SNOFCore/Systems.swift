@@ -356,7 +356,8 @@ public enum Attention {
         var out: [AttentionItem] = []
         let room = { (id: String) in i.areaName[id] ?? "" }
         if i.bridgeDown {
-            out.append(.init(.bad, "Farm box offline",
+            // "Bridge", as the pill, the account sheet and the gates say it.
+            out.append(.init(.bad, "Bridge not reporting",
                              "Switches and controller reads are paused" + (i.bridgeQuietFor.isEmpty ? "" : " · quiet for \(i.bridgeQuietFor)"), .home))
         }
         let c = i.irrigation

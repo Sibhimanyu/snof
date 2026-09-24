@@ -238,7 +238,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     why:document.querySelector('.note-off')?.textContent||''}));
   check('control switched off on the bridge disables every toggle',
     r.toggles>0&&r.disabled===true, `${r.toggles} toggles, allDisabled=${r.disabled}`);
-  check('and the page says why', /switched off on the bridge/.test(r.why), r.why.slice(0,70));
+  check('and the page says why', /turned off at the farm/.test(r.why), r.why.slice(0,70));
   // Re-enable before pressing: that is the real race the guard is for — the
   // button was painted while control was on, and the bridge went off after.
   // A genuinely disabled button fires no click at all, so it proves nothing.
@@ -249,7 +249,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     busy:document.querySelector('.toggle').className.includes('busy'),
     toast:[...document.querySelectorAll('.toast')].map(t=>t.textContent).join('|')}));
   check('a press that beats the re-render writes nothing and never flips',
-    writes.length===0&&after.busy===false&&/switched off/.test(after.toast),
+    writes.length===0&&after.busy===false&&/turned off/.test(after.toast),
     `writes=${writes.length} busy=${after.busy} toast=${after.toast.slice(0,50)}`);
   await c.close();
 }
@@ -280,13 +280,19 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 {
   const [p,c]=await open('?stale=1#/irrigation');
   await p.waitForSelector('[data-act="irr-builder"]'); await p.click('[data-act="irr-builder"]'); await p.waitForSelector('.rep-builder');
-  const r=await p.evaluate(()=>({
-    disabled:document.querySelector('[data-act="irr-gen"]').disabled,
-    why:document.querySelector('.rep-builder + .note-off')?.textContent||''}));
-  // Reports run in a Cloud Function, not on the NUC: a bridge that has gone
-  // quiet must not take them down with it.
-  check('a stale bridge does not block reports', r.disabled===false&&r.why==='',
-    r.why.slice(0,80));
+  const read=()=>({disabled:document.querySelector('[data-act="irr-gen"]')?.disabled,
+    why:document.querySelector('.rep-builder + .note-off')?.textContent||''});
+  const relay=await p.evaluate(read);
+  // Reads go through the NUC's relay until the function reaches Mobitech
+  // itself (docs/dcon-off-the-nuc.md): a quiet bridge closes Generate with the
+  // reason, rather than letting it time out. A direct transport does not.
+  check('a stale bridge closes reports while reads are relayed, and says why',
+    relay.disabled===true&&/cannot be read/.test(relay.why), relay.why.slice(0,80));
+  const direct=await p.evaluate((fn)=>{state.meta.reports=Object.assign({},state.meta.reports,{transport:'direct'});render();
+    return {disabled:document.querySelector('[data-act="irr-gen"]')?.disabled,
+      why:document.querySelector('.rep-builder + .note-off')?.textContent||''};});
+  check('once reads are direct, a stale bridge does not block them', direct.disabled===false&&direct.why==='',
+    JSON.stringify(direct).slice(0,80));
   await c.close();
 }
 {
@@ -430,6 +436,30 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
         (r.irr.match(/.{0,24}(so far|cut short).{0,16}/)||[''])[0]);
   check('Needs a look counts only the run the log saw end', /1 run cut short/.test(r.home)&&!/2 runs cut short/.test(r.home),
         (r.home.match(/\d+ runs? cut short[^\n]*/)||['none'])[0]);
+  await c.close();
+}
+{
+  // A water reading that is not current is drawn with its age, never as
+  // water flowing (2026-09-25: "River · Running" after the session ended).
+  const [p,c]=await open('?live=1#/');
+  await p.waitForSelector('#view .flow');
+  const r=await p.evaluate(()=>{
+    const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
+    state.meta=Object.assign({},state.meta,{water:{enabled:true,livesky:{ok:true,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true}}});
+    state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,reportedAt:iso(now-3600e3)},
+      motors:{s:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:true,reportedAt:iso(now-3600e3)}}};
+    const f=()=>{render();return {pipes:[...document.querySelectorAll('#view .flow-pipe')].map(x=>x.classList.contains('is-on')),
+      ages:[...document.querySelectorAll('#view .flow-age')].map(x=>x.textContent),head:document.querySelector('#view .flow-head .card-age')?.textContent||''};};
+    const stale=f();
+    state.water.river.reportedAt=iso(now-20e3); const fresh=f();
+    state.meta.water.livesky.expires=now-60e3; const expired=f();
+    state.meta.water.enabled=false; const off=f();
+    return {stale,fresh,expired,off};});
+  check('a stale river reading shows its age and does not flow', r.stale.pipes[0]===false&&r.stale.ages.length===1&&r.stale.head==='', JSON.stringify(r.stale));
+  check('Niagara, which reports on change, still flows on a fresh pull', r.stale.pipes[1]===true);
+  check('fresh readings flow, with the pull age in the header', r.fresh.pipes.every(Boolean)&&r.fresh.ages.length===0&&/ago|just now/.test(r.fresh.head), JSON.stringify(r.fresh));
+  check('an ended Livesky session stops the river flowing', r.expired.pipes[0]===false&&r.expired.ages[0]==='not read', JSON.stringify(r.expired));
+  check('Home says when water readings are off', r.off.head==='readings off', r.off.head);
   await c.close();
 }
 {

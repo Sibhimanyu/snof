@@ -86,6 +86,8 @@ private struct Station: View {
     let title: String
     let sub: String
     let on: Bool
+    /// How old the reading is, when it is not current.
+    var age: String? = nil
 
     var body: some View {
         VStack(spacing: 4) {
@@ -97,6 +99,7 @@ private struct Station: View {
             Text(title).font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.text).padding(.top, 4)
             Text(sub).font(Theme.font(11.5, on ? .semibold : .regular, relativeTo: .caption))
                 .foregroundStyle(on ? Theme.on : Theme.muted).lineLimit(1).minimumScaleFactor(0.8)
+            if let age { Text(age).font(Theme.font(11, .regular, relativeTo: .caption2)).foregroundStyle(Theme.faint).lineLimit(1) }
         }
         .frame(width: 88)
         .accessibilityElement(children: .combine)
@@ -116,31 +119,41 @@ struct FlowHero: View {
         let drip = w.motors.first { $0.role == "drip" }
         let c = store.irrigation
         let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
+        // Flowing only on a current reading; a stale one shows its age.
+        let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: store.now) }
+        let aged = { (m: WaterMotor?) -> String? in
+            guard let m, !w.isCurrent(m, now: store.now) else { return nil }
+            if m.vendor == "livesky", w.livesky.kind(nowMs: store.now.timeIntervalSince1970 * 1000) != .ok { return "not read" }
+            return w.readingDate(m).map { Water.ago($0, now: store.now) }
+        }
+        // The pull's age only while every reading drawn is current.
+        let allCurrent = [w.river, supply].compactMap { $0 }.allSatisfy { w.isCurrent($0, now: store.now) }
         Button { store.selectedTab = .water } label: {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Water").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    if let t = w.pulledAt { Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint) }
+                    if !w.enabled { Text("readings off").font(Theme.small).foregroundStyle(Theme.faint) }
+                    else if let t = w.pulledAt, allCurrent { Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint) }
                     Spacer()
                     Text("Details").font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
                     Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.on)
                 }
                 HStack(alignment: .top, spacing: 0) {
-                    Station(art: w.river?.running == true ? "art-motor-on" : "art-motor-off", title: "River",
-                            sub: word(w.river), on: w.river?.running == true)
-                    Pipe(on: w.river?.running == true).padding(.top, 28)
-                    Station(art: supply?.running == true ? "art-motor-on" : "art-motor-off", title: "Other farm",
-                            sub: supply.map { "7.5 HP \(word($0).lowercased())" } ?? "No reading", on: supply?.running == true)
-                    Pipe(on: supply?.running == true).padding(.top, 28)
+                    Station(art: live(w.river) ? "art-motor-on" : "art-motor-off", title: "River",
+                            sub: word(w.river), on: live(w.river), age: aged(w.river))
+                    Pipe(on: live(w.river)).padding(.top, 28)
+                    Station(art: live(supply) ? "art-motor-on" : "art-motor-off", title: "Other farm",
+                            sub: supply.map { "7.5 HP \(word($0).lowercased())" } ?? "No reading", on: live(supply), age: aged(supply))
+                    Pipe(on: live(supply)).padding(.top, 28)
                     Station(art: "art-kulam", title: "Main farm", sub: say.running ? "Watering" : "Not watering", on: say.running)
                 }
                 if let drip {
                     HStack(spacing: 8) {
-                        Image(drip.running == true ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 22, height: 22)
-                        Text([drip.name, word(drip), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }]
+                        Image(live(drip) ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 22, height: 22)
+                        Text([drip.name, word(drip), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }, aged(drip)]
                                 .compactMap { $0 }.joined(separator: " · "))
-                            .font(Theme.font(12.5, drip.running == true ? .semibold : .regular, relativeTo: .caption))
-                            .foregroundStyle(drip.running == true ? Theme.on : Theme.muted).lineLimit(1)
+                            .font(Theme.font(12.5, live(drip) ? .semibold : .regular, relativeTo: .caption))
+                            .foregroundStyle(live(drip) ? Theme.on : Theme.muted).lineLimit(1)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 7)
                     .background(Theme.panel2, in: Capsule())

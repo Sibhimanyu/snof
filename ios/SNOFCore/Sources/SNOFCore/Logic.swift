@@ -233,34 +233,40 @@ extension Gate {
     public static func evaluate(_ capability: Capability, bridge hb: BridgeMeta?,
                                 reportsEnabled: Bool? = nil,
                                 cloudIrrigationControl: Bool? = nil,
+                                reportsTransport: String? = nil,
                                 nowMs: Double, skewMs: Double) -> Gate {
         // Valve control run by the Cloud Function does not go through the
         // NUC, so it does not need a live bridge: its own switch decides.
         if capability == .irrigationControl, cloudIrrigationControl == true {
             return .open
         }
-        if capability == .irrigation {
-            return reportsEnabled == false
-                ? Gate(ok: false, why: "Irrigation reports are switched off for now.")
-                : .open
+        let reads = capability == .irrigation
+        if reads {
+            if reportsEnabled == false { return Gate(ok: false, why: "Irrigation reports are switched off for now.") }
+            // Controller reads go through the NUC's relay until the function
+            // has a static egress IP (docs/dcon-off-the-nuc.md): with the bridge
+            // quiet, a Refresh would only time out. No field yet means relay.
+            if (reportsTransport ?? "relay") != "relay" { return .open }
         }
         // Valve control is spoken of as valve control: the owner thinks of the
         // Mobitech side as its own thing, not as "the bridge".
         let valves = capability == .irrigationControl
         guard let hb, let last = hb.lastSeen else {
             return Gate(ok: false, why: valves ? "Valve control has not checked in yet."
-                        : "The bridge has not reported in yet, so nothing would act on that.")
+                        : reads ? "The bridge has not checked in yet, so the controller cannot be read."
+                        : "The bridge has not checked in yet, so a press would not reach the farm.")
         }
         let age = (nowMs + skewMs - last) / 1000
         if hb.status == "offline" || age > (hb.heartbeatSeconds ?? 30) * Farm.staleFactor {
             return Gate(ok: false, why: valves ? "Valve control is not answering right now, so a Run or Stop would not reach the controller."
-                        : "The bridge is not reporting in, so nothing would act on that.")
+                        : reads ? "The bridge is not reporting in, so the controller cannot be read right now."
+                        : "The bridge is not reporting in, so a press would not reach the farm.")
         }
         switch capability {
         case .control where hb.control == false:
-            return Gate(ok: false, why: "Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.")
+            return Gate(ok: false, why: "Switching from the app is turned off at the farm.")
         case .irrigationControl where hb.irrigationControl != true:
-            return Gate(ok: false, why: "Irrigation control is switched off. The farm owner turns it on, with someone at the pump house for the first run.")
+            return Gate(ok: false, why: "Valve control is switched off at the farm.")
         default:
             return .open
         }

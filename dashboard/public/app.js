@@ -631,30 +631,59 @@ function skeletonView() {
 const motorArt = (m) => artImg(m && m.running ? 'motor-on' : 'motor-off', 'flow-art');
 const motorWord = (m) => (!m ? 'No reading' : m.running === true ? 'Running' : m.running === false ? 'Off' : 'Unknown');
 
+/** Whether a motor's reading says what it is doing now: its vendor answered
+ *  a recent pull and, for Livesky (the starter reports every few seconds),
+ *  its own report is recent too. Niagara reports on change, so an hour-old
+ *  "motor on" with no "off" since is still the state. A reading that is not
+ *  current is drawn with its age and never as water flowing (2026-09-25: Home
+ *  showed "River · Running" after the Livesky session had ended). */
+function waterCurrent(m) {
+  const w = state.water || {}, now = serverNow();
+  if (!m || !w.pulledAt || now - w.pulledAt > 10 * 60000) return false;
+  if (m.vendor === 'livesky') {
+    const at = Date.parse(m.liveAt || m.reportedAt || '');
+    return liveskyState().kind === 'ok' && Number.isFinite(at) && now - at < 15 * 60000;
+  }
+  return state.meta?.water?.niagara?.ok !== false;
+}
+/** How old a reading that is not current is: the starter's own report for
+ *  Livesky, the last pull for Niagara (whose reports only mark changes);
+ *  "not read" once SNOF's Livesky session is gone. */
+const waterAge = (m) => (m.vendor === 'livesky' && liveskyState().kind !== 'ok' ? 'not read'
+  : agoText(m.vendor === 'livesky' ? (m.liveAt || m.reportedAt) : state.water?.pulledAt));
+
 function flowHero() {
   const w = state.water || {};
   const motors = Object.values(w.motors || {});
   const supply = motors.find((m) => m.role === 'main-farm');
   const drip = motors.find((m) => m.role === 'drip');
   const s = irrNowState();
-  const node = (cls, art, title, sub, on) =>
+  const live = (m) => !!m && m.running === true && waterCurrent(m);
+  const node = (cls, art, title, sub, on, age = '') =>
     `<div class="flow-node ${cls}${on ? ' is-on' : ''}"><span class="flow-disc">${art}</span>` +
-    `<span class="flow-title">${escapeHtml(title)}</span><span class="flow-sub">${escapeHtml(sub)}</span></div>`;
+    `<span class="flow-title">${escapeHtml(title)}</span><span class="flow-sub">${escapeHtml(sub)}</span>` +
+    (age ? `<span class="flow-age">${escapeHtml(age)}</span>` : '') + `</div>`;
   const pipe = (on, label) => `<div class="flow-pipe${on ? ' is-on' : ''}" aria-hidden="true">` +
     `<span class="pipe-line"></span>` +
     (label ? `<em>${escapeHtml(label)}</em>` : '') + `</div>`;
-  const drips = drip ? `<a class="flow-branch${drip.running ? ' is-on' : ''}" href="#/water">${artImg(drip.running ? 'motor-on' : 'motor-off', 'flow-mini')}` +
-    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}</span></a>` : '';
+  const aged = (m) => (m && !waterCurrent(m) ? waterAge(m) : '');
+  const drips = drip ? `<a class="flow-branch${live(drip) ? ' is-on' : ''}" href="#/water">${artImg(live(drip) ? 'motor-on' : 'motor-off', 'flow-mini')}` +
+    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}` +
+    `${aged(drip) ? ` · ${escapeHtml(aged(drip))}` : ''}</span></a>` : '';
   const hasWater = w.river || motors.length;
+  // The pull's age only while every reading drawn is current; otherwise the
+  // stale ones carry their own, and "just now" would vouch for them.
+  const allCurrent = [w.river, supply].filter(Boolean).every(waterCurrent);
   return `<section class="panel flow" aria-label="Water from the river to the main farm">
     <div class="flow-head"><h2 class="panel-title">Water</h2>
-      ${w.pulledAt ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
+      ${state.meta?.water?.enabled !== true ? '<span class="card-age">readings off</span>'
+        : w.pulledAt && allCurrent ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
       <a class="panel-link" href="#/water">Details${arrow()}</a></div>
     <div class="flow-row">
-      ${node('', motorArt(w.river), 'River', hasWater ? motorWord(w.river) : 'No reading', w.river?.running)}
-      ${pipe(w.river?.running, '')}
-      ${node('', motorArt(supply), 'Other farm', supply ? `7.5 HP ${motorWord(supply).toLowerCase()}` : 'No reading', supply?.running)}
-      ${pipe(supply?.running, '')}
+      ${node('', motorArt(live(w.river) ? w.river : null), 'River', hasWater ? motorWord(w.river) : 'No reading', live(w.river), aged(w.river))}
+      ${pipe(live(w.river), '')}
+      ${node('', motorArt(live(supply) ? supply : null), 'Other farm', supply ? `7.5 HP ${motorWord(supply).toLowerCase()}` : 'No reading', live(supply), aged(supply))}
+      ${pipe(live(supply), '')}
       ${node('farm', artImg('kulam', 'flow-art'), 'Main farm', s.running ? 'Watering' : 'Not watering', s.running)}
     </div>
     ${drips}
@@ -804,9 +833,13 @@ function deviceSystems(all) {
   return out;
 }
 /** Offline devices split into faults and appliances switched off. */
+/** Whether a device being offline is a fault (a camera, the inverter, a
+ *  switch module) rather than something switched off at the wall (an AC, a
+ *  TV, the printer and its AMS). Mirrors Systems.offlineIsFault. */
+const offlineIsFault = (d, index) => (SYSTEMS[index.get(d.id)] || SYSTEMS.other).offline !== 'none' && !isAppliance(d);
 function offlineSplit(devices, index) {
   const down = devices.filter(deviceOffline);
-  const fault = down.filter((d) => (SYSTEMS[index.get(d.id)] || SYSTEMS.other).offline !== 'none' && !isAppliance(d));
+  const fault = down.filter((d) => offlineIsFault(d, index));
   return { fault: fault.length, off: down.length - fault.length };
 }
 
@@ -881,7 +914,8 @@ function attentionItems(all, systems) {
   const add = (level, text, sub, href) => items.push({ level, text, sub, href });
   const b = bridgeStatus();
   if (b.cls === 'pill-offline' || b.cls === 'pill-stale') {
-    add('bad', 'Farm box offline', `Switches and controller reads are paused${b.ageSec ? ` · quiet for ${humanAge(b.ageSec)}` : ''}`, null);
+    // "Bridge", as the pill, the account menu and the gates say it.
+    add('bad', 'Bridge not reporting', `Switches and controller reads are paused${b.ageSec ? ` · quiet for ${humanAge(b.ageSec)}` : ''}`, null);
   }
   // Irrigation.
   const c = irrig(), p = c.program;
@@ -1067,7 +1101,12 @@ function systemView(all, id) {
   const off = devices.filter(deviceOffline);
   const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
       `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !['select', 'number', 'time', 'button', 'image'].includes(e.domain)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
-  const offNote = off.length && id !== 'security' ? `<p class="more-note">${escapeHtml(SYSTEMS[id].offline === 'none' ? 'Switched off' : 'Offline')}: ${escapeHtml(off.map((d) => d.name).join(', '))}</p>` : '';
+  // Per device, as on a room page: a fan on the switches page is switched
+  // off, not offline.
+  const offFault = id === 'security' ? [] : off.filter((d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d));
+  const offRest = id === 'security' ? [] : off.filter((d) => !offFault.includes(d));
+  const offNote = (offFault.length ? `<p class="more-note note-off">Offline: ${escapeHtml(offFault.map((d) => d.name).join(', '))}</p>` : '') +
+    (offRest.length ? `<p class="more-note">Switched off: ${escapeHtml(offRest.map((d) => d.name).join(', '))}</p>` : '');
   return head(sys.title, '', '', back) + top + tiles + devList + offNote;
 }
 
@@ -1145,7 +1184,8 @@ function areaView(all, id) {
         : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e)).join('')}</div>`) +
         `</section>`;
     }).join('') + (search ? '' : (() => {
-      const faults = dead.filter((d) => !isAppliance(d) && (SYSTEMS[deviceSystems(all).get(d.id)] || SYSTEMS.other).offline !== 'none');
+      const index = deviceSystems(all);
+      const faults = dead.filter((d) => offlineIsFault(d, index));
       const off = dead.filter((d) => !faults.includes(d));
       return (faults.length ? `<p class="more-note note-off">Offline: ${escapeHtml(faults.map((d) => d.name).join(', '))}</p>` : '') +
         (off.length ? `<p class="more-note">Switched off: ${escapeHtml(off.map((d) => d.name).join(', '))}</p>` : '');
@@ -1166,7 +1206,11 @@ function devicesView(all) {
     : statusFilter === 'active' ? !isBad(e) : deadIds.has(e.device || e.key);
   const scoped = all.filter(byStatus);
   const list = scoped.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
-  const groups = byDevice(list).sort((a, b) => a.name.localeCompare(b.name, undefined, NATURAL));
+  const index = deviceSystems(all);
+  const fault = (g) => offlineIsFault(full.get(g.id) || g, index);
+  // Not reporting: the faults first, then what is only switched off.
+  const groups = byDevice(list).sort((a, b) => (statusFilter === 'offline' ? fault(b) - fault(a) : 0) ||
+    a.name.localeCompare(b.name, undefined, NATURAL));
 
   const counts = { all: full.size, active: byDevice(all.filter((e) => !isBad(e))).length, offline: deadIds.size };
   const seg = `<div class="seg" role="group" aria-label="Filter by status">` +
@@ -1184,10 +1228,11 @@ function devicesView(all) {
     const whole = full.get(g.id) || g;
     const down = whole.ents.filter(isBad).length;
     const open = filtering || openDevices.has(g.id);
-    // An appliance off at the wall is "Off", as on Home and Rooms.
+    // Off at the wall is "Off", as on Home and Rooms: the printer's AMS too,
+    // which is no appliance but sits in a system whose offline is no fault.
     const status = down === 0 ? `<span class="tag tag-on">All reporting</span>`
-      : down === whole.ents.length ? (isAppliance(whole) ? `<span class="tag">Off</span>` : `<span class="tag tag-bad">Offline</span>`)
-      : `<span class="tag tag-warn">${down} of ${whole.ents.length} down</span>`;
+      : down === whole.ents.length ? (fault(whole) ? `<span class="tag tag-bad">Offline</span>` : `<span class="tag">Off</span>`)
+      : `<span class="tag tag-warn">${down} of ${whole.ents.length} readings down</span>`;
     return `<section class="dgroup${open ? ' open' : ''}">
       <button class="dgroup-head" data-act="dev-open" data-dev="${escapeHtml(g.id)}" aria-expanded="${open}">
         <span class="dgroup-main"><span class="dgroup-name">${escapeHtml(g.name)}</span>
@@ -1280,15 +1325,18 @@ function irrDefaultDates() {
  * same as off; only an explicit false blocks. */
 function bridgeGate(feature) {
   const hb = state.meta && state.meta.bridge;
+  const reads = feature === 'reports';
   if (!hb || !hb.lastSeen) {
-    return { ok: false, why: 'The bridge has not reported in yet, so nothing would act on that.' };
+    return { ok: false, why: reads ? 'The bridge has not checked in yet, so the controller cannot be read.'
+      : 'The bridge has not checked in yet, so a press would not reach the farm.' };
   }
   const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
   if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    return { ok: false, why: 'The bridge is not reporting in, so nothing would act on that.' };
+    return { ok: false, why: reads ? 'The bridge is not reporting in, so the controller cannot be read right now.'
+      : 'The bridge is not reporting in, so a press would not reach the farm.' };
   }
   if (feature === 'control' && hb.control === false) {
-    return { ok: false, why: 'Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.' };
+    return { ok: false, why: 'Switching from the app is turned off at the farm.' };
   }
   return { ok: true, why: '' };
 }
@@ -1301,6 +1349,10 @@ function reportsGate() {
   if (state.meta?.reports?.enabled === false) {
     return { ok: false, why: 'Irrigation reports are switched off for now.' };
   }
+  // Controller reads go through the NUC's relay until the function has a
+  // static egress IP (docs/dcon-off-the-nuc.md): with the bridge quiet, a
+  // Refresh would only time out. No field yet means relay.
+  if ((state.meta?.reports?.transport || 'relay') === 'relay') return bridgeGate('reports');
   return { ok: true, why: '' };
 }
 
@@ -2422,10 +2474,11 @@ function waterView() {
   const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
 
-  const riverBody = w.river
-    ? waterMotorCard(w.river, liveskyErr ? `${liveskyErr} Showing the last reading.` : '')
-    : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
   const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
+  // Said once: the account note above the card already carries a session problem.
+  const riverBody = w.river
+    ? waterMotorCard(w.river, liveskyErr && livesky.kind === 'ok' ? `${liveskyErr} Showing the last reading.` : '')
+    : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
   const riverNote = livesky.kind === 'ok' ? ''
     : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`;
 
@@ -2442,7 +2495,9 @@ function waterView() {
 
   const account = isAdmin
     ? `<details class="acct-sec"${livesky.kind !== 'ok' || lsStep !== 'idle' ? ' open' : ''}><summary>Livesky account</summary>${liveskyPanel()}</details>` : '';
-  return head('Water', '', refresh) +
+  // When it was read, and that it only reads: the owner asked why these
+  // motors cannot be switched from here (2026-09-24).
+  return head('Water', `${w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet'} · read-only`, refresh) +
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
     `<div class="wchain">` +
     waterStage('1', 'River', 'The river motor pumps to the other farm.', riverNote + riverBody) +

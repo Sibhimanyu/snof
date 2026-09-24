@@ -70,4 +70,28 @@ import Foundation
         #expect(WaterFormat.hms("00:32:31") == "32:31")
         #expect(WaterFormat.hms("01:04:28") == "1:04:28")
     }
+
+    @Test func onlyACurrentReadingFlows() {
+        var w = Parse.water(water, meta: meta)
+        #expect(!w.isCurrent(w.supply.first, now: Date(timeIntervalSince1970: 1790270126.755)), "the fixture's Niagara pull failed (502)")
+        w.niagara.ok = true
+        let pulled = Date(timeIntervalSince1970: 1790270066755.0 / 1000)   // 22:44:26, the river reported at 22:44:20
+        #expect(w.isCurrent(w.river, now: pulled.addingTimeInterval(60)))
+        // Niagara reports on change: 33 minutes since its last report is still its state.
+        #expect(w.isCurrent(w.supply.first, now: pulled.addingTimeInterval(60)))
+        // Nothing is current once the pulls stop.
+        #expect(!w.isCurrent(w.river, now: pulled.addingTimeInterval(11 * 60)))
+        #expect(!w.isCurrent(w.supply.first, now: pulled.addingTimeInterval(11 * 60)))
+        // The starter going quiet while pulls continue: not current after 15 minutes.
+        w.pulledAt = pulled.addingTimeInterval(20 * 60).timeIntervalSince1970 * 1000
+        #expect(!w.isCurrent(w.river, now: pulled.addingTimeInterval(21 * 60)))
+        #expect(w.readingDate(w.river!) == w.river?.lastReport)
+        // An ended Livesky session: the river is not being read at all.
+        w.pulledAt = pulled.timeIntervalSince1970 * 1000
+        w.livesky.expires = pulled.addingTimeInterval(-60).timeIntervalSince1970 * 1000
+        #expect(!w.isCurrent(w.river, now: pulled.addingTimeInterval(60)))
+        // A failed Niagara pull.
+        w.niagara.ok = false
+        #expect(!w.isCurrent(w.supply.first, now: pulled.addingTimeInterval(60)))
+    }
 }

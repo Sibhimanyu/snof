@@ -74,7 +74,7 @@ import Foundation
         #expect(texts.contains("Family Room offline"))
         #expect(!texts.contains { $0.contains("AC") || $0.contains("P1S") || $0.contains("Samsung") })
         i.bridgeDown = true
-        #expect(Attention.items(i).first?.text == "Farm box offline")   // worst first
+        #expect(Attention.items(i).first?.text == "Bridge not reporting")   // worst first
     }
 
     @Test func shortNames() {
