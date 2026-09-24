@@ -13,9 +13,9 @@
  * toggles and segments are drawn at iOS proportions, the top and tab bars
  * are frosted, and presses give a small scale instead of a nudge.
  *
- * Two themes, one palette logic. Light is the mockup, pixel-sampled. Dark is
- * its complement: the same slate hue at low chroma, the same hierarchy of
- * canvas < panel < tint, every text pair re-checked for 4.5:1.
+ * Two themes. Light is the mockup, pixel-sampled. Dark is Apple's neutral
+ * system dark (black, #1c1c1e, #2c2c2e), not a tinted slate; every text pair
+ * re-checked for 4.5:1.
  * Theme resolution:
  *   no [data-theme]  -> follow the OS
  *   [data-theme=...] -> the user's explicit choice, persisted in localStorage
@@ -61,52 +61,54 @@
   --font:"Manrope",ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   color-scheme:light;
 }
-/* --- dark: the complement ("slate night"). Repeated for "follow the OS" and
+/* --- dark: Apple's neutral dark (owner, 2026-09-24: no charcoal-green).
+   True black canvas, #1c1c1e / #2c2c2e graphite cards, white text; no hue in
+   any grey. Green stays for on/live only. Repeated for "follow the OS" and
    "user picked dark"; keep the two blocks identical. --- */
 @media (prefers-color-scheme: dark){ :root:not([data-theme]){
-  --bg:#0e1314; --bar:#121819;
-  --panel:#141b1d; --panel-2:#1a2325; --panel-3:#212c2f;
-  --tint:#192326; --tint-line:#2a3a3d;
-  --line:#233033; --line-2:#314145; --line-soft:#1d282a;
-  --text:#e3ebec; --ink:#d2e0e2; --muted:#8c9fa4; --faint:#82969b;
+  --bg:#000000; --bar:#1c1c1e;
+  --panel:#1c1c1e; --panel-2:#2c2c2e; --panel-3:#3a3a3c;
+  --tint:#242426; --tint-line:#38383a;
+  --line:#38383a; --line-2:#48484a; --line-soft:#2c2c2e;
+  --text:#ffffff; --ink:#f2f2f7; --muted:#a1a1a6; --faint:#8e8e93;
   --brand:#018843; --on-brand:#ffffff; --accent:#01ae56;
   --accent-soft:var(--panel-2); --accent-line:var(--line-2);
-  --accent-glow:rgba(1,174,86,.32); --accent-flash:rgba(227,235,236,.06);
-  --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
-  --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
-  --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
-  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%238c9fa4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --shadow-lg:0 24px 60px -18px rgba(0,0,0,.75);
-  --edge:rgba(255,255,255,.06);
-  --shadow-card:0 1px 2px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.5);
-  --shadow-card-hover:0 1px 2px rgba(0,0,0,.35),0 14px 30px -12px rgba(0,0,0,.6);
-  --glass:rgba(18,24,25,.74); --glass-line:rgba(255,255,255,.07);
-  --seg-track:rgba(140,159,164,.16); --seg-thumb:#2b373a;
-  --seg-shadow:0 3px 8px rgba(0,0,0,.35),0 1px 1px rgba(0,0,0,.2);
-  --field:#1c2628;
+  --accent-glow:rgba(1,174,86,.32); --accent-flash:rgba(255,255,255,.07);
+  --warn:#e3b95c; --warn-soft:rgba(227,185,92,.12); --warn-line:rgba(227,185,92,.34);
+  --bad:#ff8a80;  --bad-soft:rgba(255,138,128,.12); --bad-line:rgba(255,138,128,.34);
+  --off-soft:rgba(142,142,147,.14); --track:#39393d; --knob:#ffffff;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%23a1a1a6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --shadow-lg:0 24px 60px -18px rgba(0,0,0,.8);
+  --edge:rgba(255,255,255,.07);
+  --shadow-card:none;
+  --shadow-card-hover:0 0 0 1px rgba(255,255,255,.1);
+  --glass:rgba(28,28,30,.72); --glass-line:rgba(255,255,255,.08);
+  --seg-track:rgba(118,118,128,.24); --seg-thumb:#636366;
+  --seg-shadow:0 3px 8px rgba(0,0,0,.4),0 1px 1px rgba(0,0,0,.2);
+  --field:#2c2c2e;
   color-scheme:dark;
 }}
 :root[data-theme="dark"]{
-  --bg:#0e1314; --bar:#121819;
-  --panel:#141b1d; --panel-2:#1a2325; --panel-3:#212c2f;
-  --tint:#192326; --tint-line:#2a3a3d;
-  --line:#233033; --line-2:#314145; --line-soft:#1d282a;
-  --text:#e3ebec; --ink:#d2e0e2; --muted:#8c9fa4; --faint:#82969b;
+  --bg:#000000; --bar:#1c1c1e;
+  --panel:#1c1c1e; --panel-2:#2c2c2e; --panel-3:#3a3a3c;
+  --tint:#242426; --tint-line:#38383a;
+  --line:#38383a; --line-2:#48484a; --line-soft:#2c2c2e;
+  --text:#ffffff; --ink:#f2f2f7; --muted:#a1a1a6; --faint:#8e8e93;
   --brand:#018843; --on-brand:#ffffff; --accent:#01ae56;
   --accent-soft:var(--panel-2); --accent-line:var(--line-2);
-  --accent-glow:rgba(1,174,86,.32); --accent-flash:rgba(227,235,236,.06);
-  --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
-  --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
-  --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
-  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%238c9fa4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --shadow-lg:0 24px 60px -18px rgba(0,0,0,.75);
-  --edge:rgba(255,255,255,.06);
-  --shadow-card:0 1px 2px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.5);
-  --shadow-card-hover:0 1px 2px rgba(0,0,0,.35),0 14px 30px -12px rgba(0,0,0,.6);
-  --glass:rgba(18,24,25,.74); --glass-line:rgba(255,255,255,.07);
-  --seg-track:rgba(140,159,164,.16); --seg-thumb:#2b373a;
-  --seg-shadow:0 3px 8px rgba(0,0,0,.35),0 1px 1px rgba(0,0,0,.2);
-  --field:#1c2628;
+  --accent-glow:rgba(1,174,86,.32); --accent-flash:rgba(255,255,255,.07);
+  --warn:#e3b95c; --warn-soft:rgba(227,185,92,.12); --warn-line:rgba(227,185,92,.34);
+  --bad:#ff8a80;  --bad-soft:rgba(255,138,128,.12); --bad-line:rgba(255,138,128,.34);
+  --off-soft:rgba(142,142,147,.14); --track:#39393d; --knob:#ffffff;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%23a1a1a6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --shadow-lg:0 24px 60px -18px rgba(0,0,0,.8);
+  --edge:rgba(255,255,255,.07);
+  --shadow-card:none;
+  --shadow-card-hover:0 0 0 1px rgba(255,255,255,.1);
+  --glass:rgba(28,28,30,.72); --glass-line:rgba(255,255,255,.08);
+  --seg-track:rgba(118,118,128,.24); --seg-thumb:#636366;
+  --seg-shadow:0 3px 8px rgba(0,0,0,.4),0 1px 1px rgba(0,0,0,.2);
+  --field:#2c2c2e;
   color-scheme:dark;
 }
 

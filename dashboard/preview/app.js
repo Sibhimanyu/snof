@@ -61,7 +61,7 @@ const applyTheme = (t) => {
   if (t) document.documentElement.setAttribute('data-theme', t);
   else document.documentElement.removeAttribute('data-theme');
   const dark = isDark();
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#121819' : '#ffffff');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#1c1c1e' : '#ffffff');
   const label = el('theme-menu-text');
   if (label) label.textContent = dark ? 'Switch to light theme' : 'Switch to dark theme';
 };

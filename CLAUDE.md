@@ -255,7 +255,9 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   **Softened to an iOS feel** the same day (owner): 22px cards on a soft
   shadow, 12px controls, iOS segmented nav, UISwitch-size toggles, frosted
   bars, press-scale, and iOS haptics (`Haptics` in Theme.swift). Web deployed,
-  iOS 0.4.0. See DESIGN.md "Soft, iOS-like shape and depth".
+  iOS 0.4.0. See DESIGN.md "Soft, iOS-like shape and depth". Dark mode is
+  Apple's neutral dark (black / #1c1c1e / #2c2c2e), not the old
+  charcoal-green — owner disliked it (iOS 0.4.1).
 - **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
   SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
   0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with
