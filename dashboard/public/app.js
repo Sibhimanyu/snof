@@ -473,7 +473,7 @@ function render() {
     n.classList.toggle('on', n.dataset.nav === (['area', 'devices'].includes(r.name) ? 'areas' : r.name)));
 
   reconcilePending(all);
-  syncWaterPolling(r.name === 'water');
+  syncWaterPolling(r.name === 'water' || r.name === 'overview');
 
   // Chrome above stays live regardless; only the view body is held back.
   if (interacting) {
@@ -640,43 +640,149 @@ function solarGlance(all) {
   return { area: (now || today).area, now: val(now), today: val(today) };
 }
 
-function homeRow(href, title, value, meta, tone = '') {
-  return `<a class="hrow" href="${href}"><span class="hrow-main"><span class="hrow-title">${escapeHtml(title)}</span>` +
-    `<span class="hrow-value${tone ? ' ' + tone : ''}">${escapeHtml(value)}</span>` +
-    (meta ? `<span class="hrow-meta">${escapeHtml(meta)}</span>` : '') + `</span>${arrow('i-chevron', 'hrow-chev')}</a>`;
+/* ---- Home, drawn (owner, 2026-09-25: "so dull … I need more visuals") ----
+ * Every picture is real data: the water chain as pipes that flow while their
+ * motor runs, a ring for the irrigation run, solar, a donut of what is
+ * reporting, and the switches as tiles. Colour still only means something:
+ * brand green is on / flowing, brick is offline. */
+
+const motorArt = (m) => artImg(m && m.running ? 'motor-on' : 'motor-off', 'flow-art');
+const motorWord = (m) => (!m ? 'No reading' : m.running === true ? 'Running' : m.running === false ? 'Off' : 'Unknown');
+
+function flowHero() {
+  const w = state.water || {};
+  const motors = Object.values(w.motors || {});
+  const supply = motors.find((m) => m.role === 'main-farm');
+  const drip = motors.find((m) => m.role === 'drip');
+  const s = irrNowState();
+  const node = (cls, art, title, sub, on) =>
+    `<div class="flow-node ${cls}${on ? ' is-on' : ''}"><span class="flow-disc">${art}</span>` +
+    `<span class="flow-title">${escapeHtml(title)}</span><span class="flow-sub">${escapeHtml(sub)}</span></div>`;
+  const pipe = (on, label) => `<div class="flow-pipe${on ? ' is-on' : ''}" aria-hidden="true">` +
+    `<span class="pipe-line"></span>` +
+    (label ? `<em>${escapeHtml(label)}</em>` : '') + `</div>`;
+  const drips = drip ? `<a class="flow-branch${drip.running ? ' is-on' : ''}" href="#/water">${artImg(drip.running ? 'motor-on' : 'motor-off', 'flow-mini')}` +
+    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}</span></a>` : '';
+  const hasWater = w.river || motors.length;
+  return `<section class="panel flow" aria-label="Water from the river to the main farm">
+    <div class="flow-head"><h2 class="panel-title">Water</h2>
+      ${w.pulledAt ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
+      <a class="panel-link" href="#/water">Details${arrow()}</a></div>
+    <div class="flow-row">
+      ${node('', motorArt(w.river), 'River', hasWater ? motorWord(w.river) : 'No reading', w.river?.running)}
+      ${pipe(w.river?.running, '')}
+      ${node('', motorArt(supply), 'Other farm', supply ? `7.5 HP ${motorWord(supply).toLowerCase()}` : 'No reading', supply?.running)}
+      ${pipe(supply?.running, '')}
+      ${node('farm', artImg('kulam', 'flow-art'), 'Main farm', s.running ? 'Watering' : 'Not watering', s.running)}
+    </div>
+    ${drips}
+  </section>`;
 }
 
-function systemsPanel(all) {
-  const rows = [];
-  const c = irrig();
-  if (c.program || (c.timerLog || []).length) {
-    const s = irrNowState();
-    rows.push(homeRow('#/irrigation', 'Irrigation', s.running ? `Watering · ${s.title}` : 'Not watering',
-      s.running ? s.detail : s.title.replace(/^Last: /, 'Last: ') + (s.detail ? ` · ${s.detail.split(' · ').at(-1)}` : ''), s.running ? 'on' : ''));
+/* A ring: how far through the current run, or how much of the last one was
+ * delivered. Stopped early reads amber, never green. */
+function ring(frac, tone, label, sub) {
+  const r = 42, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, frac || 0));
+  return `<div class="ring ${tone}" role="img" aria-label="${escapeHtml(label)} ${escapeHtml(sub)}">
+    <svg viewBox="0 0 100 100"><circle class="ring-track" cx="50" cy="50" r="${r}"/>
+      <circle class="ring-fill" cx="50" cy="50" r="${r}" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}"/></svg>
+    <span class="ring-mid"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(sub)}</small></span></div>`;
+}
+
+/** When the controller was last asked, as "5 min ago" (Refresh pulls it). */
+const irrChecked = () => { const c = irrig(); const t = c.program?.at || c.meta?.lastUpdated; return t ? agoText(t) : ''; };
+
+function irrigationCard() {
+  const c = irrig(), p = c.program, s = irrNowState();
+  const empty = !p && !(c.timerLog || []).length;
+  let frac = 0, tone = '', label = '—', sub = 'no data';
+  let valves = '';
+  if (s.running && p) {
+    const left = p.remainingMin, planned = p.plannedMin;
+    frac = planned ? 1 - Math.max(0, left || 0) / planned : 0.5;
+    tone = 'is-on'; label = left != null ? fmtMin(Math.max(0, left)) : 'On'; sub = 'left';
+    valves = p.valves || '';
   } else {
-    rows.push(homeRow('#/irrigation', 'Irrigation', 'No data yet', ''));
+    const last = irrRuns()[0];
+    if (last) {
+      frac = last.planned ? (last.delivered ?? (last.finished ? last.planned : 0)) / last.planned : 1;
+      tone = last.finished ? 'is-done' : 'is-warn';
+      label = runAmount(last).split(' of ')[0] || '—'; sub = last.finished ? 'last run' : 'stopped early';
+      valves = last.valves;
+    }
   }
-  const w = state.water || {};
-  if (w.river || w.motors) {
-    const bit = (m, label) => (m ? `${label} ${m.running === true ? 'on' : m.running === false ? 'off' : '?'}` : null);
-    const motors = Object.values(w.motors || {});
-    const any = [w.river, ...motors].some((m) => m && m.running);
-    rows.push(homeRow('#/water', 'Water', any ? 'Motors running' : 'All motors off',
-      [bit(w.river, 'River'), bit(motors.find((m) => m.role === 'main-farm'), '7.5 HP'), bit(motors.find((m) => m.role === 'drip'), 'Drip')]
-        .filter(Boolean).join(' · '), any ? 'on' : ''));
-  }
+  const pics = String(valves).split(/,\s*/).filter(Boolean).slice(0, 5)
+    .map((v) => { const a = valveArt(v, 'irrigation'); return a ? artImg(a, 'crop') : ''; }).join('');
+  return `<a class="panel vcard" href="#/irrigation" aria-label="Irrigation">
+    <span class="vcard-label">Irrigation${irrChecked() ? ` <em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}</span>
+    ${empty ? `<p class="vcard-empty">No data yet</p>` : `<div class="vcard-body">${ring(frac, tone, label, sub)}
+      <div class="vcard-text"><strong>${escapeHtml(s.running ? s.title : s.title.replace(/^Last: /, ''))}</strong>
+        <span>${escapeHtml(s.running ? 'Watering now' : farmWhen(irrRuns()[0]?.start || '') || 'Not watering')}</span>
+        <span class="crops">${pics}</span></div></div>`}
+  </a>`;
+}
+
+function solarCard(all) {
   const sol = solarGlance(all);
-  if (sol) rows.push(homeRow(`#/area/${encodeURIComponent(sol.area)}`, 'Solar', sol.now ? `${sol.now} now` : 'No reading', sol.today ? `${sol.today} today` : ''));
-  return `<section class="panel hrows" aria-label="Systems">${rows.join('')}</section>`;
+  if (!sol) return '';
+  // "2486 W" reads better as "2.49 kW".
+  let [nowV, nowU] = String(sol.now || '—').split(' ');
+  if (nowU === 'W' && Number(nowV) >= 1000) { nowV = (Number(nowV) / 1000).toFixed(2); nowU = 'kW'; }
+  return `<a class="panel vcard solar" href="#/area/${encodeURIComponent(sol.area)}" aria-label="Solar">
+    <span class="vcard-label">Solar</span>
+    <div class="vcard-body"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>
+      ${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('')}</svg></span>
+      <div class="vcard-text"><strong class="big">${escapeHtml(nowV)}<small>${escapeHtml(nowU || '')}</small></strong>
+        <span>now${sol.today ? ` · ${escapeHtml(sol.today)} today` : ''}</span></div></div>
+  </a>`;
+}
+
+function healthCard(devices) {
+  const n = devices.length, bad = devices.filter(deviceOffline).length, ok = n - bad;
+  const r = 42, c = 2 * Math.PI * r, f = n ? ok / n : 0;
+  return `<a class="panel vcard" href="#/devices" data-act="filter" data-status="${bad ? 'offline' : 'all'}" aria-label="Devices">
+    <span class="vcard-label">Devices</span>
+    <div class="vcard-body"><div class="ring donut" role="img" aria-label="${ok} of ${n} reporting">
+      <svg viewBox="0 0 100 100"><circle class="ring-track bad" cx="50" cy="50" r="${r}"/>
+        <circle class="ring-fill" cx="50" cy="50" r="${r}" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}"/></svg>
+      <span class="ring-mid"><strong>${ok}</strong><small>of ${n}</small></span></div>
+      <div class="vcard-text"><strong>${bad ? `${bad} not reporting` : 'All reporting'}</strong>
+        <span>${escapeHtml(bad ? listWords(troubledAreas(devices).map(areaName), 2) : 'Every device is answering')}</span></div></div>
+  </a>`;
+}
+
+/* The switches as tiles: an icon, a name, the room, and the whole tile is
+ * the button. On tiles fill with the brand green. */
+function switchTiles(all) {
+  const operable = all.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
+  const shown = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 8);
+  if (!shown.length) return '';
+  const gateOk = bridgeGate('control').ok;
+  const tiles = shown.map((e) => {
+    const want = pending.get(e.key)?.want;
+    const on = want ? want === 'on' : isOn(e);
+    const can = canControl && gateOk;
+    const name = e.name || e.entity_id;
+    return `<button class="tile${on ? ' is-on' : ''}${want ? ' busy' : ''}" data-key="${escapeHtml(e.key)}" data-act="toggle"` +
+      ` role="switch" aria-checked="${on}" aria-label="${escapeHtml(name)}"${can ? '' : ' disabled'}>` +
+      `<span class="tile-ico"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconFor(e)}"/></svg></span>` +
+      `<span class="tile-name">${escapeHtml(name)}</span>` +
+      `<span class="tile-meta">${escapeHtml(areaName(e.area))} · ${on ? 'On' : 'Off'}</span></button>`;
+  }).join('');
+  const more = operable.length - shown.length;
+  return `<section class="tiles-sec" aria-label="Switches">
+    <div class="panel-head bare"><h2 class="panel-title">Switches</h2>
+      <a class="panel-link" href="#/devices">${more > 0 ? `${more} more` : 'All devices'}${arrow()}</a></div>
+    ${controlNote()}<div class="tiles">${tiles}</div></section>`;
 }
 
 function overviewView(all) {
   const devices = byDevice(all);
-  return head('Home', '', '') +
-    `<div class="ov">
-      <div class="ov-main">${systemsPanel(all)}${attentionCard(devices)}</div>
-      <div class="ov-side">${quickControls(all)}</div>
-    </div>`;
+  const busy = irrRefreshing.size > 0;
+  const refresh = `<button class="btn btn-ghost btn-sm" data-act="home-refresh"${busy ? ' disabled' : ''}>${busy ? 'Checking…' : 'Refresh'}</button>`;
+  return head('Home', '', refresh) + flowHero() +
+    `<div class="vcards">${irrigationCard()}${solarCard(all)}${healthCard(devices)}</div>` +
+    switchTiles(all);
 }
 
 /* Rooms and All devices are one destination with a switch: a room is
@@ -2540,6 +2646,9 @@ function wire(all) {
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
 
   view.querySelectorAll('[data-act="irr-refresh"]').forEach((btn) => { btn.onclick = () => refreshIrrigation(); });
+  view.querySelectorAll('[data-act="home-refresh"]').forEach((btn) => {
+    btn.onclick = () => { requestWater(true); if (canControl) refreshIrrigation(); else toast('ok', 'Asked for fresh water readings.'); };
+  });
   view.querySelectorAll('[data-act="irr-builder"]').forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); irrBuilderOpen = !irrBuilderOpen; render(); };
   });

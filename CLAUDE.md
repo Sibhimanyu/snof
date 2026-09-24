@@ -298,7 +298,14 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   gone. Rooms has a Rooms / All devices switch; no domain chips, no reading
   counts. Livesky sign-in lives on Water. Page titles only: no eyebrows or
   subtitles. Keep web (`app.js`) and iOS (`OverviewView.swift` modules) on
-  the same module list.
+  the same module list. **Home is drawn** (owner, same day: "so dull … I
+  need more visuals"; web, iOS 0.8.0): the water chain as pipes that flow
+  while their motor runs, an irrigation ring (time left, or share of the
+  last run delivered; amber when stopped early), solar, a device donut, and
+  switches as tiles. Home polls water every 30 s while open, has one
+  Refresh (water + the three irrigation reads), and every card shows its
+  data's age — stale data must never look live. Vendor sign-ins are on
+  Irrigation ("Mobitech account") and Water ("Livesky account").
 - **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
   SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
   0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with

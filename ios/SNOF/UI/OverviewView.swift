@@ -15,21 +15,327 @@ struct OverviewView: View {
     /// system, what is not reporting, and what is switched on. Each row opens
     /// the tab that has the rest.
     var body: some View {
-        Page(title: "Home", refresh: store.irrigationPull) {
+        Page(title: "Home", refresh: homeRefresh) {
             if !store.firstSnapshot {
                 LoadingBlock()
-            } else if sizeClass == .regular {
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(spacing: 14) { SystemsCard(); AttentionRow() }
-                    VStack(spacing: 14) { OnNowPanel() }.frame(width: 360)
-                }
             } else {
-                SystemsCard()
-                AttentionRow()
-                OnNowPanel()
+                FlowHero()
+                if sizeClass == .regular {
+                    HStack(alignment: .top, spacing: 14) { IrrigationRingCard(); SolarCard(); HealthCard() }
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    IrrigationRingCard()
+                    HStack(alignment: .top, spacing: 12) { SolarCard(); HealthCard() }
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                SwitchTiles()
             }
         }
         .navigationTitle("Home")
+        // Home is the first screen: keep the water picture current while it is
+        // open (the function spaces pulls 15 s apart whoever asks).
+        .task {
+            while !Task.isCancelled {
+                await store.refreshWater()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    /// Swipe down: fresh water readings, and (controllers) the irrigation data.
+    private var homeRefresh: @MainActor () async -> Void {
+        let store = store
+        return {
+            await store.refreshWater(force: true)
+            if store.canControl { await store.pullToRefreshIrrigation() }
+        }
+    }
+}
+
+/* ---- Home, drawn (2026-09-25: "so dull … I need more visuals") ----
+ * Mirrors the web Home: the water chain as pipes that flow while their motor
+ * runs, a ring for the irrigation run, solar, a donut of what reports, and
+ * the switches as tiles. Green = on / flowing, brick = offline. */
+
+/// A pipe between two stations; dashes move while water does.
+private struct Pipe: View {
+    let on: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { g in
+            Path { p in p.move(to: CGPoint(x: 0, y: 3)); p.addLine(to: CGPoint(x: g.size.width, y: 3)) }
+                .stroke(on ? Theme.brand : Theme.line2,
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round, dash: on ? [10, 8] : [], dashPhase: phase))
+        }
+        .frame(height: 6)
+        .onAppear {
+            guard on, !reduceMotion else { return }
+            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { phase = -18 }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct Station: View {
+    let art: String
+    let title: String
+    let sub: String
+    let on: Bool
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(art).resizable().scaledToFit().frame(width: 38, height: 38)
+                .frame(width: 62, height: 62)
+                .background(Theme.panel2, in: Circle())
+                .overlay(Circle().strokeBorder(on ? Theme.brand : Theme.line, lineWidth: 2))
+                .background(Circle().fill(on ? Theme.brand.opacity(0.22) : .clear).padding(-6))
+            Text(title).font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.text).padding(.top, 4)
+            Text(sub).font(Theme.font(11.5, on ? .semibold : .regular, relativeTo: .caption))
+                .foregroundStyle(on ? Theme.on : Theme.muted).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .frame(width: 88)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct FlowHero: View {
+    @Environment(FarmStore.self) private var store
+
+    private func word(_ m: WaterMotor?) -> String {
+        m.map { $0.running == true ? "Running" : $0.running == false ? "Off" : "Unknown" } ?? "No reading"
+    }
+
+    var body: some View {
+        let w = store.water
+        let supply = w.supply.first
+        let drip = w.motors.first { $0.role == "drip" }
+        let c = store.irrigation
+        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
+        Button { store.selectedTab = .water } label: {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Water").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                    if let t = w.pulledAt { Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint) }
+                    Spacer()
+                    Text("Details").font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
+                    Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.on)
+                }
+                HStack(alignment: .top, spacing: 0) {
+                    Station(art: w.river?.running == true ? "art-motor-on" : "art-motor-off", title: "River",
+                            sub: word(w.river), on: w.river?.running == true)
+                    Pipe(on: w.river?.running == true).padding(.top, 28)
+                    Station(art: supply?.running == true ? "art-motor-on" : "art-motor-off", title: "Other farm",
+                            sub: supply.map { "7.5 HP \(word($0).lowercased())" } ?? "No reading", on: supply?.running == true)
+                    Pipe(on: supply?.running == true).padding(.top, 28)
+                    Station(art: "art-kulam", title: "Main farm", sub: say.running ? "Watering" : "Not watering", on: say.running)
+                }
+                if let drip {
+                    HStack(spacing: 8) {
+                        Image(drip.running == true ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 22, height: 22)
+                        Text([drip.name, word(drip), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }]
+                                .compactMap { $0 }.joined(separator: " · "))
+                            .font(Theme.font(12.5, drip.running == true ? .semibold : .regular, relativeTo: .caption))
+                            .foregroundStyle(drip.running == true ? Theme.on : Theme.muted).lineLimit(1)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Theme.panel2, in: Capsule())
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(16)
+            .modifier(Panel(padding: 0))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A ring: how far through the current run, or how much of the last one
+/// was delivered. Stopped early is amber, never green.
+struct Ring: View {
+    let fraction: Double
+    let color: Color
+    let label: String
+    let sub: String
+    var track: Color = Theme.panel3
+    var size: CGFloat = 84
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(track, lineWidth: 9)
+            Circle().trim(from: 0, to: max(0, min(1, fraction)))
+                .stroke(color, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: 0) {
+                Text(label).font(Theme.font(16, .bold, relativeTo: .headline).monospacedDigit()).foregroundStyle(Theme.ink)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(sub).font(Theme.font(10, .semibold, relativeTo: .caption2)).foregroundStyle(Theme.faint)
+            }
+            .padding(10)
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct VCard<Content: View>: View {
+    let label: String
+    let go: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Button { Haptics.select(); go() } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(label).eyebrowStyle()
+                content
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(14)
+            .modifier(Panel(padding: 0))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct IrrigationRingCard: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        let c = store.irrigation
+        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
+        let last = Irrigation.runs(c).first
+        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
+        VCard(label: "Irrigation" + (checked.map { " · \($0)" } ?? ""), go: { store.selectedTab = .irrigation }) {
+            if c.isEmpty {
+                Text("No data yet").font(Theme.meta).foregroundStyle(Theme.muted)
+            } else {
+                HStack(spacing: 14) {
+                    if say.running, let p = c.program {
+                        let planned = Double(p.plannedMin ?? 0), left = Double(max(0, p.remainingMin ?? 0))
+                        Ring(fraction: planned > 0 ? 1 - left / planned : 0.5, color: Theme.brand,
+                             label: p.remainingMin.map { Format.minutes(max(0, $0)) } ?? "On", sub: "left")
+                    } else if let last {
+                        let planned = Double(last.plannedMin ?? 0)
+                        let got = Double(last.deliveredMin ?? (last.finished ? last.plannedMin ?? 0 : 0))
+                        Ring(fraction: planned > 0 ? got / planned : 1, color: last.finished ? Theme.brand : Theme.warn,
+                             label: last.deliveredMin.map(Format.minutes) ?? last.amount ?? "—",
+                             sub: last.finished ? "last run" : "stopped")
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(say.running ? say.title : say.title.replacingOccurrences(of: "Last: ", with: ""))
+                            .font(Theme.font(16, .bold, relativeTo: .headline)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(say.running ? "Watering now" : (last.flatMap { FarmTime.when($0.start, now: store.now, zone: FarmTime.zone(c.timeZone)) } ?? "Not watering"))
+                            .font(Theme.meta).foregroundStyle(Theme.muted)
+                        let valves = (say.running ? c.program?.valves : last?.valves) ?? ""
+                        HStack(spacing: 4) {
+                            ForEach(valves.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                                        .compactMap { ValveArt.key(name: $0, type: "irrigation") }.prefix(5), id: \.self) {
+                                Image("art-\($0)").resizable().scaledToFit().frame(width: 24, height: 24)
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct SolarCard: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        if let solar = SolarGlance.find(store.entities) {
+            VCard(label: "Solar", go: { store.selectedTab = .areas }) {
+                Image(systemName: "sun.max.fill").font(.system(size: 30)).foregroundStyle(Theme.warn)
+                    .frame(width: 64, height: 64).background(Theme.warn.opacity(0.12), in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text(solar.watts.map { $0 >= 1000 ? String(format: "%.2f", $0 / 1000) : "\(Int($0))" } ?? "—")
+                            .font(Theme.font(28, .bold, relativeTo: .title).monospacedDigit()).tracking(-1).foregroundStyle(Theme.ink)
+                        Text((solar.watts ?? 0) >= 1000 ? "kW" : "W").font(Theme.font(13, .semibold, relativeTo: .caption)).foregroundStyle(Theme.faint)
+                    }
+                    Text(solar.today.flatMap { $0.isBad ? nil : "\($0.state ?? "") \($0.attrs.unit ?? "") today" } ?? "now")
+                        .font(Theme.meta).foregroundStyle(Theme.muted)
+                }
+            }
+        }
+    }
+}
+
+struct HealthCard: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        let devices = store.devices
+        let bad = devices.filter(\.isOffline).count, ok = devices.count - bad
+        VCard(label: "Devices", go: { store.showDevices(status: bad > 0 ? .offline : .all) }) {
+            Ring(fraction: devices.isEmpty ? 0 : Double(ok) / Double(devices.count), color: Theme.brand,
+                 label: "\(ok)", sub: "of \(devices.count)", track: bad > 0 ? Theme.bad.opacity(0.3) : Theme.panel3, size: 64)
+            Text(bad > 0 ? "\(bad) not reporting" : "All reporting")
+                .font(Theme.font(15, .bold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
+        }
+    }
+}
+
+/// The switches as tiles; the whole tile is the button. On tiles fill green.
+struct SwitchTiles: View {
+    @Environment(FarmStore.self) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        let operable = store.entities.filter { $0.isControllable && !$0.isBad }
+            .sorted { (store.displayOn($0) ? 0 : 1, $0.name) < (store.displayOn($1) ? 0 : 1, $1.name) }
+        let shown = Array(operable.prefix(8))
+        if !shown.isEmpty {
+            HStack {
+                Text("Switches").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                Spacer()
+                LinkButton(label: operable.count > shown.count ? "\(operable.count - shown.count) more" : "All devices",
+                           run: { store.showDevices(status: .all) })
+            }
+            .padding(.top, 10)
+            ControlNote()
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: sizeClass == .regular ? 4 : 2), spacing: 10) {
+                ForEach(shown) { e in SwitchTile(entity: e) }
+            }
+        }
+    }
+}
+
+private struct SwitchTile: View {
+    @Environment(FarmStore.self) private var store
+    let entity: Entity
+
+    var body: some View {
+        let on = store.displayOn(entity)
+        let busy = store.pending[entity.id] != nil
+        Button { store.toggle(entity) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: Theme.symbol(entity.domain)).font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(on ? .white : Theme.muted)
+                    .frame(width: 38, height: 38)
+                    .background(on ? Color.white.opacity(0.2) : Theme.panel2, in: Circle())
+                Spacer(minLength: 10)
+                Text(entity.name).font(Theme.font(14, .bold, relativeTo: .subheadline))
+                    .foregroundStyle(on ? .white : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
+                Text("\(store.areaName(entity.area)) · \(on ? "On" : "Off")").font(Theme.font(12, .regular, relativeTo: .caption))
+                    .foregroundStyle(on ? .white.opacity(0.85) : Theme.muted).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+            .padding(14)
+            .background(on ? Theme.brand : Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous).strokeBorder(on ? .clear : Theme.edge, lineWidth: 1))
+            .shadow(color: Theme.cardShadow, radius: 10, y: 4)
+            .opacity(busy ? 0.7 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(!store.canOperate(entity))
+        .sensoryFeedback(.impact(weight: .light), trigger: on)
+        .accessibilityLabel(entity.name)
+        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
     }
 }
 
