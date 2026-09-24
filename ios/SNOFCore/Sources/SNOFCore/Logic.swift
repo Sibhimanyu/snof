@@ -90,6 +90,11 @@ extension Entity {
     public static let settingDomains: Set<String> = ["select", "input_select", "number", "input_number", "time", "date",
                                                      "datetime", "button", "input_button", "image", "text", "input_text",
                                                      "update", "event"]
+    /// A diagnostic reading ("Goats Debug (station)"): the bridge does not
+    /// export Home Assistant's entity category, so the name is what says it.
+    public var isDiagnostic: Bool { name.range(of: #"\bdebug\b"#, options: [.regularExpression, .caseInsensitive]) != nil }
+    /// Left out of room and system pages unless searched for.
+    public var isBackstage: Bool { Entity.settingDomains.contains(domain) || isDiagnostic }
 
     /// Search haystack, matching app.js `matches()`.
     public func matches(_ query: String, areaName: String) -> Bool {

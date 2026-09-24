@@ -162,3 +162,19 @@ Hard-won constraints:
   the file. Registering it early hits the temporal dead zone.
 - Domain icons resolve via `getElementById('i-' + domain)` and fall back to
   `i-default`, so an unknown domain degrades rather than breaking.
+  `ICON_ALIAS` lends a near drawing to domains without one (an alarm panel
+  gets the shield), since the placeholder square reads as broken.
+- Device and entity names are tidied once, in `flatEntities()` →
+  `tidyNames()`: a serial-number device name ("P1S_01P09C510500118_AMS_1",
+  "T8400P202040124D") reads as "P1S AMS 1" / "Goats" (its entity ids' shared
+  prefix). Anything matching on Home Assistant's own names — the printer
+  add-on grouping in `farmSystems()` — uses `rawDeviceName()` / `g.raw`.
+  SNOFCore's `DeviceNames` does the same on iOS.
+- Offline vs switched off is decided per device by `offlineIsFault(d,
+  index)` everywhere (Home, rooms, All devices, system pages): a camera,
+  the inverter or a switch module offline is a fault; an AC, a TV, a fan,
+  the printer and its AMS are "Off".
+- Ages come from one formatter, `agoText()`/`humanAge()` ("just now", "12m",
+  "2h", "3d"), matching iOS `Water.ago`/`Format.age`. A reading that is not
+  current never looks live: see docs/water.md and docs/irrigation.md "Cut
+  short, or caught part-way".

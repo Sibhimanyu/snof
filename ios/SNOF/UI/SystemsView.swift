@@ -228,7 +228,7 @@ struct SystemView: View {
                 }
                 if ![.security, .solar, .switches].contains(id) {
                     ForEach(sys.devices.filter { !$0.isOffline }.sorted { Sorting.natural($0.name, $1.name) }) { d in
-                        let rows = d.entities.filter { !$0.isBad && !$0.isControllable && !Entity.settingDomains.contains($0.domain) }
+                        let rows = d.entities.filter { !$0.isBad && !$0.isControllable && !$0.isBackstage }
                             .sorted { Sorting.natural($0.name, $1.name) }
                         TitledPanel(title: d.name) {
                             if rows.isEmpty {

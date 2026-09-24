@@ -463,6 +463,20 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await c.close();
 }
 {
+  // Room pages say what things are, and leave settings and diagnostics out
+  // unless searched for (2026-09-25: "Binary Sensor", "Debug (station)").
+  let hasReplay=true; try{readFileSync(new URL('./replay.local.json',import.meta.url));}catch{hasReplay=false;}
+  if(hasReplay){
+    const [p,c]=await open('?replay=1&fresh=1#/area/sheep_shed');
+    await p.waitForSelector('#view .area-sec');
+    const r=await p.evaluate(()=>({titles:[...document.querySelectorAll('#view .area-sec .panel-title')].map(t=>t.firstChild.textContent),
+      debug:[...document.querySelectorAll('#view .row-name')].filter(n=>/debug/i.test(n.textContent)).length}));
+    check('replay: room sections are named for what they are', r.titles.includes('Detectors')&&!r.titles.some(t=>/Binary|Control Panel|Select/.test(t)), r.titles.join(', '));
+    check('replay: no debug rows in a room unless searched', r.debug===0, `${r.debug}`);
+    await c.close();
+  } else console.log('  skip  room section checks (no replay.local.json)');
+}
+{
   // Every page, on the narrowest phone, with the real farm's names and
   // readings: nothing is wider than the screen. (The iOS Irrigation page
   // once was, from two tags that could not wrap.)

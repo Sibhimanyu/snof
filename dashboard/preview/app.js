@@ -36,6 +36,9 @@ const SECTION_ORDER = Object.keys(SECTION_TITLE);
  * searched for. Mirrors Entity.settingDomains. */
 const SETTING_DOMAINS = new Set(['select', 'input_select', 'number', 'input_number', 'time', 'date', 'datetime',
   'button', 'input_button', 'image', 'text', 'input_text', 'update', 'event']);
+/* Diagnostics ("Goats Debug (station)"): the bridge does not export Home
+ * Assistant's entity category, so the name is what says it. */
+const isBackstage = (e) => SETTING_DOMAINS.has(e.domain) || /\bdebug\b/i.test(e.name || '');
 
 let state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, irrigation_reports: {}, water: {}, acl: {} };
 let canControl = false;
@@ -1115,7 +1118,7 @@ function systemView(all, id) {
   const live = devices.filter((d) => !deviceOffline(d));
   const off = devices.filter(deviceOffline);
   const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
-      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !SETTING_DOMAINS.has(e.domain)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
+      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !isBackstage(e)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
   // Per device, as on a room page: a fan on the switches page is switched
   // off, not offline.
   const offFault = id === 'security' ? [] : off.filter((d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d));
@@ -1176,7 +1179,7 @@ function areaView(all, id) {
   const deadIds = new Set(dead.map((d) => d.id));
   const byDomain = new Map();
   for (const e of list) {
-    if (!search && (deadIds.has(e.device || e.key) || SETTING_DOMAINS.has(e.domain))) continue;
+    if (!search && (deadIds.has(e.device || e.key) || isBackstage(e))) continue;
     if (!byDomain.has(e.domain)) byDomain.set(e.domain, []);
     byDomain.get(e.domain).push(e);
   }

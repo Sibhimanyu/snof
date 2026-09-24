@@ -90,6 +90,22 @@ other timestamp stays real, so ages ("65m ago", "Water readings are old") read
 as they would have then. The snapshot never leaves the machine. `qa.mjs` runs
 extra checks when the file exists and skips them when it does not.
 
+On iOS the state flags (`-demo-stale`, `-demo-controloff`, `-demo-wateroff`,
+`-demo-liveskyexpired`, `-demo-reportsoff`) apply to the replayed tree too,
+and `-demo-fresh` moves its water readings to now for reviewing the live look.
+For many shots, run the Catalyst binary with the network denied and without
+AppKit's window restoration (a crash otherwise leaves every later launch
+waiting on "reopen windows?"):
+
+```bash
+SNOF_DEMO_TREE=… sandbox-exec -p '(version 1)(allow default)(deny network-outbound (remote ip))' \
+  build/Build/Products/Debug-maccatalyst/SNOF.app/Contents/MacOS/SNOF -demo -ApplePersistenceIgnoreState YES \
+  -demo-viewer -tab irrigation -snapshot /tmp/out.png
+```
+
+Build the review binary into its own derived-data path when an agent is
+already shooting from `ios/build`.
+
 What the replay caught that fixtures never showed: 83 report cards from
 Refresh presses, a run log capped at 32 rows (yesterday's Watered showed 3
 runs), a smart fan flagged as a faulty switch module, ACs and a printer shown

@@ -65,7 +65,7 @@ struct AreaDetailView: View {
                 // Settings (power-on behaviour, timers, firmware notices) stay
                 // out unless searched for, as on the system pages.
                 let shown = search.isEmpty
-                    ? list.filter { !deadIDs.contains($0.device ?? $0.key) && !Entity.settingDomains.contains($0.domain) } : list
+                    ? list.filter { !deadIDs.contains($0.device ?? $0.key) && !$0.isBackstage } : list
                 ForEach(Sorting.domainsForArea(shown), id: \.domain) { group in
                     TitledPanel(title: Entity.sectionTitle(group.domain), count: group.entities.count) {
                         if Farm.controllable.contains(group.domain) {

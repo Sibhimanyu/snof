@@ -151,6 +151,13 @@ useful filtered destination only if that interaction exists.
   after timeout, return the control to truth and explain the failure concisely.
 - Disabled, unavailable, and non-controller states must be obvious and must not
   imitate a usable control.
+- Disabled keeps the words at full strength (2026-09-25): a tile that cannot be
+  pressed goes flat (no shadow) with its icon dimmed; a disabled primary button
+  is grey on grey. Never fade the whole control: at 55% the name was 2.2:1 and
+  a viewer lost the very state they came to read. On iOS use
+  `TileButtonStyle`, not `.plain`, which dims a disabled label by itself.
+- Say why something is disabled, once, next to it ("One manual run at a
+  time."; one line when a quiet bridge closes both reads and valve control).
 
 ### Brand artwork
 
@@ -165,7 +172,13 @@ state signal; the tag beside them carries state. The DCON app's own tokens
 ### Areas and unavailable state
 
 Area cards should prioritise the area name and active/unavailable counts. Do not
-invent photography or sensor categories. The unavailable section should state
+invent photography or sensor categories. Inside a room, sections are named for
+what things are (Lights, Switches, Detectors, Readings, Alarm, TVs & speakers),
+never Home Assistant's domains, and settings entities (power-on behaviour,
+timers, firmware notices) stay out unless searched for. Search sits under the
+page title, never in the bar above it. Devices Home Assistant names by serial
+number read as what they are ("P1S printer", "Goats"); the fix at the source
+is renaming them in Home Assistant. The unavailable section should state
 what is not reporting, where it belongs, and when it was last seen, without
 letting failure colour dominate the whole screen.
 
