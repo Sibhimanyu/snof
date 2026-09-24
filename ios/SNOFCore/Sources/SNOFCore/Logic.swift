@@ -237,7 +237,11 @@ public enum Capability: Sendable { case control, irrigation, irrigationControl }
 public struct Gate: Equatable, Sendable {
     public let ok: Bool
     public let why: String
+    /// Closed because the bridge is quiet: two such gates are said once.
+    public var bridge = false
     public static let open = Gate(ok: true, why: "")
+    /// Reads and valve control both down for the same quiet bridge, in one line.
+    public static let bridgeDownBoth = "The bridge is not reporting in, so the controller cannot be read or sent a Run or Stop."
 }
 
 extension Gate {
@@ -274,13 +278,13 @@ extension Gate {
         guard let hb, let last = hb.lastSeen else {
             return Gate(ok: false, why: valves ? "Valve control has not checked in yet."
                         : reads ? "The bridge has not checked in yet, so the controller cannot be read."
-                        : "The bridge has not checked in yet, so a press would not reach the farm.")
+                        : "The bridge has not checked in yet, so a press would not reach the farm.", bridge: true)
         }
         let age = (nowMs + skewMs - last) / 1000
         if hb.status == "offline" || age > (hb.heartbeatSeconds ?? 30) * Farm.staleFactor {
             return Gate(ok: false, why: valves ? "Valve control is not answering right now, so a Run or Stop would not reach the controller."
                         : reads ? "The bridge is not reporting in, so the controller cannot be read right now."
-                        : "The bridge is not reporting in, so a press would not reach the farm.")
+                        : "The bridge is not reporting in, so a press would not reach the farm.", bridge: true)
         }
         switch capability {
         case .control where hb.control == false:

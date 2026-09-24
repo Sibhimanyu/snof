@@ -1342,13 +1342,14 @@ function irrDefaultDates() {
 function bridgeGate(feature) {
   const hb = state.meta && state.meta.bridge;
   const reads = feature === 'reports';
+  // bridge: closed because the bridge is quiet (two such gates are said once).
   if (!hb || !hb.lastSeen) {
-    return { ok: false, why: reads ? 'The bridge has not checked in yet, so the controller cannot be read.'
+    return { ok: false, bridge: true, why: reads ? 'The bridge has not checked in yet, so the controller cannot be read.'
       : 'The bridge has not checked in yet, so a press would not reach the farm.' };
   }
   const ageSec = (Date.now() + clockSkewMs - hb.lastSeen) / 1000;
   if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    return { ok: false, why: reads ? 'The bridge is not reporting in, so the controller cannot be read right now.'
+    return { ok: false, bridge: true, why: reads ? 'The bridge is not reporting in, so the controller cannot be read right now.'
       : 'The bridge is not reporting in, so a press would not reach the farm.' };
   }
   if (feature === 'control' && hb.control === false) {
@@ -1985,12 +1986,12 @@ let runOpen = false, runPick = [], runMinutes = 15;
 function irrControlGate() {
   if (state.meta?.irrigationControl?.enabled === true) return { ok: true, why: '' };
   const hb = state.meta?.bridge;
-  if (!hb || !hb.lastSeen) return { ok: false, why: 'Valve control has not checked in yet.' };
+  if (!hb || !hb.lastSeen) return { ok: false, bridge: true, why: 'Valve control has not checked in yet.' };
   const ageSec = (serverNow() - hb.lastSeen) / 1000;
   if (hb.status === 'offline' || ageSec > (hb.heartbeatSeconds || 30) * STALE_FACTOR) {
-    return { ok: false, why: 'Valve control is not answering right now.' };
+    return { ok: false, bridge: true, why: 'Valve control is not answering right now.' };
   }
-  if (hb.irrigationControl !== true) return { ok: false, why: 'Valve control is switched off.' };
+  if (hb.irrigationControl !== true) return { ok: false, why: 'Valve control is switched off at the farm.' };
   return { ok: true, why: '' };
 }
 const irrLocked = () => (state.irrigationLock?.until || 0) > serverNow();
@@ -2124,12 +2125,17 @@ function irrNowModule() {
   const empty = !c.program && !(c.timerLog || []).length;
   const faults = s.running ? (c.program?.faults || []) : [];
   const next = c.program?.next;
+  // Why Refresh (and Run) are off, said once when the quiet bridge is both reasons.
+  const rg = reportsGate(), vg = irrControlGate();
+  const both = isAdmin && !rg.ok && rg.bridge && !vg.ok && vg.bridge;
+  const readNote = canControl && !rg.ok
+    ? `<p class="more-note note-off">${escapeHtml(both ? 'The bridge is not reporting in, so the controller cannot be read or sent a Run or Stop.' : rg.why)}</p>` : '';
   const controls = isAdmin ? `<div class="now-actions">
       <button class="btn btn-primary" data-act="run-open"${refusal || runOpen || (s.running && s.manual) || !valveRows().some(isIrrigationValve) ? ' disabled' : ''}>Run valves</button>
       ${s.running && s.manual ? `<button class="btn btn-danger" data-act="irr-stop"${refusal ? ' disabled' : ''}>Stop</button>` : ''}
     </div>
     ${irrPending ? `<p class="more-note">${irrConfirming ? 'Confirming with the controller…' : 'Sent. Waiting for the farm…'}</p>`
-      : refusal && refusal !== 'Only farm admins can open or close valves.' ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
+      : refusal && refusal !== 'Only farm admins can open or close valves.' && !both ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
       : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>`
       : s.running && s.manual ? '<p class="more-note">One manual run at a time.</p>' : ''}` : '';
   return `<section class="panel now${s.running ? ' is-on' : ''}" aria-label="Now">
@@ -2141,7 +2147,7 @@ function irrNowModule() {
       : `<h2 class="now-title">${escapeHtml(s.title)}</h2>${s.detail ? `<p class="now-detail">${escapeHtml(s.detail)}</p>` : ''}`}
     ${faults.map((f) => `<span class="tag tag-bad">${escapeHtml(f)}</span>`).join('')}
     ${next && next.name ? `<p class="now-next"><span>Next</span>${escapeHtml([next.name, next.plannedMin != null ? fmtMin(next.plannedMin) : ''].filter(Boolean).join(' · '))}</p>` : ''}
-    ${controls}
+    ${controls}${readNote}
   </section>`;
 }
 
@@ -2405,8 +2411,10 @@ const WATER_ROLE = {
   drip: "Runs this farm's own drip zones",
 };
 
-function motorStateTag(m) {
-  if (m.running === true) return `<span class="tag tag-on">Running</span>`;
+/** current: false for a reading that no longer says what the motor is
+ *  doing now (waterCurrent): its last state, in grey. */
+function motorStateTag(m, current = true) {
+  if (m.running === true) return current ? `<span class="tag tag-on">Running</span>` : `<span class="tag">Running</span>`;
   if (m.running === false) return `<span class="tag">Off</span>`;
   return `<span class="tag">Unknown</span>`;
 }
@@ -2458,11 +2466,13 @@ function waterMotorCard(m, vendorErr) {
   if (m.skippedZone != null) notes.push(`<p class="more-note note-bad">Zone ${m.skippedZone} was skipped: no valve feedback.</p>`);
   if (vendorErr) notes.push(`<p class="more-note note-off">${escapeHtml(vendorErr)}</p>`);
   const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
-  return `<article class="panel wmotor${m.running ? ' is-on' : ''}">
+  // Green only on a current reading, as on Home.
+  const live = m.running === true && waterCurrent(m);
+  return `<article class="panel wmotor${live ? ' is-on' : ''}">
     <div class="wmotor-head">
-      <img class="wmotor-art" src="/art/${m.running ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
+      <img class="wmotor-art" src="/art/${live ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
       <div class="wmotor-title"><h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p></div>
-      ${motorStateTag(m)}
+      ${motorStateTag(m, waterCurrent(m))}
     </div>
     ${headline.length ? `<div class="mb-facts">${headline.map(([k, v]) => {
       const [main, asOf] = String(v).split(' · as of ');

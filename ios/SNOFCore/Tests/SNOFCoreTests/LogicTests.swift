@@ -189,7 +189,8 @@ final class LogicTests: XCTestCase {
     func testOperableDomainsFirstInAnArea() {
         let d = Sorting.domainsForArea([ent("binary_sensor", "a", "on"), ent("sensor", "b", "1"),
                                         ent("switch", "c", "off"), ent("fan", "d", "off")])
-        XCTAssertEqual(d.map(\.domain), ["fan", "switch", "binary_sensor", "sensor"])
+        // Operable first, then in the room order (Lights, Switches, Fans, …, Detectors, Readings).
+        XCTAssertEqual(d.map(\.domain), ["switch", "fan", "binary_sensor", "sensor"])
     }
 
     /* ---- gate ---- */

@@ -191,18 +191,7 @@ struct ReportListRow: View {
         .accessibilityHint("Opens the report")
     }
 
-    /// The summary without the date range the line above already shows —
-    /// the function appends it for the full report, where it is not repeated.
-    private var summary: String {
-        var s = report.summary
-        if let f = report.from, let t = report.to {
-            for range in ["\(f) → \(t)", f == t ? f : nil].compactMap({ $0 }) {
-                if s.hasSuffix(" · " + range) { s.removeLast(range.count + 3) }
-                else if s == range { s = "" }
-            }
-        }
-        return s
-    }
+    private var summary: String { report.summaryWithoutRange }
 
     /// "2026-02-20 → 2026-02-22 · 2h ago".
     private var meta: String {
@@ -269,6 +258,21 @@ struct ReportSheetContent: View {
     }
 }
 
+extension Report {
+    /// The summary without the date range, which the line above it already
+    /// shows (the function appends it; the sheet showed it twice).
+    var summaryWithoutRange: String {
+        var s = summary
+        if let f = from, let t = to {
+            for range in ["\(f) → \(t)", f == t ? f : nil].compactMap({ $0 }) {
+                if s.hasSuffix(" · " + range) { s.removeLast(range.count + 3) }
+                else if s == range { s = "" }
+            }
+        }
+        return s
+    }
+}
+
 /// Three outcomes, three tags: a report where one call answered and one
 /// did not is not "Ready", and must not read as if it were.
 struct ReportStatusTag: View {
@@ -314,8 +318,8 @@ struct ReportBody: View {
                 Spacer(minLength: 0)
             }
             Text(when).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
-            if !report.summary.isEmpty {
-                Text(report.summary).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.text)
+            if !report.summaryWithoutRange.isEmpty {
+                Text(report.summaryWithoutRange).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.text)
             }
             if report.status == "error", !report.error.isEmpty {
                 Text(report.error).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.bad)
@@ -334,7 +338,7 @@ struct ReportBody: View {
         var bits: [String] = []
         if let f = report.from, let t = report.to { bits.append("\(f) → \(t)") }
         if report.at > 0 {
-            bits.append(Date(timeIntervalSince1970: report.at / 1000).formatted(date: .abbreviated, time: .shortened))
+            bits.append(FarmTime.when(ms: report.at, now: Date()))
         }
         return bits.joined(separator: " · ")
     }
@@ -512,7 +516,9 @@ private struct Series: View {
                 }
                 .chartPlotStyle { $0.clipped() }   // the area mark's baseline is 0, far below the domain
                 .chartXAxis(.hidden)
-                .chartYScale(domain: (lo - (hi - lo) * 0.1)...(hi + (hi - lo) * 0.1 + 0.001))
+                // A flat series gets room around it, not a 0.001 span that
+                // labels its axis "2.4010 / 2.4005".
+                .chartYScale(domain: (lo - max((hi - lo) * 0.1, max(abs(hi) * 0.05, 0.05)))...(hi + max((hi - lo) * 0.1, max(abs(hi) * 0.05, 0.05))))
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
                 .frame(height: 90)
                 .accessibilityLabel("\(pts.count) readings from \(fmt(lo, u)) to \(fmt(hi, u)), latest \(fmt(last.2, u))")

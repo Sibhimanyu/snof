@@ -328,8 +328,8 @@ struct MobitechSignIn: View {
             LabeledContent("Signed in as", value: [st.name, st.user.isEmpty || st.name.isEmpty ? nil : "(\(st.user))"]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " "))
             LabeledContent("Number", value: "ending \(st.mobileLast4)")
-            LabeledContent("Since", value: Date(timeIntervalSince1970: st.at / 1000).formatted(date: .abbreviated, time: .shortened))
-            LabeledContent("Last command", value: st.lastOk.map { "accepted " + Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .shortened) } ?? "none yet")
+            LabeledContent("Since", value: FarmTime.when(ms: st.at, now: Date()))
+            LabeledContent("Last command", value: st.lastOk.map { "accepted " + FarmTime.when(ms: $0, now: Date()) } ?? "none yet")
         }
         if let problem = store.mobitechProblem { Text(problem).foregroundStyle(Theme.warn) }
 

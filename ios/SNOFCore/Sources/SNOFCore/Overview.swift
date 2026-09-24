@@ -56,6 +56,14 @@ public enum FarmTime {
         today(now.addingTimeInterval(-86_400), zone: zone)
     }
 
+    /// A server moment (ms), worded like the controller's own times: "00:43",
+    /// "23:40 yesterday", "26 Sep 22:40". 24-hour, as everywhere else in the
+    /// app; the phone's 12-hour format put "12:43 AM" beside "23:40".
+    public static func when(ms: Double, now: Date, zone: TimeZone = zone(nil)) -> String {
+        let s = formatter(zone).string(from: Date(timeIntervalSince1970: ms / 1000))
+        return when(s, now: now, zone: zone) ?? s
+    }
+
     /// "20:32", "20:32 yesterday", "21 Sep 20:32" — for a farm timestamp.
     public static func when(_ s: String?, now: Date, zone: TimeZone) -> String? {
         guard let s, s.count >= 16 else { return nil }

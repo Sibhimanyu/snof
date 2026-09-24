@@ -162,7 +162,7 @@ public enum Systems {
             let noun = sys.id == .climate ? (main.count == 1 ? "AC" : "ACs") : (main.count == 1 ? "device" : "devices")
             return SystemSummary(state: on.isEmpty ? .off : .on, line: on.isEmpty ? "All off" : "\(on.count) on", sub: "\(main.count) \(noun)")
         case .printer:
-            if allOffline { return SystemSummary(state: .off, line: "Off", sub: "Switched off") }
+            if allOffline { return SystemSummary(state: .off, line: "Off", sub: "") }   // not "Off · Switched off"
             let prog = find { n, e in n.contains("progress") && e.attrs.unit == "%" }
             let stage = find { n, _ in matches(n, "current stage|print status") }
             let stageText = stage.flatMap { $0.isBad ? nil : firstUpper(($0.state ?? "").replacingOccurrences(of: "_", with: " ")) }

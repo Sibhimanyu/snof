@@ -425,6 +425,9 @@ struct IrrigationNowCard: View {
     var body: some View {
         let c = store.irrigation
         let zone = FarmTime.zone(c.timeZone)
+        // Why Refresh (and Run) are off, said once when the quiet bridge is both reasons.
+        let reads = store.gate(.irrigation), valves = store.gate(.irrigationControl)
+        let both = store.canRunIrrigation && !reads.ok && reads.bridge && !valves.ok && valves.bridge
         Block(title: "Now", context: c.device) {
             if store.canControl { RefreshButton() }
         } content: {
@@ -435,9 +438,9 @@ struct IrrigationNowCard: View {
             } else {
                 WaterNow(cache: c, zone: zone, now: store.now)
             }
-            if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now) }
-            if store.canControl, !store.gate(.irrigation).ok {
-                Note(text: store.gate(.irrigation).why, tone: .warn).padding(.horizontal, 18).padding(.bottom, 10)
+            if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now, quiet: both) }
+            if store.canControl, !reads.ok {
+                Note(text: both ? Gate.bridgeDownBoth : reads.why, tone: .warn).padding(.horizontal, 18).padding(.bottom, 10)
             }
         }
     }
@@ -564,6 +567,8 @@ struct IrrigationControls: View {
     let cache: IrrigationCache
     let zone: TimeZone
     let now: Date
+    /// The card already says why (a quiet bridge closes reads and valves alike).
+    var quiet = false
     @State private var picking = false
     @State private var confirmStop = false
 
@@ -601,7 +606,7 @@ struct IrrigationControls: View {
                 }
             }
             .font(Theme.font(15, .semibold, relativeTo: .body))
-            if let refusal, !refusal.isEmpty, !waiting { Note(text: refusal, tone: .warn) }
+            if let refusal, !refusal.isEmpty, !waiting { if !quiet { Note(text: refusal, tone: .warn) } }
             else if store.isAdmin, let problem = store.mobitechProblem {
                 // Where it matters: an admin about to press Run learns the
                 // session is missing or rejected, and where to fix it.
