@@ -167,7 +167,8 @@ struct AroundTheFarm: View {
 
     var body: some View {
         let systems = store.systems
-        let ids = [FarmSystemID.switches, .climate, .media, .printer, .other].filter { systems[$0] != nil }
+        // Switches have their own tiles (and an "All" link) right above.
+        let ids = [FarmSystemID.climate, .media, .printer, .other].filter { systems[$0] != nil }
         if !ids.isEmpty {
             Text("Around the farm").font(Theme.panelTitle).foregroundStyle(Theme.text).padding(.top, 10)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: sizeClass == .regular ? 4 : 2), spacing: 10) {

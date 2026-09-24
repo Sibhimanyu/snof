@@ -147,7 +147,13 @@ body[data-view="gate"],body[data-view="boot"]{overflow:hidden}
   transition:background-color .16s,border-color .16s,color .16s,box-shadow .16s,
              transform .14s var(--ease),opacity .16s}
 :is(.btn,.chip,.icon-btn,.topnav-item,.tab-item,.acct-btn,#search,.toggle,.area-card,.panel-link,
-   .stat,.pstat,.acct-item,.att-row,.brand,.back,input[type=range]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+   .stat,.pstat,.acct-item,.att-row,.brand,.back,input[type=range],
+   .tile,.sys-tile,.vcard,.attn-row,.flow,.wmain,.seg-nav a,.vchip):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sys-tile:active,.vcard:active,.attn-row:active{transform:scale(.985)}
+.sys-tile,.vcard,.attn-row{transition:background-color .16s,box-shadow .16s,transform .14s var(--ease)}
+/* Small buttons keep a 44px touch target (the visible pill stays small). */
+.btn-sm{position:relative}
+.btn-sm::before{content:"";position:absolute;left:0;right:0;top:50%;translate:0 -50%;height:44px}
 .btn:active,.chip:active,.icon-btn:active,.seg button:active{transform:scale(.96)}
 :is(a.stat,.pstat,.area-card,.rep-head,.dgroup-head,.att-row,.row):active{transform:scale(.985)}
 .row,.dgroup-head,.rep-head{transition:background-color .16s,transform .18s var(--ease)}

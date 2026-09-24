@@ -991,7 +991,8 @@ function solarCard(systems) {
 
 /* The rest of the farm, one tile each: what it is, and one word on how it is. */
 function systemsGrid(systems) {
-  const ids = ['switches', 'climate', 'media', 'printer', 'other'].filter((id) => systems[id]);
+  // Switches have their own tiles (and an "All" link) right above.
+  const ids = ['climate', 'media', 'printer', 'other'].filter((id) => systems[id]);
   if (!ids.length) return '';
   return `<section class="sys-sec" aria-label="Farm systems">
     <div class="panel-head bare"><h2 class="panel-title">Around the farm</h2></div>

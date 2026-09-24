@@ -866,7 +866,8 @@ function systemSummary(sys) {
     case 'climate': case 'media': {
       const main = ents.filter((e) => e.domain === (sys.id === 'climate' ? 'climate' : 'media_player'));
       const on = main.filter((e) => !isBad(e) && !['off', 'standby', 'idle'].includes(e.state));
-      const noun = sys.id === 'climate' ? ['AC', 'ACs'] : ['TV', 'TVs'];
+      // A set-top box is not a TV: count screens as devices.
+      const noun = sys.id === 'climate' ? ['AC', 'ACs'] : ['device', 'devices'];
       return { state: on.length ? 'on' : 'off', line: on.length ? `${on.length} on` : 'All off',
                sub: `${main.length} ${plural(main.length, noun[0], noun[1])}` };
     }
