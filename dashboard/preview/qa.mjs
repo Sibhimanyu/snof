@@ -99,7 +99,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
       overflow:tiles.filter(t=>t.scrollWidth>t.clientWidth+1).length,
       flow:!!document.querySelector('.flow'), cards:document.querySelectorAll('.vcard').length};
   });
-  check('Home draws the water flow and the cards', r.flow&&r.cards>=2, JSON.stringify({flow:r.flow,cards:r.cards}));
+  check('Home draws the water flow and the cards', r.flow&&r.cards>=1, JSON.stringify({flow:r.flow,cards:r.cards}));
   check('switch tiles clamp long names', r.n>0&&r.clamp, `${r.n} tiles`);
   check('no tile overflows', r.overflow===0, `${r.overflow} of ${r.n}`);
   await c.close();
@@ -323,9 +323,9 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const [p,c]=await open('?live=1&mobitech=ok&watering=1#/irrigation');
   await p.waitForSelector('.now.is-on');
   const r=await p.evaluate(()=>({run:document.querySelector('[data-act="run-open"]').disabled, stop:!!document.querySelector('[data-act="irr-stop"]'),
-    open:document.querySelectorAll('.vchip.is-on').length}));
+    now:document.querySelector('.now-detail')?.textContent||''}));
   check('a manual run offers Stop and blocks a second Run', r.run&&r.stop, JSON.stringify(r));
-  check('the running valves are marked open', r.open===2, `${r.open}`);
+  check('the running valves are named in Now', /4 Veg, 6 Kulam/.test(r.now), r.now.slice(0,60));
   await c.close();
 }
 {
@@ -333,6 +333,39 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await p.waitForSelector('.now');
   const r=await p.evaluate(()=>({run:document.querySelector('[data-act="run-open"]').disabled, why:document.querySelector('.now .note-off')?.textContent||''}));
   check('valve control switched off disables Run and says so', r.run&&/switched off/.test(r.why), r.why);
+  await c.close();
+}
+// The valve list exists only while picking valves for a run (owner: a
+// standing list of valve names "makes no use and sense").
+{
+  const [p,c]=await open('?live=1&mobitech=ok#/irrigation');
+  await p.waitForSelector('.now');
+  const before=await p.evaluate(()=>document.querySelectorAll('.vchip').length);
+  await p.click('[data-act="run-open"]');
+  const during=await p.evaluate(()=>document.querySelectorAll('.vchip').length);
+  check('valve list appears only while picking a run', before===0&&during>0, `before=${before} during=${during}`);
+  await c.close();
+}
+// Real production data, replayed (skipped when no local snapshot exists).
+{
+  const [p,c]=await open('?replay=1&fresh=1#/irrigation');
+  const ok=await p.waitForSelector('.page-title',{timeout:5000}).then(()=>true).catch(()=>false);
+  const has=await p.evaluate(()=>!!document.querySelector('.watered')).catch(()=>false);
+  if(ok&&has){
+    const r=await p.evaluate(()=>({reports:document.querySelectorAll('.rep-card').length,
+      crops:document.querySelectorAll('.crop-row').length, cut:[...document.querySelectorAll('.crop-valves')].map(x=>x.textContent).filter(t=>/cut short/.test(t)),
+      phases:document.querySelectorAll('.phase').length}));
+    check('replay: reports are the latest of each kind, at most 8', r.reports>0&&r.reports<=8, `${r.reports} cards`);
+    check('replay: watered lists crops with minutes', r.crops>=5, `${r.crops} crops`);
+    check('replay: a cut-short count never exceeds the runs', r.cut.every(t=>+(/(\d+) cut short/.exec(t)||[0,0])[1]<=4), r.cut.join(' | '));
+    check('replay: three phases drawn', r.phases===3, `${r.phases}`);
+    await p.goto(p.url().replace('#/irrigation','#/'));
+    await p.waitForSelector('.attn');
+    const h=await p.evaluate(()=>({tiles:[...document.querySelectorAll('.tile .tile-name')].map(t=>t.textContent),
+      attn:[...document.querySelectorAll('.attn-row strong')].map(t=>t.textContent)}));
+    check('replay: no inverter or AC setting among Home tiles', h.tiles.length>0&&!h.tiles.some(t=>/export limit|sleep mode|display/i.test(t)), h.tiles.join(', '));
+    check('replay: appliances switched off are never "needs a look"', !h.attn.some(t=>/AC|TV|printer|P1S/i.test(t)), h.attn.join(' | '));
+  } else console.log('  skip  replay checks (no replay.local.json)');
   await c.close();
 }
 await b.close();

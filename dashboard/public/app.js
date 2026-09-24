@@ -470,7 +470,7 @@ function render() {
   const areas = groupByArea(all);
   document.querySelectorAll('.nav-admin').forEach((n) => { n.hidden = !isAdmin; });
   document.querySelectorAll('[data-nav]').forEach((n) =>
-    n.classList.toggle('on', n.dataset.nav === (['area', 'devices'].includes(r.name) ? 'areas' : r.name)));
+    n.classList.toggle('on', n.dataset.nav === (['area', 'devices'].includes(r.name) ? 'areas' : r.name === 'sys' ? 'overview' : r.name)));
 
   reconcilePending(all);
   syncWaterPolling(r.name === 'water' || r.name === 'overview');
@@ -487,6 +487,7 @@ function render() {
     else if (r.name === 'devices') view.innerHTML = devicesView(all);
     else if (r.name === 'irrigation') view.innerHTML = irrigationView();
     else if (r.name === 'water') view.innerHTML = waterView();
+    else if (r.name === 'sys') view.innerHTML = systemView(all, r.arg);
     else if (r.name === 'admin') view.innerHTML = isAdmin ? adminView()
       : head('Admin', '', '') +
         emptyBlock('Admins only', 'Your account does not have admin access.');
@@ -722,67 +723,333 @@ function irrigationCard() {
   </a>`;
 }
 
-function solarCard(all) {
-  const sol = solarGlance(all);
-  if (!sol) return '';
-  // "2486 W" reads better as "2.49 kW".
-  let [nowV, nowU] = String(sol.now || '—').split(' ');
-  if (nowU === 'W' && Number(nowV) >= 1000) { nowV = (Number(nowV) / 1000).toFixed(2); nowU = 'kW'; }
-  return `<a class="panel vcard solar" href="#/area/${encodeURIComponent(sol.area)}" aria-label="Solar">
-    <span class="vcard-label">Solar</span>
-    <div class="vcard-body"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>
-      ${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('')}</svg></span>
-      <div class="vcard-text"><strong class="big">${escapeHtml(nowV)}<small>${escapeHtml(nowU || '')}</small></strong>
-        <span>now${sol.today ? ` · ${escapeHtml(sol.today)} today` : ''}</span></div></div>
-  </a>`;
+/** One operable thing as a tile; the whole tile is the button. */
+function tileFor(e) {
+  const want = pending.get(e.key)?.want;
+  const on = want ? want === 'on' : isOn(e);
+  const can = canControl && bridgeGate('control').ok;
+  const full = e.name || e.entity_id;
+  const dev = state.devices?.[e.device]?.name || '';
+  const trimmed = dev && full.startsWith(`${dev} `) ? full.slice(dev.length + 1) : full;
+  const name = trimmed || full;
+  return `<button class="tile${on ? ' is-on' : ''}${want ? ' busy' : ''}" data-key="${escapeHtml(e.key)}" data-act="toggle"` +
+    ` role="switch" aria-checked="${on}" aria-label="${escapeHtml(full)}"${can ? '' : ' disabled'}>` +
+    `<span class="tile-ico"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconFor(e)}"/></svg></span>` +
+    `<span class="tile-name">${escapeHtml(name)}</span>` +
+    `<span class="tile-meta">${escapeHtml(areaName(e.area))} · ${on ? 'On' : 'Off'}</span></button>`;
 }
 
-function healthCard(devices) {
-  const n = devices.length, bad = devices.filter(deviceOffline).length, ok = n - bad;
-  const r = 42, c = 2 * Math.PI * r, f = n ? ok / n : 0;
-  return `<a class="panel vcard" href="#/devices" data-act="filter" data-status="${bad ? 'offline' : 'all'}" aria-label="Devices">
-    <span class="vcard-label">Devices</span>
-    <div class="vcard-body"><div class="ring donut" role="img" aria-label="${ok} of ${n} reporting">
-      <svg viewBox="0 0 100 100"><circle class="ring-track bad" cx="50" cy="50" r="${r}"/>
-        <circle class="ring-fill" cx="50" cy="50" r="${r}" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}"/></svg>
-      <span class="ring-mid"><strong>${ok}</strong><small>of ${n}</small></span></div>
-      <div class="vcard-text"><strong>${bad ? `${bad} not reporting` : 'All reporting'}</strong>
-        <span>${escapeHtml(bad ? listWords(troubledAreas(devices).map(areaName), 2) : 'Every device is answering')}</span></div></div>
-  </a>`;
-}
-
-/* The switches as tiles: an icon, a name, the room, and the whole tile is
- * the button. On tiles fill with the brand green. */
+/* The switches as tiles, on first: the ones you would reach for. */
 function switchTiles(all) {
-  const operable = all.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
+  // Only the lights & switches system: an inverter's export-limit switch or
+  // an AC's sleep mode is a setting, not something to reach for on Home.
+  const sys = farmSystems(all).switches;
+  const operable = (sys ? sys.ents : []).filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e)).sort(byName);
   const shown = operable.filter(isOn).concat(operable.filter((e) => !isOn(e))).slice(0, 8);
   if (!shown.length) return '';
-  const gateOk = bridgeGate('control').ok;
-  const tiles = shown.map((e) => {
-    const want = pending.get(e.key)?.want;
-    const on = want ? want === 'on' : isOn(e);
-    const can = canControl && gateOk;
-    const name = e.name || e.entity_id;
-    return `<button class="tile${on ? ' is-on' : ''}${want ? ' busy' : ''}" data-key="${escapeHtml(e.key)}" data-act="toggle"` +
-      ` role="switch" aria-checked="${on}" aria-label="${escapeHtml(name)}"${can ? '' : ' disabled'}>` +
-      `<span class="tile-ico"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconFor(e)}"/></svg></span>` +
-      `<span class="tile-name">${escapeHtml(name)}</span>` +
-      `<span class="tile-meta">${escapeHtml(areaName(e.area))} · ${on ? 'On' : 'Off'}</span></button>`;
-  }).join('');
   const more = operable.length - shown.length;
   return `<section class="tiles-sec" aria-label="Switches">
     <div class="panel-head bare"><h2 class="panel-title">Switches</h2>
-      <a class="panel-link" href="#/devices">${more > 0 ? `${more} more` : 'All devices'}${arrow()}</a></div>
-    ${controlNote()}<div class="tiles">${tiles}</div></section>`;
+      <a class="panel-link" href="#/sys/switches">${more > 0 ? `All ${operable.length}` : 'All'}${arrow()}</a></div>
+    ${controlNote()}<div class="tiles">${shown.map(tileFor).join('')}</div></section>`;
+}
+
+/* ---- the farm, by system ----
+ * Devices sorted into what they are, from their own entities rather than
+ * names typed by hand: an inverter reports PV power, a camera is a camera,
+ * an AC is a climate entity. Mirrors Systems.swift in SNOFCore; keep the
+ * rules in step. Each system knows whether being offline is a problem (a
+ * camera, the inverter, a switch module) or only means it is switched off at
+ * the wall (an AC, a TV, the 3D printer), so appliances at rest never read
+ * as faults. (Owner, 2026-09-25: most "offline" devices were ACs, TVs and a
+ * printer that were simply off.) */
+const SYSTEMS = {
+  security: { title: 'Security', icon: 'i-shield', offline: 'bad' },
+  solar: { title: 'Solar', icon: 'i-sun', offline: 'warn' },
+  switches: { title: 'Lights & switches', icon: 'i-light', offline: 'warn' },
+  climate: { title: 'Climate', icon: 'i-climate', offline: 'none' },
+  media: { title: 'TVs', icon: 'i-media_player', offline: 'none' },
+  printer: { title: '3D printer', icon: 'i-printer', offline: 'none' },
+  other: { title: 'Other', icon: 'i-default', offline: 'none' },
+};
+const SYSTEM_ORDER = ['security', 'solar', 'switches', 'climate', 'media', 'printer', 'other'];
+const lname = (e) => String(e.name || '').toLowerCase();
+const numOf = (e) => { const n = parseFloat(e?.state); return e && !isBad(e) && Number.isFinite(n) ? n : null; };
+const unitOf = (e) => e?.attrs?.unit_of_measurement || '';
+const fmtPower = (w) => (w >= 1000 ? `${(w / 1000).toFixed(2)} kW` : `${Math.round(w)} W`);
+
+function systemOfDevice(g) {
+  const ents = g.ents;
+  const has = (dom) => ents.some((e) => e.domain === dom);
+  if (ents.some((e) => e.domain === 'sensor' && /(pv power|solar power|pv generation)/.test(lname(e)))) return 'solar';
+  if (has('alarm_control_panel') || has('camera') && !ents.some((e) => /print/.test(lname(e)))) return 'security';
+  if (ents.some((e) => /\bprint (error|progress|status)|current stage/.test(lname(e)))) return 'printer';
+  if (has('climate')) return 'climate';
+  if (has('media_player')) return 'media';
+  if (ents.some((e) => CONTROLLABLE.has(e.domain))) return 'switches';
+  return 'other';
+}
+
+/** { id -> { id, title, icon, offline, devices, ents } } for systems that have devices. */
+function farmSystems(all) {
+  const groups = byDevice(all);
+  const out = {};
+  const put = (id, g) => {
+    if (!out[id]) out[id] = { id, ...SYSTEMS[id], devices: [], ents: [] };
+    out[id].devices.push(g); out[id].ents.push(...g.ents);
+  };
+  const printers = [];
+  const rest = [];
+  for (const g of groups) {
+    const id = systemOfDevice(g);
+    if (id === 'printer') { printers.push(g.name); put(id, g); } else rest.push([id, g]);
+  }
+  // A printer's add-ons (its AMS, the external spool) are named after it.
+  for (const [id, g] of rest) put(printers.some((p) => g.name.startsWith(`${p}_`)) ? 'printer' : id, g);
+  return out;
+}
+
+/** One status line per system: { state: on|rest|off|offline|bad, line, sub }. */
+function systemSummary(sys) {
+  const ents = sys.ents;
+  const find = (test) => ents.find((e) => test(lname(e), e) && !isBad(e)) || ents.find((e) => test(lname(e), e));
+  const offlineDevices = sys.devices.filter(deviceOffline);
+  const allOffline = offlineDevices.length === sys.devices.length;
+  switch (sys.id) {
+    case 'solar': {
+      const pv = find((n, e) => e.domain === 'sensor' && (n.endsWith('pv power') || n.endsWith('solar power')));
+      const today = find((n, e) => e.domain === 'sensor' && n.includes('today') && (n.includes('pv') || n.includes('solar')));
+      const mode = find((n) => n.endsWith('work mode'));
+      let w = numOf(pv);
+      if (w != null && unitOf(pv).toLowerCase() === 'kw') w *= 1000;
+      const kwh = numOf(today);
+      if (allOffline || w == null) return { state: 'offline', line: 'Inverter offline', sub: '', watts: null, kwh };
+      if (w > 0) return { state: 'on', line: fmtPower(w), sub: kwh != null ? `${kwh} kWh today` : 'generating', watts: w, kwh };
+      const resting = /wait|standby|sleep/i.test(mode?.state || '');
+      return { state: 'rest', line: resting ? 'Resting' : '0 W', sub: kwh ? `${kwh} kWh today` : (resting ? 'No sun right now' : ''), watts: 0, kwh };
+    }
+    case 'security': {
+      const panels = ents.filter((e) => e.domain === 'alarm_control_panel' && !isBad(e));
+      const cams = ents.filter((e) => e.domain === 'camera');
+      const camsOn = cams.filter((e) => !isBad(e)).length;
+      const active = ents.filter((e) => e.domain === 'binary_sensor' && isOn(e) && /(person|motion|pet) detected/.test(lname(e)));
+      const p = panels.find((e) => e.state === 'triggered') || panels.find((e) => /^armed/.test(e.state)) || panels[0];
+      const armed = !p ? '' : p.state === 'triggered' ? 'Alarm triggered'
+        : p.state === 'disarmed' ? 'Disarmed' : /^armed_/.test(p.state) ? `Armed · ${cap(p.state.replace('armed_', '').replace('_', ' '))}` : cap(p.state);
+      const camLine = cams.length ? `${camsOn} of ${cams.length} cameras online` : '';
+      return { state: p?.state === 'triggered' ? 'bad' : active.length ? 'on' : camsOn < cams.length ? 'warn' : 'rest',
+               line: armed || camLine || 'No alarm', sub: active.length ? `${active.length} detecting now` : (armed ? camLine : ''),
+               armed: !!p && /^armed/.test(p.state), camsOn, cams: cams.length, active };
+    }
+    case 'switches': {
+      const ops = ents.filter((e) => CONTROLLABLE.has(e.domain));
+      const live = ops.filter((e) => !isBad(e));
+      const on = live.filter(isOn).length;
+      return { state: on ? 'on' : live.length ? 'rest' : 'offline',
+               line: !live.length ? 'Offline' : on ? `${on} on` : 'All off',
+               sub: `${live.length} of ${ops.length} reachable`, on, total: ops.length };
+    }
+    case 'climate': case 'media': {
+      const main = ents.filter((e) => e.domain === (sys.id === 'climate' ? 'climate' : 'media_player'));
+      const on = main.filter((e) => !isBad(e) && !['off', 'standby', 'idle'].includes(e.state));
+      const noun = sys.id === 'climate' ? ['AC', 'ACs'] : ['TV', 'TVs'];
+      return { state: on.length ? 'on' : 'off', line: on.length ? `${on.length} on` : 'All off',
+               sub: `${main.length} ${plural(main.length, noun[0], noun[1])}` };
+    }
+    case 'printer': {
+      const prog = find((n, e) => n.includes('progress') && unitOf(e) === '%');
+      const stage = find((n) => /current stage|print status/.test(n));
+      const pct = numOf(prog);
+      if (allOffline) return { state: 'off', line: 'Off', sub: 'Switched off' };
+      if (pct != null && pct > 0 && pct < 100) return { state: 'on', line: `Printing ${Math.round(pct)}%`, sub: stage && !isBad(stage) ? cap(String(stage.state).replace(/_/g, ' ')) : '' };
+      return { state: 'rest', line: stage && !isBad(stage) ? cap(String(stage.state).replace(/_/g, ' ')) : 'Idle', sub: '' };
+    }
+    default: {
+      const on = sys.devices.filter(deviceActive).length;
+      return { state: on ? 'on' : 'rest', line: on ? `${on} active` : 'Quiet', sub: `${sys.devices.length} ${plural(sys.devices.length, 'device', 'devices')}` };
+    }
+  }
+}
+
+/* ---- needs a look ----
+ * Everything across every system that deserves a look, worst first, each
+ * with where to go about it. Appliances switched off never appear here. */
+function attentionItems(all, systems) {
+  const items = [];
+  const add = (level, text, sub, href) => items.push({ level, text, sub, href });
+  const b = bridgeStatus();
+  if (b.cls === 'pill-offline' || b.cls === 'pill-stale') {
+    add('bad', 'Farm box offline', `Switches and controller reads are paused${b.ageSec ? ` · quiet for ${humanAge(b.ageSec)}` : ''}`, '#/');
+  }
+  // Irrigation.
+  const c = irrig(), p = c.program;
+  if (p && p.running) for (const f of p.faults || []) add('bad', `Valve ${f}`, 'during the running program', '#/irrigation');
+  const sup = irrSupply();
+  if (sup && sup.v.length && !sup.live) add('warn', 'No power at the pump', sup.at ? `as of ${sup.at}` : '', '#/irrigation');
+  else if (sup && sup.missing) add('bad', 'A power phase is missing', `${sup.live} of 3 phases live${sup.at ? ` · ${sup.at}` : ''}`, '#/irrigation');
+  const since = serverNow() - 864e5;
+  // Programs with no valves assigned end at 0m by design; they are not faults.
+  const stopped = irrRuns().filter((r) => !r.finished && r.planned != null && r.valves && (farmMs(r.start) ?? 0) >= since);
+  if (stopped.length) add('warn', `${stopped.length} ${plural(stopped.length, 'run', 'runs')} stopped early`, stopped.slice(0, 2).map((r) => `${r.name} ${runAmount(r)}`).join(' · '), '#/irrigation');
+  const repErr = c.meta?.lastError;
+  if (repErr) add('warn', 'Could not reach the controller', repErr.replace(/^DCON [a-z_]+: /, '').slice(0, 80), '#/irrigation');
+  if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', 'valve control is off until an admin signs in', '#/irrigation');
+  // Water chain.
+  const w = state.water || {};
+  for (const m of [w.river, ...Object.values(w.motors || {})].filter(Boolean)) {
+    if ((m.trips || []).length) add('bad', `${m.name} tripped`, m.trips.join(', '), '#/water');
+    if (m.skippedZone != null) add('warn', `${m.name}: zone ${m.skippedZone} skipped`, 'no valve feedback', '#/water');
+  }
+  const ws = state.meta?.water || {};
+  if (ws.enabled === true) {
+    if (isAdmin && liveskyState().kind !== 'ok') add('warn', 'Livesky sign-in needed', 'the river motor is not being read', '#/water');
+    else if (ws.livesky?.ok === false && ws.livesky?.error) add('warn', 'River motor not read', ws.livesky.error, '#/water');
+    if (ws.niagara?.ok === false && ws.niagara?.error) add('warn', 'Other farm not read', ws.niagara.error, '#/water');
+    if (w.pulledAt && serverNow() - w.pulledAt > 30 * 60000) add('warn', 'Water readings are old', `last read ${agoText(w.pulledAt)}`, '#/water');
+  }
+  // Home Assistant systems that should never be offline.
+  for (const id of ['security', 'solar', 'switches']) {
+    const sys = systems[id];
+    if (!sys) continue;
+    if (id === 'security') {
+      const s = systemSummary(sys);
+      if (s.state === 'bad') add('bad', 'Alarm triggered', '', `#/sys/security`);
+      const camsDown = sys.ents.filter((e) => e.domain === 'camera' && isBad(e));
+      if (camsDown.length) add('warn', `${camsDown.length === 1 ? camsDown[0].name.replace(/ camera$/i, '') + ' camera' : `${camsDown.length} cameras`} offline`,
+        camsDown.length > 1 ? camsDown.map((e) => e.name).join(', ') : areaName(camsDown[0].area), '#/sys/security');
+      continue;
+    }
+    if (id === 'solar') {
+      const h = new Date(serverNow() + 330 * 60000).getUTCHours();
+      if (h >= 7 && h < 18 && systemSummary(sys).state === 'offline') add('warn', 'Solar inverter offline', 'during daylight', '#/sys/solar');
+      continue;
+    }
+    const down = sys.devices.filter(deviceOffline);
+    if (down.length) add('warn', `${down.length === 1 ? down[0].name : `${down.length} switch modules`} offline`,
+      down.length === 1 ? areaName(down[0].area) : down.map((d) => d.name).join(', '), '#/sys/switches');
+  }
+  return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1));
+}
+
+function attentionPanel(items) {
+  if (!items.length) {
+    return `<section class="panel attn is-clear" aria-label="Needs a look"><span class="attn-ok">${arrow('i-check')}</span>` +
+      `<span><strong>All clear</strong><span>Nothing on the farm needs a look.</span></span></section>`;
+  }
+  const bad = items.filter((i) => i.level === 'bad').length;
+  const shown = items.slice(0, 5);
+  return `<section class="panel attn${bad ? ' is-bad' : ''}" aria-label="Needs a look">
+    <div class="attn-head"><span class="attn-n">${items.length}</span><h2 class="panel-title">${plural(items.length, 'Thing needs', 'Things need')} a look</h2></div>
+    ${shown.map((i) => `<a class="attn-row ${i.level}" href="${i.href}"><span class="attn-dot"></span>` +
+      `<span class="attn-main"><strong>${escapeHtml(i.text)}</strong>${i.sub ? `<span>${escapeHtml(i.sub)}</span>` : ''}</span>${arrow('i-chevron', 'attn-chev')}</a>`).join('')}
+    ${items.length > shown.length ? `<p class="attn-more">${items.length - shown.length} more</p>` : ''}
+  </section>`;
+}
+
+function securityCard(systems) {
+  const sys = systems.security;
+  if (!sys) return '';
+  const s = systemSummary(sys);
+  const tone = s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : '';
+  return `<a class="panel vcard sec ${tone}" href="#/sys/security" aria-label="Security">
+    <span class="vcard-label">Security</span>
+    <div class="vcard-body"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
+      <div class="vcard-text"><strong>${escapeHtml(s.line)}</strong>
+        <span>${escapeHtml(s.sub || (s.cams ? `${s.camsOn} of ${s.cams} cameras online` : ''))}</span>
+        ${s.cams ? `<span class="cam-dots" aria-hidden="true">${sys.ents.filter((e) => e.domain === 'camera').map((e) => `<i class="${isBad(e) ? 'off' : 'on'}"></i>`).join('')}</span>` : ''}</div></div>
+  </a>`;
+}
+
+function solarCard(systems) {
+  const sys = systems.solar;
+  if (!sys) return '';
+  const s = systemSummary(sys);
+  const [v, u] = s.watts > 0 ? fmtPower(s.watts).split(' ') : [s.line, ''];
+  return `<a class="panel vcard solar is-${s.state}" href="#/sys/solar" aria-label="Solar">
+    <span class="vcard-label">Solar</span>
+    <div class="vcard-body"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>
+      ${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('')}</svg></span>
+      <div class="vcard-text"><strong class="${s.watts > 0 ? 'big' : ''}">${escapeHtml(v)}${u ? `<small>${escapeHtml(u)}</small>` : ''}</strong>
+        <span>${escapeHtml(s.watts > 0 ? `now · ${s.sub}` : s.sub || '')}</span></div></div>
+  </a>`;
+}
+
+/* The rest of the farm, one tile each: what it is, and one word on how it is. */
+function systemsGrid(systems) {
+  const ids = ['switches', 'climate', 'media', 'printer', 'other'].filter((id) => systems[id]);
+  if (!ids.length) return '';
+  return `<section class="sys-sec" aria-label="Farm systems">
+    <div class="panel-head bare"><h2 class="panel-title">Around the farm</h2></div>
+    <div class="sys-grid">${ids.map((id) => {
+      const sys = systems[id], s = systemSummary(sys);
+      return `<a class="sys-tile is-${s.state}" href="#/sys/${id}"><span class="sys-ico"><svg viewBox="0 0 24 24" class="ico"><use href="#${sys.icon}"/></svg></span>` +
+        `<span class="sys-name">${escapeHtml(sys.title)}</span><span class="sys-line">${escapeHtml(s.line)}</span>` +
+        (s.sub ? `<span class="sys-sub">${escapeHtml(s.sub)}</span>` : '') + `</a>`;
+    }).join('')}</div></section>`;
 }
 
 function overviewView(all) {
-  const devices = byDevice(all);
+  const systems = farmSystems(all);
   const busy = irrRefreshing.size > 0;
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="home-refresh"${busy ? ' disabled' : ''}>${busy ? 'Checking…' : 'Refresh'}</button>`;
-  return head('Home', '', refresh) + flowHero() +
-    `<div class="vcards">${irrigationCard()}${solarCard(all)}${healthCard(devices)}</div>` +
-    switchTiles(all);
+  return head('Home', '', refresh) + attentionPanel(attentionItems(all, systems)) + flowHero() +
+    `<div class="vcards">${irrigationCard()}${solarCard(systems)}${securityCard(systems)}</div>` +
+    switchTiles(all) + systemsGrid(systems);
+}
+
+/* ---- one system, in full ---- */
+function systemView(all, id) {
+  const systems = farmSystems(all);
+  const sys = systems[id];
+  const back = `<a class="back" href="#/">${arrow('i-back')}Home</a>`;
+  if (!sys) return head('Not found', '', '', back) + emptyBlock('Nothing here', 'This part of the farm has no devices right now.');
+  const s = systemSummary(sys);
+  const devices = sys.devices.slice().sort((a, b) => (deviceOffline(a) - deviceOffline(b)) || a.name.localeCompare(b.name, undefined, NATURAL));
+  let top = '';
+  if (id === 'solar') {
+    const f = (test) => sys.ents.find((e) => test(lname(e)) && !isBad(e));
+    const facts = [
+      ['Now', s.watts != null ? fmtPower(s.watts) : '—'],
+      ['Today', s.kwh != null ? `${s.kwh} kWh` : '—'],
+      ['Lifetime', (() => { const t = numOf(f((n) => n.includes('total pv generation'))); return t != null ? `${Math.round(t).toLocaleString('en-IN')} kWh` : '—'; })()],
+      ['Mode', f((n) => n.endsWith('work mode'))?.state || '—'],
+      ['Inverter', (() => { const t = numOf(f((n) => n.endsWith('inverter temperature'))); return t != null ? `${t} °C` : '—'; })()],
+      ['Grid', (() => { const v = numOf(f((n) => n.includes('on-grid l1 voltage'))); return v != null ? `${Math.round(v)} V` : '—'; })()],
+      ['Export limit', (() => { const sw = f((n) => n.includes('export limit switch')); const pct = numOf(f((n) => n.endsWith('grid export limit')));
+        return sw ? `${sw.state === 'on' ? 'On' : 'Off'}${pct != null ? ` · ${pct}%` : ''}` : '—'; })()],
+    ];
+    top = `<section class="panel sys-hero solar is-${s.state}"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>` +
+      [0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('') + `</svg></span>` +
+      `<div class="mb-facts">${facts.map(([k, v]) => `<div><span>${k}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></section>`;
+  } else if (id === 'security') {
+    const cams = sys.ents.filter((e) => e.domain === 'camera');
+    top = `<section class="panel sys-hero sec ${s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : ''}"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
+      <div><h2 class="sys-hero-title">${escapeHtml(s.line)}</h2><p class="sys-hero-sub">${escapeHtml(`${s.camsOn} of ${s.cams} cameras online`)}${s.active.length ? ` · ${s.active.length} detecting now` : ''}</p></div></section>` +
+      `<section class="panel"><div class="list">${cams.map((e) => {
+        const dev = sys.devices.find((d) => d.ents.includes(e));
+        const now = (dev?.ents || []).filter((x) => x.domain === 'binary_sensor' && isOn(x) && /(person|motion|pet|sound) detected/.test(lname(x)))
+          .map((x) => lname(x).match(/(person|motion|pet|sound) detected/)[1]);
+        return `<div class="row ${isBad(e) ? 'is-bad' : ''}"><span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-camera"/></svg></span>
+          <span class="row-main"><span class="row-name">${escapeHtml(dev?.name || e.name)}</span><span class="row-meta">${escapeHtml(areaName(e.area))}</span></span>
+          ${isBad(e) ? `<span class="tag tag-bad">Offline</span>` : now.length ? `<span class="tag tag-on">${escapeHtml(cap(now.join(', ')))} now</span>` : `<span class="tag">Watching</span>`}</div>`;
+      }).join('')}</div></section>`;
+  } else {
+    top = `<section class="panel sys-hero is-${s.state}"><span class="sys-ico big"><svg viewBox="0 0 24 24" class="ico"><use href="#${sys.icon}"/></svg></span>
+      <div><h2 class="sys-hero-title">${escapeHtml(s.line)}</h2>${s.sub ? `<p class="sys-hero-sub">${escapeHtml(s.sub)}</p>` : ''}</div></section>`;
+  }
+  // Operable things as tiles; everything else as the device's readings,
+  // offline devices last and folded, since there is nothing to do with them.
+  const ops = sys.ents.filter((e) => CONTROLLABLE.has(e.domain) && !isBad(e));
+  // Settings stay settings: the inverter's and the ACs' switches are shown as
+  // readings, never offered as tiles.
+  const tiles = ops.length && ['switches', 'other'].includes(id)
+    ? `<section class="tiles-sec"><div class="panel-head bare"><h2 class="panel-title">Switches</h2></div>${controlNote()}<div class="tiles">${ops.sort(byName).map(tileFor).join('')}</div></section>` : '';
+  const live = devices.filter((d) => !deviceOffline(d));
+  const off = devices.filter(deviceOffline);
+  const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
+      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !['select', 'number', 'time', 'button', 'image'].includes(e.domain)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
+  const offNote = off.length && id !== 'security' ? `<p class="more-note">${escapeHtml(SYSTEMS[id].offline === 'none' ? 'Switched off' : 'Offline')}: ${escapeHtml(off.map((d) => d.name).join(', '))}</p>` : '';
+  return head(sys.title, '', '', back) + top + tiles + devList + offNote;
 }
 
 /* Rooms and All devices are one destination with a switch: a room is
@@ -940,6 +1207,17 @@ const irrig = () => state.irrigation || {};
 const irrReports = () => Object.entries(state.irrigation_reports || {})
   .filter(([, r]) => r && typeof r === 'object')
   .sort((a, b) => (a[1].at || 0) - (b[1].at || 0));
+/** The newest report of each kind and range, newest last: every Refresh
+ *  writes three reports, and eighty identical cards buried the one asked for
+ *  (found on the real farm, 2026-09-25). */
+function latestReports() {
+  const seen = new Map();
+  for (const [k, r] of irrReports()) {
+    const p = r.params || {};
+    seen.set(`${r.type}|${p.from || ''}|${p.to || ''}`, [k, r]);
+  }
+  return [...seen.values()].sort((a, b) => (a[1].at || 0) - (b[1].at || 0)).slice(-8);
+}
 
 const irrNeedsRange = (t) => (IRR_TYPES.find((x) => x.type === t) || {}).needs === 'range';
 
@@ -1420,7 +1698,7 @@ const VALVE_ART_WORDS = {
   veg: 'veg', vegetable: 'veg', vegetables: 'veg', onion: 'onion', kulam: 'kulam',
   grass: 'grass', house: 'house', mulberry: 'mulberry', coco: 'coconut', coconut: 'coconut',
   gova: 'guava', guava: 'guava', mango: 'mango', amla: 'amla', jamun: 'jamun',
-  pomegranate: 'pomegranate', backwash: 'backwash',
+  pomegranate: 'pomegranate', pomegra: 'pomegranate', backwash: 'backwash',
 };
 function valveArt(name, type, status) {
   const t = String(type || '').toLowerCase();
@@ -1535,7 +1813,8 @@ function irrSupply() {
   if (!v.length && !a.length) return null;
   const note = [volts?.note, amps?.note].filter(Boolean).join(' ');
   const live = v.filter((x) => x >= 120).length;
-  return { v, a, at: (/\d{2}:\d{2}/.exec(note) || [''])[0], live,
+  const imb = parseFloat((/([\d.]+)% imbalance/.exec(volts?.note || '') || [])[1]);
+  return { v, a, at: (/\d{2}:\d{2}/.exec(note) || [''])[0], live, imbalance: Number.isFinite(imb) ? imb : null,
            missing: v.length === 3 && live > 0 && live < 3, drawing: a.length ? a.some((x) => x > 0.5) : null };
 }
 function irrPressure() {
@@ -1739,6 +2018,9 @@ function irrNowModule() {
 }
 
 function irrValvesModule() {
+  // Only while picking valves for a run: a standing list of valve names told
+  // the owner nothing (2026-09-25). What each crop got is irrCropsModule.
+  if (!(isAdmin && runOpen)) return '';
   const rows = valveRows();
   if (!rows.length) return '';
   const now = irrNowState();
@@ -1769,6 +2051,73 @@ function irrValvesModule() {
     `<div class="valve-grid">${cells}</div>${bar}</section>`;
 }
 
+/* ---- watered, by crop ----
+ * What each crop got on one farm day, from the controller's own run log:
+ * the useful form of "the valves" (owner, 2026-09-25: a plain valve list
+ * "makes no use and sense"). Valves in one program run together, so a crop
+ * got as long as its longest-watered valve. Display only. */
+const CROP_LABELS = {
+  veg: 'Vegetables', onion: 'Onion', kulam: 'Kulam', grass: 'Grass', house: 'House', mulberry: 'Mulberry',
+  coconut: 'Coconut', guava: 'Guava', mango: 'Mango', amla: 'Amla', jamun: 'Jamun', pomegranate: 'Pomegranate',
+};
+let cropDayPick = null;   // 'today' | 'yesterday', once chosen by hand
+const valveNo = (name) => { const m = /^(\d{1,2})\b/.exec(String(name || '').trim()); return m ? Number(m[1]) : null; };
+
+function cropBreakdown(day) {
+  const runs = irrRuns().filter((r) => r.day === day && r.valves);
+  const valves = new Map();
+  for (const r of runs) {
+    for (const n of r.valves.split(/,\s*/).filter(Boolean)) {
+      const v = valves.get(n) || { name: n, min: 0, cut: 0, runs: 0 };
+      v.min += r.delivered || 0; v.runs += 1; if (!r.finished) v.cut += 1;
+      valves.set(n, v);
+    }
+  }
+  const crops = new Map();
+  for (const v of valves.values()) {
+    const art = valveArt(v.name, 'irrigation');
+    const key = art && art !== 'backwash' ? art : `v:${v.name}`;
+    const c = crops.get(key) || { key, art: art && art !== 'backwash' ? art : null,
+      label: CROP_LABELS[art] || String(v.name).replace(/^\d+\s*/, '') || v.name, min: 0, cut: 0, valves: [] };
+    // Valves of one crop share their runs: count runs, not valve-runs.
+    c.min = Math.max(c.min, v.min); c.cut = Math.max(c.cut, v.cut); c.valves.push(v.name);
+    crops.set(key, c);
+  }
+  const watered = new Set([...valves.keys()].map(valveNo).filter((n) => n != null));
+  const dry = valveRows().filter((r) => isIrrigationValve(r) && !watered.has(Number(r.id))).map((r) => r.name);
+  return { crops: [...crops.values()].sort((a, b) => b.min - a.min || a.label.localeCompare(b.label)), dry, runs };
+}
+
+function irrCropsModule() {
+  const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
+  const hasToday = irrRuns().some((r) => r.day === today);
+  const pick = cropDayPick || (hasToday ? 'today' : 'yesterday');
+  const day = pick === 'today' ? today : yesterday;
+  const { crops, dry, runs } = cropBreakdown(day);
+  const pumps = (irrig().motorLog || []).map(parsePumpDay).filter(Boolean);
+  const pump = pumps.find((p) => p.day === day);
+  if (!irrRuns().length && !pumps.length) return '';
+  const seg = `<div class="seg seg-sm" role="group" aria-label="Which day">` +
+    [['today', 'Today'], ['yesterday', 'Yesterday']].map(([k, l]) =>
+      `<button data-act="crop-day" data-day="${k}" aria-pressed="${pick === k}">${l}</button>`).join('') + `</div>`;
+  const water = runs.reduce((s, r) => s + (r.delivered || 0), 0);
+  const fig = (v, label) => `<div class="fig"><span class="fig-v">${v}</span><span class="fig-l">${label}</span></div>`;
+  const max = Math.max(1, ...crops.map((c) => c.min));
+  const rows = crops.map((c) => `<div class="crop-row${c.cut ? ' is-cut' : ''}">
+      ${c.art ? artImg(c.art, 'crop-art') : `<span class="crop-art crop-ico">${arrow('i-valve')}</span>`}
+      <span class="crop-main"><span class="crop-name">${escapeHtml(c.label)}</span>
+        <span class="crop-valves">${escapeHtml(c.valves.join(', '))}${c.cut ? ` · ${c.cut} cut short` : ''}</span>
+        <span class="crop-bar"><i style="width:${(c.min / max * 100).toFixed(1)}%"></i></span></span>
+      <span class="crop-min">${escapeHtml(fmtMin(c.min))}</span></div>`).join('');
+  return `<section class="panel irr-mod watered" aria-label="Watered">
+    <div class="panel-head"><h2 class="panel-title">Watered</h2>${seg}</div>
+    <div class="figs">${fig(runs.length, plural(runs.length, 'Run', 'Runs'))}${fig(fmtMin(water), 'Water')}` +
+    (pump ? fig(fmtMin(pump.pumpMin), 'Pump') : '') + (pump?.kwh != null ? fig(`${Math.round(pump.kwh)}<small>kWh</small>`, 'Energy') : '') + `</div>` +
+    (crops.length ? `<div class="crop-list">${rows}</div>` : `<p class="more-note crop-empty">Nothing watered ${pick === 'today' ? 'yet today' : 'yesterday'}.</p>`) +
+    (dry.length && crops.length ? `<p class="more-note crop-dry">Not watered: ${escapeHtml(dry.join(', '))}</p>` : '') +
+    `</section>`;
+}
+
 function irrDayModule() {
   const d = irrLatestDay();
   if (!d) return '';
@@ -1790,18 +2139,30 @@ function irrDayModule() {
 function irrSupplyModule() {
   const s = irrSupply(), p = irrPressure();
   if (!s && !p) return '';
-  const fig = (v, label) => `<div class="fig"><span class="fig-v">${v}</span><span class="fig-l">${label}</span></div>`;
+  // Three phases as three bars against a 0–300 V scale; a phase that is out
+  // of the 200–260 V band, or missing, reads in warning colours.
+  const bars = s && s.v.length ? `<div class="phases" role="img" aria-label="Phase voltages ${s.v.map(Math.round).join(', ')} volts">` +
+    s.v.map((x, i) => `<div class="phase${x < 120 ? ' dead' : x < 200 || x > 260 ? ' warn' : ''}"><span class="phase-bar"><i style="height:${Math.min(100, x / 300 * 100).toFixed(1)}%"></i></span>` +
+      `<strong>${Math.round(x)}</strong><small>L${i + 1}</small></div>`).join('') + `</div>` : '';
   const tags = [];
-  if (s && s.v.length) tags.push(s.missing ? `<span class="tag tag-bad">Phase missing</span>` : s.live ? `<span class="tag tag-on">All phases</span>` : `<span class="tag tag-bad">No power</span>`);
-  if (s && s.drawing != null) tags.push(`<span class="tag${s.drawing ? ' tag-on' : ''}">${s.drawing ? 'Pump running' : 'Pump off'}</span>`);
-  return `<section class="panel irr-mod" aria-label="Supply">` + panelHead('Supply', null) +
-    `<div class="figs">${s && s.v.length ? fig(`${s.v.map(Math.round).join(' · ')}<small>V</small>`, s.at ? `at ${s.at}` : 'Voltage') : ''}` +
-    `${p ? fig(escapeHtml(p.value), p.at ? `Pressure · ${escapeHtml(farmWhen(p.at))}` : 'Pressure') : ''}</div>` +
+  if (s && s.v.length) {
+    if (!s.live) tags.push(`<span class="tag tag-bad">No power</span>`);
+    else if (s.missing) tags.push(`<span class="tag tag-bad">Phase missing · ${s.live} of 3 live</span>`);
+    else if (s.imbalance != null && s.imbalance >= 5) tags.push(`<span class="tag tag-warn">${s.imbalance}% phase imbalance</span>`);
+    else tags.push(`<span class="tag tag-on">All three phases</span>`);
+  }
+  if (s && s.drawing != null) tags.push(`<span class="tag${s.drawing ? ' tag-on' : ''}">${s.drawing ? `Pump running · ${s.a.map((x) => x.toFixed(1)).join(' / ')} A` : 'Pump off'}</span>`);
+  const last = (irrig().pressure || []).at(-1);
+  const outlet = last && /outlet ([\d.]+ ?bar)/.exec(last.detail || '');
+  return `<section class="panel irr-mod" aria-label="Pump and power">` +
+    `<div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>${s && s.at ? `<span class="card-age">at ${escapeHtml(s.at)}</span>` : ''}</div>` +
+    `<div class="supply">${bars}${p ? `<div class="pressure"><span class="fig-v">${escapeHtml(p.value)}</span><span class="fig-l">Inlet pressure</span>` +
+      (outlet ? `<span class="pressure-out">outlet ${escapeHtml(outlet[1])}</span>` : '') + `</div>` : ''}</div>` +
     (tags.length ? `<div class="tags">${tags.join('')}</div>` : '') + `</section>`;
 }
 
 function irrReportsModule() {
-  const reports = irrReports();
+  const reports = latestReports();
   const reachable = reportsGate();
   const pending = irrWaiters.size;
   const groups = [...new Set(IRR_TYPES.map((t) => t.group))];
@@ -1836,8 +2197,8 @@ function irrigationView() {
   const account = isAdmin
     ? `<details class="acct-sec"${mb.kind !== 'ok' || mbStep !== 'idle' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
   return head('Irrigation', '', '') +
-    `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
-    `<div class="irr-col">${irrDayModule()}${irrSupplyModule()}</div></div>` +
+    `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}${irrSupplyModule()}</div>` +
+    `<div class="irr-col">${irrCropsModule()}</div></div>` +
     irrReportsModule() + account;
 }
 
@@ -1870,9 +2231,13 @@ function requestWater(force = false) {
   if (!force && now - waterAsked < WATER_ASK_MS - 2000) return;
   if (force && now - waterAsked < 5000) return;
   waterAsked = now;
-  firebase.database().ref(`farms/${FARM}/water_requests`).push({
-    uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP,
-  }).catch(() => {});
+  // A background refresh must never take the view down with it: this runs
+  // inside render(), so anything it throws would stop the page updating.
+  try {
+    Promise.resolve(firebase.database().ref(`farms/${FARM}/water_requests`).push({
+      uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP,
+    })).catch(() => {});
+  } catch (err) { console.warn('water refresh not sent', err); }
 }
 
 /* Poll only while the Water page is on screen and the tab is visible. */
@@ -2646,6 +3011,7 @@ function wire(all) {
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
 
   view.querySelectorAll('[data-act="irr-refresh"]').forEach((btn) => { btn.onclick = () => refreshIrrigation(); });
+  view.querySelectorAll('[data-act="crop-day"]').forEach((btn) => { btn.onclick = () => { cropDayPick = btn.dataset.day; render(); }; });
   view.querySelectorAll('[data-act="home-refresh"]').forEach((btn) => {
     btn.onclick = () => { requestWater(true); if (canControl) refreshIrrigation(); else toast('ok', 'Asked for fresh water readings.'); };
   });
