@@ -30,10 +30,10 @@ struct RootView: View {
 struct MainTabs: View {
     @Environment(FarmStore.self) private var store
     @State private var account = false
-    @State private var overviewPath: [AreaRoute] = []
-    @State private var areasPath: [AreaRoute] = []
-    @State private var irrigationPath: [AreaRoute] = []
-    @State private var waterPath: [AreaRoute] = []
+    @State private var overviewPath = NavigationPath()
+    @State private var areasPath = NavigationPath()
+    @State private var irrigationPath = NavigationPath()
+    @State private var waterPath = NavigationPath()
 
     var body: some View {
         @Bindable var store = store
@@ -60,7 +60,8 @@ struct MainTabs: View {
         .sheet(isPresented: $account) { AccountSheet() }
         #if DEBUG
         .onAppear {
-            if let id = Snapshot.value("-area") { store.selectedTab = .areas; areasPath = [AreaRoute(id: id)] }
+            if let id = Snapshot.value("-area") { store.selectedTab = .areas; areasPath.append(AreaRoute(id: id)) }
+            if let raw = Snapshot.value("-system"), let id = FarmSystemID(rawValue: raw) { store.selectedTab = .overview; overviewPath.append(SystemRoute(id: id)) }
             if Snapshot.args.contains("-account") { account = true }
         }
         #endif
@@ -70,10 +71,14 @@ struct MainTabs: View {
     /// wordmark on the left, the bridge and the account on the right. The
     /// page's own eyebrow and large title sit in the content, so the bar
     /// never repeats them.
-    private func stack<V: View>(path: Binding<[AreaRoute]>, @ViewBuilder _ content: () -> V) -> some View {
+    /// Type-erased paths: a stack carries both room pages (AreaRoute) and
+    /// system pages (SystemRoute). A typed [AreaRoute] path could not push
+    /// a system page at all.
+    private func stack<V: View>(path: Binding<NavigationPath>, @ViewBuilder _ content: () -> V) -> some View {
         NavigationStack(path: path) {
             content()
                 .navigationDestination(for: AreaRoute.self) { AreaDetailView(areaId: $0.id) }
+                .navigationDestination(for: SystemRoute.self) { SystemView(id: $0.id) }
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar(removing: .title)
                 .toolbar { barItems }

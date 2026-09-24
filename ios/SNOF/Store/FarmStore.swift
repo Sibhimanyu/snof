@@ -458,6 +458,35 @@ final class FarmStore {
     /* ---- irrigation control ---- */
 
     /// The Run/Stop the NUC has not answered yet.
+    /* ---- the farm, by system (SNOFCore Systems.swift) ---- */
+
+    /// Devices sorted into what they are; appliances off at the wall are not faults.
+    var systems: [FarmSystemID: FarmSystem] { Systems.build(entities, names: deviceNames) }
+
+    /// Everything that deserves a look, worst first (Home's first card).
+    var attention: [AttentionItem] {
+        var i = Attention.Input()
+        switch bridgeStatus {
+        case .offline: i.bridgeDown = true
+        case .stale(let age): i.bridgeDown = true; i.bridgeQuietFor = Format.age(age)
+        default: break
+        }
+        i.irrigation = irrigation
+        i.now = now
+        i.mobitechProblem = isAdmin ? mobitechProblem : nil
+        i.liveskyProblem = isAdmin && water.enabled ? liveskyProblem : nil
+        i.water = water
+        i.systems = systems
+        return Attention.items(i)
+    }
+
+    /// The newest report of each kind and range: every Refresh writes three
+    /// reports, and dozens of identical cards buried the one asked for.
+    var latestReports: [Report] {
+        var seen = Set<String>()
+        return reports.filter { seen.insert("\($0.type)|\($0.from ?? "")|\($0.to ?? "")").inserted }.prefix(8).map { $0 }
+    }
+
     /* ---- water chain (read-only) ---- */
 
     /// The river motor and the other farm's two motors, as the water
