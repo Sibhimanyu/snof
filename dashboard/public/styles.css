@@ -496,6 +496,18 @@ input[type=range][disabled]{opacity:.42}
 .dgroup-solo{border:0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--line-soft)}
 .dgroup-solo:last-child{border-bottom:0}
 
+/* ---------- Mobitech account ---------- */
+.mb-panel{padding:20px 22px;display:flex;flex-direction:column;gap:14px}
+.mb-panel .rep-builder{padding:0;border:0;background:transparent}
+.mb-panel .more-note{margin:0;padding:0;border:0}
+.mb-lead{font-size:13.5px;color:var(--muted);max-width:70ch}
+.mb-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 20px;
+  padding:14px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.mb-facts div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.mb-facts span{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.mb-facts strong{font-size:14px;font-weight:650;overflow-wrap:anywhere}
+.mb-actions{display:flex;gap:10px;flex-wrap:wrap}
+
 /* ---------- admin ---------- */
 .acl-row{flex-wrap:wrap;row-gap:8px}
 .acl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}

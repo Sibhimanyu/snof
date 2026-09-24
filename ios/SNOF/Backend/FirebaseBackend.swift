@@ -207,7 +207,12 @@ final class FirebaseBackend: FarmBackend {
                        "user": session.user, "mobileLast4": mobileLast4])
     }
 
-    private func set(_ path: String, _ node: [String: Any]) async throws {
+    func clearMobitechSession() async throws {
+        try await set("private/mobitech", nil)
+        try await set("farms/\(Farm.slug)/mobitech_status", nil)
+    }
+
+    private func set(_ path: String, _ node: [String: Any]?) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             db.reference(withPath: path).setValue(node) { err, _ in
                 if let err = err as NSError? {

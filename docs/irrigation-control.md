@@ -202,3 +202,31 @@ only, no command sent):
 **Still open, owner's call:** (a) the command token; (b) run/stop as
 `V…ON HH MM` / `MOFF` with `cmd_status sent: 2` as an earlier yes (our code
 still sends `FON` / `OFF`); (c) SNOF's own session.
+
+## Mobitech sign-in, rebuilt on the capture (2026-09-24)
+
+The owner asked for the Mobitech part of both apps to be rebuilt on the
+login flow in [mobitech-app.md](mobitech-app.md), which settles open
+decision (c): **SNOF has its own Mobitech session.** (a) and (b) remain
+open: commands still go out as `FON` / `OFF`.
+
+- **Sign in** (Admin on the web, Account in the app; admins): number, then
+  `/v1/otp/` (its `{"message":"Success"}` is checked), then the code and
+  `action=login` with a SNOF-made `…@ios` token. **Before anything is
+  stored the session is proved** with a read-only `action=dashboard` using
+  that token as `token_id`, one of the two calls that check it. A token
+  Mobitech will not serve fails here, in words, and nothing is kept.
+- **Kept** as before: the token in `/private/mobitech` (admins write, no
+  client reads), a status line in `farms/<farm>/mobitech_status`.
+- **Used for both token-checking calls.** The NUC (add-on 0.10.5) and the
+  Cloud Function now read the controller's dashboard with the same signed-in
+  token they send commands with, falling back to the old values.
+- **Mobitech's verdict is recorded.** After each command the sender writes
+  `lastOk` or `lastRejected` (service account) to the status line. The apps
+  show "Mobitech rejected SNOF's session at … — sign in again", in the
+  Mobitech section and, for admins, on the Irrigation screen. No polling.
+- **Sign SNOF out** removes the token and the status line. Mobitech's own
+  logout needs the token, which no client can read, so the registration
+  stays at Mobitech, unused, until the next sign-in replaces it.
+- The screen says what is still unproven: signing SNOF in may sign the
+  phone's Mobitech app out if Mobitech allows one session per account.

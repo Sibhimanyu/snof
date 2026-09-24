@@ -270,6 +270,11 @@ final class DemoBackend: FarmBackend {
         handler?(.mobitechStatus(status))
     }
 
+    func clearMobitechSession() async throws {
+        tree["mobitech_status"] = nil
+        handler?(.mobitechStatus(nil))
+    }
+
     func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String {
         if flag("viewer") || flag("controloff") { throw BackendError.refused }
         let key = "demo_irr_\(UUID().uuidString.prefix(8))"
