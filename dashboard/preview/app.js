@@ -306,7 +306,9 @@ const isBad = (e) => e.state == null || e.state === '' || BAD_STATES.has(e.state
 
 function matches(ent) {
   if (!search) return true;
-  return `${ent.name} ${ent.entity_id} ${ent.state} ${areaName(ent.area)}`.toLowerCase().includes(search);
+  // The page says "offline"; the data says "unavailable". Both find it.
+  const words = isBad(ent) ? ' offline not reporting' : '';
+  return `${ent.name} ${ent.entity_id} ${ent.state} ${areaName(ent.area)}${words}`.toLowerCase().includes(search);
 }
 
 function groupByArea(ents) {
@@ -550,7 +552,9 @@ const todayLine = () => new Date().toLocaleDateString('en-GB', { weekday: 'long'
   .replace(/^(\w+),?\s/, '$1 · ');
 
 function skeletonView() {
-  return head('Home', '', '') +
+  const r = route();
+  const title = { irrigation: 'Irrigation', water: 'Water', areas: 'Rooms', devices: 'Rooms', admin: 'Admin' }[r.name] || 'Home';
+  return head(title, '', '') +
     `<div class="sk-grid">${'<div class="sk-card"></div>'.repeat(6)}</div>`;
 }
 
@@ -631,7 +635,7 @@ function irrigationCard() {
     if (last) {
       frac = last.planned ? (last.delivered ?? (last.finished ? last.planned : 0)) / last.planned : 1;
       tone = last.finished ? 'is-done' : 'is-warn';
-      label = runAmount(last).split(' of ')[0] || '—'; sub = last.finished ? 'last run' : 'stopped early';
+      label = runAmount(last).split(' of ')[0] || '—'; sub = last.finished ? 'last run' : 'cut short';
       valves = last.valves;
     }
   }
@@ -674,7 +678,7 @@ function switchTiles(all) {
   return `<section class="tiles-sec" aria-label="Switches">
     <div class="panel-head bare"><h2 class="panel-title">Switches</h2>
       <a class="panel-link" href="#/sys/switches">${more > 0 ? `All ${operable.length}` : 'All'}${arrow()}</a></div>
-    ${controlNote()}<div class="tiles">${shown.map(tileFor).join('')}</div></section>`;
+    ${canControl ? controlNote() : `<p class="more-note">View only: your account can see these, not switch them.</p>`}<div class="tiles">${shown.map(tileFor).join('')}</div></section>`;
 }
 
 /* ---- the farm, by system ----
@@ -801,7 +805,7 @@ function systemSummary(sys) {
       const prog = find((n, e) => n.includes('progress') && unitOf(e) === '%');
       const stage = find((n) => /current stage|print status/.test(n));
       const pct = numOf(prog);
-      if (allOffline) return { state: 'off', line: 'Off', sub: 'Switched off' };
+      if (allOffline) return { state: 'off', line: 'Off', sub: '' };
       if (pct != null && pct > 0 && pct < 100) return { state: 'on', line: `Printing ${Math.round(pct)}%`, sub: stage && !isBad(stage) ? cap(String(stage.state).replace(/_/g, ' ')) : '' };
       return { state: 'rest', line: stage && !isBad(stage) ? cap(String(stage.state).replace(/_/g, ' ')) : 'Idle', sub: '' };
     }
@@ -835,10 +839,10 @@ function attentionItems(all, systems) {
   const since = serverNow() - 864e5;
   // Programs with no valves assigned end at 0m by design; they are not faults.
   const stopped = irrRuns().filter((r) => !r.finished && r.planned != null && r.valves && !mayStillRun(r) && (farmMs(r.start) ?? 0) >= since);
-  if (stopped.length) add('warn', `${stopped.length} ${plural(stopped.length, 'run', 'runs')} stopped early`, stopped.slice(0, 2).map((r) => `${r.name} ${runAmount(r)}`).join(' · '), '#/irrigation');
+  if (stopped.length) add('warn', `${stopped.length} ${plural(stopped.length, 'run', 'runs')} cut short in the last 24 h`, stopped.slice(0, 2).map((r) => `${r.name} ${runAmount(r)}`).join(' · '), '#/irrigation');
   const repErr = c.meta?.lastError;
   if (repErr) add('warn', 'Could not reach the controller', repErr.replace(/^DCON [a-z_]+: /, '').slice(0, 80), '#/irrigation');
-  if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', 'valve control is off until an admin signs in', '#/irrigation');
+  if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', 'sign in so valve commands keep working', '#/irrigation');
   // Water chain.
   const w = state.water || {};
   for (const m of [w.river, ...Object.values(w.motors || {})].filter(Boolean)) {
@@ -878,13 +882,14 @@ function attentionItems(all, systems) {
   return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1));
 }
 
+let attnAll = false;       // "N more" opened by hand
 function attentionPanel(items) {
   if (!items.length) {
     return `<section class="panel attn is-clear" aria-label="Needs a look"><span class="attn-ok">${arrow('i-check')}</span>` +
       `<span><strong>All clear</strong><span>Nothing on the farm needs a look.</span></span></section>`;
   }
   const bad = items.filter((i) => i.level === 'bad').length;
-  const shown = items.slice(0, 5);
+  const shown = attnAll ? items : items.slice(0, 5);
   return `<section class="panel attn${bad ? ' is-bad' : ''}" aria-label="Needs a look">
     <div class="attn-head"><span class="attn-n">${items.length}</span><h2 class="panel-title">${plural(items.length, 'Thing needs', 'Things need')} a look</h2></div>
     ${shown.map((i) => {
@@ -893,7 +898,7 @@ function attentionPanel(items) {
       return i.href ? `<a class="attn-row ${i.level}" href="${i.href}">${inner}${arrow('i-chevron', 'attn-chev')}</a>`
         : `<div class="attn-row ${i.level}">${inner}</div>`;
     }).join('')}
-    ${items.length > shown.length ? `<p class="attn-more">${items.length - shown.length} more</p>` : ''}
+    ${items.length > 5 ? `<button class="attn-more" data-act="attn-more" aria-expanded="${attnAll}">${attnAll ? 'Show fewer' : `${items.length - 5} more`}</button>` : ''}
   </section>`;
 }
 
@@ -970,7 +975,7 @@ function systemView(all, id) {
       ['Inverter', (() => { const t = numOf(f((n) => n.endsWith('inverter temperature'))); return t != null ? `${t} °C` : '—'; })()],
       ['Grid', (() => { const v = numOf(f((n) => n.includes('on-grid l1 voltage'))); return v != null ? `${Math.round(v)} V` : '—'; })()],
       ['Export limit', (() => { const sw = f((n) => n.includes('export limit switch')); const pct = numOf(f((n) => n.endsWith('grid export limit')));
-        return sw ? `${sw.state === 'on' ? 'On' : 'Off'}${pct != null ? ` · ${pct}%` : ''}` : '—'; })()],
+        return sw ? `${sw.state === 'on' ? 'On' : 'Off'}${pct != null ? ` (limit ${pct}%)` : ''}` : '—'; })()],
     ];
     top = `<section class="panel sys-hero solar is-${s.state}"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>` +
       [0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('') + `</svg></span>` +
@@ -1051,8 +1056,14 @@ function areaView(all, id) {
         emptyBlock('This area is empty', 'Nothing in Home Assistant is assigned to this area yet.');
   }
   const devices = byDevice(inArea);
+  // A device that is wholly offline has nothing to show but "unavailable"
+  // on every reading: it becomes one line at the end instead (a switched-off
+  // printer was 56 dead rows). A search still finds its readings.
+  const dead = devices.filter(deviceOffline);
+  const deadIds = new Set(dead.map((d) => d.id));
   const byDomain = new Map();
   for (const e of list) {
+    if (!search && deadIds.has(e.device || e.key)) continue;
     if (!byDomain.has(e.domain)) byDomain.set(e.domain, []);
     byDomain.get(e.domain).push(e);
   }
@@ -1074,7 +1085,12 @@ function areaView(all, id) {
         ? `<div class="dev-list${items.length > 8 ? ' cols' : ''}">${items.map((e) => deviceCard(e, 'area')).join('')}</div>`
         : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e)).join('')}</div>`) +
         `</section>`;
-    }).join('');
+    }).join('') + (search ? '' : (() => {
+      const faults = dead.filter((d) => !isAppliance(d) && (SYSTEMS[deviceSystems(all).get(d.id)] || SYSTEMS.other).offline !== 'none');
+      const off = dead.filter((d) => !faults.includes(d));
+      return (faults.length ? `<p class="more-note note-off">Offline: ${escapeHtml(faults.map((d) => d.name).join(', '))}</p>` : '') +
+        (off.length ? `<p class="more-note">Switched off: ${escapeHtml(off.map((d) => d.name).join(', '))}</p>` : '');
+    })());
 }
 
 /* All devices is a list of devices, not of the hundreds of readings they
@@ -1083,30 +1099,35 @@ function areaView(all, id) {
  * any of its readings match, and opens itself when a filter is doing the
  * choosing, so what matched is visible without a click. */
 function devicesView(all) {
+  // "Not reporting" is a device that is wholly offline, not one with a
+  // couple of readings down (the inverter, 2 of 54).
+  const full = new Map(byDevice(all).map((d) => [d.id, d]));
+  const deadIds = new Set([...full.values()].filter(deviceOffline).map((d) => d.id));
   const byStatus = (e) => statusFilter === 'all' ? true
-    : statusFilter === 'active' ? !isBad(e) : isBad(e);
+    : statusFilter === 'active' ? !isBad(e) : deadIds.has(e.device || e.key);
   const scoped = all.filter(byStatus);
   const list = scoped.filter((e) => matches(e) && (!domainFilter || e.domain === domainFilter)).sort(byName);
   const groups = byDevice(list).sort((a, b) => a.name.localeCompare(b.name, undefined, NATURAL));
 
-  const counts = { all: byDevice(all).length, active: byDevice(all.filter((e) => !isBad(e))).length,
-                   offline: byDevice(all.filter(isBad)).length };
+  const counts = { all: full.size, active: byDevice(all.filter((e) => !isBad(e))).length, offline: deadIds.size };
   const seg = `<div class="seg" role="group" aria-label="Filter by status">` +
     [['all', 'All'], ['offline', 'Not reporting']].map(([k, label]) =>
       `<button data-act="status" data-status="${k}" aria-pressed="${statusFilter === k}">` +
       `${label}<span class="n">${counts[k]}</span></button>`).join('') + `</div>`;
 
 
-  const filtering = !!(search || domainFilter || statusFilter === 'offline');
-  const full = new Map(byDevice(all).map((d) => [d.id, d]));
+  // Opened by hand, or by a search: a list of dead devices opened by the
+  // filter was ~170 rows of "unavailable".
+  const filtering = !!(search || domainFilter);
   const body = groups.map((g) => {
     // No device id (an older bridge, or the synthetic fixture): a plain row.
     if (g.id === g.ents[0].key && !g.ents[0].device) return `<div class="list dgroup-solo">${row(g.ents[0], true)}</div>`;
     const whole = full.get(g.id) || g;
     const down = whole.ents.filter(isBad).length;
     const open = filtering || openDevices.has(g.id);
+    // An appliance off at the wall is "Off", as on Home and Rooms.
     const status = down === 0 ? `<span class="tag tag-on">All reporting</span>`
-      : down === whole.ents.length ? `<span class="tag tag-bad">Offline</span>`
+      : down === whole.ents.length ? (isAppliance(whole) ? `<span class="tag">Off</span>` : `<span class="tag tag-bad">Offline</span>`)
       : `<span class="tag tag-warn">${down} of ${whole.ents.length} down</span>`;
     return `<section class="dgroup${open ? ' open' : ''}">
       <button class="dgroup-head" data-act="dev-open" data-dev="${escapeHtml(g.id)}" aria-expanded="${open}">
@@ -1274,7 +1295,7 @@ function sendReportRequest() {
         ? 'The database refused that request.'
         : `Could not send: ${err.message}`);
     } else {
-      toast('ok', 'Report requested — the farm controller is pulling it from the vendor now.');
+      toast('ok', 'Report requested. The controller is being asked now.');
       render();
     }
   });
@@ -1804,7 +1825,7 @@ function irrNowState() {
   if (last) {
     const bits = [];
     const a = runAmount(last);
-    if (a) bits.push(last.finished ? a : `${a}, stopped early`);
+    if (a) bits.push(last.finished ? a : `${a}, cut short`);
     if (last.valves) bits.push(last.valves);
     const w = farmWhen(last.start);
     if (w) bits.push(w);
@@ -1893,7 +1914,7 @@ function runValves() {
   const mins = Math.min(irrMaxMinutes(), Math.max(1, runMinutes));
   if (!ids.length) { toast('err', 'Pick at least one valve.'); return; }
   const names = ids.map((id) => valveRows().find((r) => Number(r.id) === id)?.name || `Valve ${id}`);
-  if (!window.confirm(`Water ${names.join(', ')} for ${fmtMin(mins)}?`)) return;
+  if (!window.confirm(`Water ${names.join(', ')} for ${mins} min?`)) return;
   runOpen = false; runPick = [];
   sendIrrigation({ action: 'run', valves: ids.join(','), minutes: mins });
 }
@@ -1931,7 +1952,7 @@ function refreshIrrigation(quiet = false) {
       render();
     };
     const cb = (snap) => { const rep = snap.val(); if (rep) finish(rep.status === 'error' ? `${rep.label || type} failed: ${rep.error || 'controller error'}` : null); };
-    const timer = setTimeout(() => finish(null), IRR_TIMEOUT_MS);
+    const timer = setTimeout(() => finish('No answer from the farm yet. It shows up here when the controller replies.'), IRR_TIMEOUT_MS);
     child.on('value', cb);
     const payload = { type, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP };
     if (from) { payload.from = from; payload.to = to; }
@@ -1967,7 +1988,7 @@ function irrNowModule() {
   const faults = s.running ? (c.program?.faults || []) : [];
   const next = c.program?.next;
   const controls = isAdmin ? `<div class="now-actions">
-      <button class="btn btn-primary" data-act="run-open"${refusal || runOpen || (s.running && s.manual) ? ' disabled' : ''}>Run valves</button>
+      <button class="btn btn-primary" data-act="run-open"${refusal || runOpen || (s.running && s.manual) || !valveRows().some(isIrrigationValve) ? ' disabled' : ''}>Run valves</button>
       ${s.running && s.manual ? `<button class="btn btn-danger" data-act="irr-stop"${refusal ? ' disabled' : ''}>Stop</button>` : ''}
     </div>
     ${irrPending ? `<p class="more-note">${irrConfirming ? 'Confirming with the controller…' : 'Sent. Waiting for the farm…'}</p>`
@@ -1995,7 +2016,10 @@ function irrValvesModule() {
   const now = irrNowState();
   const openNames = new Set(now.running ? String(now.valves).split(/,\s*/).map((v) => v.trim().toLowerCase()) : []);
   const picking = isAdmin && runOpen;
-  const cells = rows.map((r) => {
+  // Only irrigation valves can be run: the tank, pumps and backwash are not
+  // listed at all rather than shown greyed out.
+  const pickRows = picking ? rows.filter(isIrrigationValve) : rows;
+  const cells = pickRows.map((r) => {
     const name = r.name || `Valve ${r.id}`;
     const art = valveArt(name, r.type, openNames.has(name.toLowerCase()) ? 'on' : 'off');
     const on = openNames.has(name.toLowerCase());
@@ -2016,8 +2040,8 @@ function irrValvesModule() {
       <button class="btn btn-ghost" data-act="run-cancel">Cancel</button>
     </div>` : '';
   return `<section class="panel irr-mod" aria-label="Valves">` +
-    panelHead(picking ? `Pick up to ${IRR_MAX_VALVES} valves` : 'Valves', null, rows.length) +
-    `<div class="valve-grid">${cells}</div>${bar}</section>`;
+    panelHead(picking ? `Pick up to ${IRR_MAX_VALVES} valves${runPick.length ? ` · ${runPick.length} picked` : ''}` : 'Valves', null) +
+    `${bar}<div class="valve-grid">${cells}</div></section>`;
 }
 
 /* ---- watered, by crop ----
@@ -2045,8 +2069,8 @@ function cropBreakdown(day) {
     for (const raw of r.valves.split(/,\s*/).filter(Boolean)) {
       const no = valveNo(raw);
       const name = (no != null && byNo.get(no)?.name) || raw;
-      const v = valves.get(name) || { name, no, min: 0, cut: 0, runs: 0 };
-      v.min += r.delivered || 0; v.runs += 1; if (cut) v.cut += 1;
+      const v = valves.get(name) || { name, no, min: 0, cut: 0, runs: 0, cutRuns: new Set() };
+      v.min += r.delivered || 0; v.runs += 1; if (cut) { v.cut += 1; v.cutRuns.add(`${r.start}|${r.name}`); }
       valves.set(name, v);
     }
   }
@@ -2055,10 +2079,11 @@ function cropBreakdown(day) {
     const art = valveArt(v.name, 'irrigation');
     const key = art && art !== 'backwash' ? art : `v:${v.name}`;
     const c = crops.get(key) || { key, art: art && art !== 'backwash' ? art : null,
-      label: CROP_LABELS[art] || String(v.name).replace(/^\d+\s*/, '') || v.name, min: 0, cut: 0, valves: [] };
+      label: CROP_LABELS[art] || String(v.name).replace(/^\d+\s*/, '') || v.name, min: 0, cut: 0, valves: [], cutRuns: new Set() };
     // Valves of one crop can run in separate programs (Mango1, Mango2):
     // the crop shows its longest, and each valve keeps its own minutes.
-    c.min = Math.max(c.min, v.min); c.cut = Math.max(c.cut, v.cut); c.valves.push(v);
+    for (const id of v.cutRuns) c.cutRuns.add(id);
+    c.min = Math.max(c.min, v.min); c.cut = c.cutRuns.size; c.valves.push(v);
     crops.set(key, c);
   }
   const watered = new Set([...valves.values()].map((v) => v.no).filter((n) => n != null));
@@ -2067,8 +2092,8 @@ function cropBreakdown(day) {
   // earlier runs that day may be missing.
   const log = irrig().timerLog || [];
   const oldest = log.reduce((m, r) => (r.at && (!m || r.at < m) ? r.at : m), '');
-  // A truncated log is exactly at a cap: 32 before 2026-09-25, 150 since.
-  const partial = (log.length === 32 || log.length >= 150) && oldest.slice(0, 10) >= day;
+  // The function keeps 150 runs; at the cap, earlier runs may be missing.
+  const partial = log.length >= 150 && oldest.slice(0, 10) >= day;
   return { crops: [...crops.values()].sort((a, b) => b.min - a.min || a.label.localeCompare(b.label)), dry, runs, partial };
 }
 
@@ -2103,7 +2128,7 @@ function irrCropsModule() {
     (pump ? fig(fmtMin(pump.pumpMin), 'Pump') : '') + (pump?.kwh != null ? fig(`${Math.round(pump.kwh)}<small>kWh</small>`, 'Energy') : '') + `</div>` +
     (crops.length ? `<div class="crop-list">${rows}</div>` : `<p class="more-note crop-empty">Nothing watered ${pick === 'today' ? 'yet today' : 'yesterday'}.</p>`) +
     (partial ? `<p class="more-note crop-dry">Only the latest runs of this day are here. Refresh for the full day.</p>`
-      : dry.length && crops.length ? `<p class="more-note crop-dry">Not watered: ${escapeHtml(dry.join(', '))}</p>` : '') +
+      : dry.length && crops.length ? `<p class="more-note crop-dry">Not watered: ${dry.map((n) => escapeHtml(n).replace(/ /g, '&nbsp;')).join(', ')}</p>` : '') +
     `</section>`;
 }
 
@@ -2127,7 +2152,7 @@ function irrSupplyModule() {
   const last = (irrig().pressure || []).at(-1);
   const outlet = last && /outlet ([\d.]+ ?bar)/.exec(last.detail || '');
   return `<section class="panel irr-mod" aria-label="Pump and power">` +
-    `<div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>${s && s.at ? `<span class="card-age">at ${escapeHtml(s.at)}</span>` : ''}</div>` +
+    `<div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>${irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}</div>` +
     `<div class="supply">${bars}${p ? `<div class="pressure"><span class="fig-v">${escapeHtml(p.value)}</span><span class="fig-l">Inlet pressure</span>` +
       (outlet ? `<span class="pressure-out">outlet ${escapeHtml(outlet[1])}</span>` : '') + `</div>` : ''}</div>` +
     (tags.length ? `<div class="tags">${tags.join('')}</div>` : '') + `</section>`;
@@ -2198,10 +2223,10 @@ function waterGate() {
 }
 
 function requestWater(force = false) {
-  if (!currentUser || document.hidden || !waterGate().ok) return;
+  if (!currentUser || document.hidden || !waterGate().ok) return false;
   const now = Date.now();
-  if (!force && now - waterAsked < WATER_ASK_MS - 2000) return;
-  if (force && now - waterAsked < 5000) return;
+  if (!force && now - waterAsked < WATER_ASK_MS - 2000) return false;
+  if (force && now - waterAsked < 5000) return false;
   waterAsked = now;
   // A background refresh must never take the view down with it: this runs
   // inside render(), so anything it throws would stop the page updating.
@@ -2209,7 +2234,8 @@ function requestWater(force = false) {
     Promise.resolve(firebase.database().ref(`farms/${FARM}/water_requests`).push({
       uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP,
     })).catch(() => {});
-  } catch (err) { console.warn('water refresh not sent', err); }
+  } catch (err) { console.warn('water refresh not sent', err); return false; }
+  return true;
 }
 
 /* Poll only while the Water page is on screen and the tab is visible. */
@@ -2278,7 +2304,12 @@ function waterMotorCard(m, vendorErr) {
   if (m.vendor === 'livesky' && m.connected === false) facts.push(['Starter link', 'not connected']);
   // The headline is state and how long; the electrics fold away.
   const mainKeys = new Set(['Running for', 'Off for', 'Program', 'Zone time left']);
-  const headline = facts.filter(([k]) => mainKeys.has(k));
+  // Timers are only true as of the controller's report: say when that was
+  // once it is more than 15 minutes old.
+  const reportAt = Date.parse(m.liveAt || m.reportedAt || '');
+  const stale = Number.isFinite(reportAt) && serverNow() - reportAt > 15 * 60000;
+  const timed = new Set(['Running for', 'Off for', 'Zone time left']);
+  const headline = facts.filter(([k]) => mainKeys.has(k)).map(([k, v]) => [k, stale && timed.has(k) ? `${v} · as of ${agoText(reportAt)}` : v]);
   const details = facts.filter(([k]) => !mainKeys.has(k));
 
   const when = m.liveAt || m.reportedAt;
@@ -2521,11 +2552,12 @@ function aclSet(uid, tier) {
  * and their first Google sign-in claims it automatically (see enter()) —
  * the only two ways to become a viewer or controller are an admin doing
  * this, or claiming an invite an admin left. Neither needs a terminal. */
+let adminEmail = '', adminTier = 'view';   // the add-a-person form, kept across rebuilds
 function sendInvite() {
   if (!isAdmin) return;
   const emailInput = el('admin-add-email');
-  const email = (emailInput?.value || '').trim().toLowerCase();
-  const tier = el('admin-add-tier')?.value === 'control' ? 'control' : 'view';
+  const email = (emailInput?.value || adminEmail || '').trim().toLowerCase();
+  const tier = (el('admin-add-tier')?.value || adminTier) === 'control' ? 'control' : 'view';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     toast('err', 'Enter a valid email address.');
     return;
@@ -2537,6 +2569,7 @@ function sendInvite() {
     toast('ok', `${email} will get ${tier === 'control' ? 'view + control' : 'view'} ` +
       `access the moment they sign in.`);
     if (emailInput) emailInput.value = '';
+    adminEmail = ''; adminTier = 'view';
   }).catch((err) => {
     toast('err', err.code === 'PERMISSION_DENIED'
       ? 'The database refused that invite.' : `Could not invite: ${err.message}`);
@@ -2584,7 +2617,7 @@ function adminRow(uid, person) {
     <span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-person"/></svg></span>
     <span class="row-main">
       <span class="row-name">${escapeHtml(name || email || '(no directory entry)')}</span>
-      <span class="row-meta">${escapeHtml([email, name ? uid : ''].filter(Boolean).join(' · ') || uid)}</span>
+      <span class="row-meta">${escapeHtml(email || 'signed in, no email on record')}</span>
     </span>
     ${aclTierTag(tier)}
     <div class="acl-actions">${actions}</div>
@@ -2704,7 +2737,7 @@ const mbWhen = (ms) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', mo
 /** What SNOF's Mobitech session is doing, in one line, for any page. */
 function mobitechState() {
   const st = state.mobitechStatus || {};
-  if (!st.at) return { kind: 'none', text: 'SNOF is not signed in to Mobitech, so valve commands cannot be sent.' };
+  if (!st.at) return { kind: 'none', text: 'SNOF is not signed in to Mobitech. Sign in so valve commands keep working.' };
   if (st.lastRejected && st.lastRejected > Math.max(st.at, st.lastOk || 0)) {
     return { kind: 'rejected', text: `Mobitech rejected SNOF's session at ${mbWhen(st.lastRejected)}. Sign in again to send valve commands.` };
   }
@@ -2779,9 +2812,9 @@ function adminView() {
 
   const addForm = `<div class="rep-builder">
     <label class="rep-field"><span>Email</span>
-      <input id="admin-add-email" type="email" placeholder="someone@example.com" autocomplete="off" spellcheck="false"></label>
+      <input id="admin-add-email" type="email" placeholder="someone@example.com" autocomplete="off" spellcheck="false" value="${escapeHtml(adminEmail)}"></label>
     <label class="rep-field"><span>Access</span>
-      <select id="admin-add-tier"><option value="view">View</option><option value="control">View + control</option></select></label>
+      <select id="admin-add-tier"><option value="view">View</option><option value="control"${adminTier === 'control' ? ' selected' : ''}>View + control</option></select></label>
     <button class="btn btn-primary" data-act="admin-invite">Add person</button>
   </div>
   <p class="more-note">Access starts when they sign in with that Google account.</p>`;
@@ -2797,7 +2830,7 @@ function adminView() {
   return head('Admin', '', '') +
     sectionHead('n-admin', 'Add a person') + addForm +
     sectionHead('n-admin', 'People') + list +
-    `<p class="more-note">Admins are added from the command line: <code>npm run grant -- email --admin</code>.</p>`;
+    `<p class="more-note">Only the farm owner can make someone an admin.</p>`;
 }
 
 /* ---- pieces ---- */
@@ -2957,7 +2990,10 @@ function wire(all) {
     btn.onclick = () => aclSet(btn.dataset.uid, 'control');
   });
   view.querySelectorAll('[data-act="acl-none"]').forEach((btn) => {
-    btn.onclick = () => aclSet(btn.dataset.uid, 'none');
+    btn.onclick = () => {
+      const who = state.acl?.directory?.[btn.dataset.uid]?.email || 'this person';
+      if (window.confirm(`Remove all access for ${who}?`)) aclSet(btn.dataset.uid, 'none');
+    };
   });
   // Mobitech sign-in. Typing holds live rebuilds (as a slider drag does), so
   // a half-typed number or code is never wiped by a sensor update.
@@ -2983,6 +3019,7 @@ function wire(all) {
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
 
   view.querySelectorAll('[data-act="irr-refresh"]').forEach((btn) => { btn.onclick = () => refreshIrrigation(); });
+  view.querySelectorAll('[data-act="attn-more"]').forEach((btn) => { btn.onclick = () => { attnAll = !attnAll; render(); }; });
   view.querySelectorAll('[data-act="crop-day"]').forEach((btn) => { btn.onclick = () => { cropDayPick = btn.dataset.day; render(); }; });
   view.querySelectorAll('[data-act="home-refresh"]').forEach((btn) => {
     btn.onclick = () => { requestWater(true); if (canControl) refreshIrrigation(); else toast('ok', 'Asked for fresh water readings.'); };
@@ -3013,7 +3050,7 @@ function wire(all) {
     d.ontoggle = () => openDetails.set(key, d.open);
   });
   view.querySelectorAll('[data-act="water-refresh"]').forEach((btn) => {
-    btn.onclick = () => { requestWater(true); toast('ok', 'Asked the controllers for fresh readings.'); };
+    btn.onclick = () => { if (requestWater(true)) toast('ok', 'Asked the controllers for fresh readings.'); };
   });
   // Livesky sign-in: the same held-rebuild handling as Mobitech's.
   view.querySelectorAll('[data-act="ls-mobile"],[data-act="ls-code"]').forEach((input) => {
@@ -3035,6 +3072,18 @@ function wire(all) {
   });
   view.querySelectorAll('[data-act="ls-signout"]').forEach((btn) => { btn.onclick = () => liveskySignOut(); });
 
+  // Typing into the add-a-person form holds live rebuilds, as the sign-in
+  // fields do: the farm updates about once a second.
+  for (const id of ['admin-add-email', 'admin-add-tier']) {
+    const input = el(id);
+    if (!input) continue;
+    input.onfocus = beginInteract;
+    input.oninput = input.onchange = () => { if (id === 'admin-add-email') adminEmail = input.value; else adminTier = input.value; };
+    // Moving from the email to the tier keeps the hold; leaving the form ends it.
+    input.onblur = () => setTimeout(() => {
+      if (!['admin-add-email', 'admin-add-tier'].includes(document.activeElement?.id)) endInteract();
+    }, 300);
+  }
   view.querySelectorAll('[data-act="admin-invite"]').forEach((btn) => {
     btn.onclick = () => sendInvite();
   });
@@ -3095,6 +3144,7 @@ function levelOf(ent) {
 function formatState(ent) {
   const s = ent.state;
   if (s == null || s === '') return '—';
+  if (isBad(ent)) return String(s);              // "unavailable", never "unavailable kWh"
   const unit = ent.attrs?.unit_of_measurement;
   if (unit === '%') return `${s}%`;              // "34.2%", but "31.4 °C"
   if (unit) return `${s} ${unit}`;
