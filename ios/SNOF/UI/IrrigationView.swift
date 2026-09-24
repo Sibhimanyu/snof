@@ -20,7 +20,8 @@ struct IrrigationView: View {
 
     var body: some View {
         Page(eyebrow: "Mobitech DCON", title: "Irrigation",
-             subtitle: "Build a report from the irrigation controller.") {
+             subtitle: "Build a report from the irrigation controller.",
+             refresh: store.irrigationPull) {
             SectionHead(symbol: "drop", title: "Generate report")
             if store.canControl { builder } else {
                 Note(text: "Report generation is limited to controllers — your account can view results below, but not run new pulls.")

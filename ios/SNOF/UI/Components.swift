@@ -10,6 +10,8 @@ struct Page<Content: View>: View {
     var eyebrow: String? = nil
     var title: String? = nil
     var subtitle: String? = nil
+    /// Swipe down to run this, the iOS way. Nil: the page does not refresh.
+    var refresh: (@MainActor () async -> Void)? = nil
     @ViewBuilder let content: Content
     @State private var position = ScrollPosition(edge: .top)
 
@@ -38,6 +40,7 @@ struct Page<Content: View>: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 28)
         }
+        .modifier(PullToRefresh(action: refresh))
         .background(Theme.bg)
         .scrollDismissesKeyboard(.immediately)
         .scrollPosition($position)
@@ -50,6 +53,28 @@ struct Page<Content: View>: View {
             }
         }
         #endif
+    }
+}
+
+extension FarmStore {
+    /// Swipe down = the irrigation card's Refresh. Viewers cannot run
+    /// reports, so for them a page does not offer it.
+    var irrigationPull: (@MainActor () async -> Void)? {
+        guard canControl else { return nil }
+        return { [weak self] in await self?.pullToRefreshIrrigation() }
+    }
+}
+
+/// `.refreshable` only when there is something to refresh, so a page
+/// without an action never shows a spinner that does nothing.
+private struct PullToRefresh: ViewModifier {
+    let action: (@MainActor () async -> Void)?
+    func body(content: Content) -> some View {
+        if let action {
+            content.refreshable { Haptics.tap(); await action() }
+        } else {
+            content
+        }
     }
 }
 

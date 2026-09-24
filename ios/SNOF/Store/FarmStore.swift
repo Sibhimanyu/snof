@@ -400,6 +400,18 @@ final class FarmStore {
         if sent > 0 { settleReports() }
     }
 
+    /// Swipe down on Overview or Irrigation: the same three requests as the
+    /// Refresh button, but the spinner stays until the controller has
+    /// answered (or 30 s pass — the "Irrigation updated." toast or the
+    /// timeout says the rest), as a pull-to-refresh should.
+    func pullToRefreshIrrigation() async {
+        if !refreshingIrrigation { await refreshIrrigation() }
+        let deadline = Date().addingTimeInterval(30)
+        while refreshingIrrigation && Date() < deadline && !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
     private func settleReports() {
         for key in waitingReports where refreshKeys.contains(key) {
             guard let rep = reports.first(where: { $0.key == key }) else { continue }
