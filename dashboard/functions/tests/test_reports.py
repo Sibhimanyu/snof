@@ -373,7 +373,13 @@ def test_controller_report_shows_what_is_running():
     assert facts["Running now"].startswith("Vegetable · Program · 4 Veg, 6 Kulam"), facts
     board = rep["sections"][1]["rows"]
     assert {r["name"]: r["status"] for r in board}["4 Veg"] == "on"
-    assert set(patch) == {"dcon", "valveNames"}
+    assert set(patch) == {"dcon", "valveNames", "program"}
+    prog = patch["program"]
+    assert prog["running"] and prog["name"] == "Vegetable", prog
+    assert prog["valves"] == "4 Veg, 6 Kulam" and prog["remainingMin"] == 25, prog
+    assert prog["at"] == {".sv": "timestamp"}, prog
+    assert set(prog) == {"at", "name", "kind", "running", "valves", "start", "lastSeen",
+                         "plannedMin", "remainingMin"}
 
 
 def test_no_phone_number_or_imei_reaches_any_report():

@@ -182,6 +182,14 @@ public struct IrrigationCache: Hashable, Sendable {
     public var valves: [ReportRow] = []
     public var electricity: [ReportRow] = []
     public var pressure: [ReportRow] = []
+    /// Program runs, newest first — from the last session or timer log.
+    public var timerLog: [ReportRow] = []
+    /// One row per pump day, newest first — from the last session or motor log.
+    public var motorLog: [ReportRow] = []
+    /// What the controller was doing at the last controller pull.
+    public var program: CurrentProgram?
+    /// The controller's offset, "+05:30". Every timestamp above is in it.
+    public var timeZone: String?
     public var lastUpdated: Double?
     public var lastType: String?
     public var lastError: String?
@@ -190,5 +198,29 @@ public struct IrrigationCache: Hashable, Sendable {
 
     public var isEmpty: Bool {
         device == nil && valveNames.isEmpty && valves.isEmpty && electricity.isEmpty && pressure.isEmpty
+            && timerLog.isEmpty && motorLog.isEmpty && program == nil
+    }
+}
+
+/// `irrigation/program`: the controller dashboard's current timer, as the
+/// report function caches it (`program_cache` in dashboard/functions).
+public struct CurrentProgram: Hashable, Sendable {
+    public var name: String
+    public var kind: String
+    public var running: Bool
+    public var valves: String
+    /// Farm time, "2026-09-23 20:41:05".
+    public var start: String
+    public var plannedMin: Int?
+    public var remainingMin: Int?
+    /// Farm time the controller last reported the timer — what remainingMin is as of.
+    public var lastSeen: String = ""
+    /// Server milliseconds of the pull.
+    public var at: Double?
+
+    public init(name: String = "", kind: String = "", running: Bool = false, valves: String = "",
+                start: String = "", plannedMin: Int? = nil, remainingMin: Int? = nil, at: Double? = nil) {
+        self.name = name; self.kind = kind; self.running = running; self.valves = valves
+        self.start = start; self.plannedMin = plannedMin; self.remainingMin = remainingMin; self.at = at
     }
 }
