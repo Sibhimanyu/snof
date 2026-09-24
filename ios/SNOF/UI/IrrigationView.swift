@@ -27,22 +27,21 @@ struct IrrigationView: View {
     var body: some View {
         Page(title: "Irrigation", refresh: store.irrigationPull) {
             IrrigationNowCard()
-            IrrigationValvesCard()
-            IrrigationDayCard()
-            IrrigationSupplyCard()
+            PumpPowerCard()
+            WateredCard()
 
             HStack(alignment: .firstTextBaseline) {
                 Text("Reports").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                if !store.reports.isEmpty { Text("\(store.reports.count)").font(Theme.small).foregroundStyle(Theme.faint) }
+                if !store.latestReports.isEmpty { Text("\(store.latestReports.count)").font(Theme.small).foregroundStyle(Theme.faint) }
                 Spacer()
                 if store.canControl { LinkButton(label: "New report", run: { building = true }) }
             }
             .padding(.top, 14)
-            if store.reports.isEmpty {
+            if store.latestReports.isEmpty {
                 Note(text: "No reports yet.")
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(store.reports.enumerated()), id: \.element.id) { i, r in
+                    ForEach(Array(store.latestReports.enumerated()), id: \.element.id) { i, r in
                         if i > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
                         Button { opened = OpenReport(id: r.key) } label: { ReportListRow(report: r, now: store.now) }
                             .buttonStyle(.plain)

@@ -1043,7 +1043,7 @@ function systemView(all, id) {
   // Settings stay settings: the inverter's and the ACs' switches are shown as
   // readings, never offered as tiles.
   const tiles = ops.length && ['switches', 'other'].includes(id)
-    ? `<section class="tiles-sec"><div class="panel-head bare"><h2 class="panel-title">Switches</h2></div>${controlNote()}<div class="tiles">${ops.sort(byName).map(tileFor).join('')}</div></section>` : '';
+    ? `<section class="tiles-sec"><div class="panel-head bare"><h2 class="panel-title">Switches</h2></div>${controlNote()}<div class="tiles">${ops.filter(isOn).sort(byName).concat(ops.filter((e) => !isOn(e)).sort(byName)).map(tileFor).join('')}</div></section>` : '';
   const live = devices.filter((d) => !deviceOffline(d));
   const off = devices.filter(deviceOffline);
   const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +

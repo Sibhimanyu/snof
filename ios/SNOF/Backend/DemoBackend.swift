@@ -101,6 +101,22 @@ final class DemoBackend: FarmBackend {
             "niagara": ["ok": true, "error": "", "at": now - 20_000],
         ] as [String: Any]
         tree["meta"] = meta
+        #if DEBUG
+        // Review hook: SNOF_DEMO_TREE=<farm.json> replays a whole production
+        // snapshot (a local file, never bundled or committed), so every screen
+        // can be checked against the real farm; the heartbeat is moved to now.
+        if let path = ProcessInfo.processInfo.environment["SNOF_DEMO_TREE"],
+           let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let real = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for (k, v) in real { tree[k] = v }
+            var m = tree["meta"] as? [String: Any] ?? [:]
+            var b = m["bridge"] as? [String: Any] ?? [:]
+            b["lastSeen"] = now - 5_000
+            m["bridge"] = b
+            tree["meta"] = m
+            return
+        }
+        #endif
         tree["water"] = [
             "pulledAt": now - 20_000,
             "river": ["name": "River Motor", "vendor": "livesky", "running": true, "pending": false,
@@ -203,6 +219,7 @@ final class DemoBackend: FarmBackend {
         handler?(.irrigation(tree["irrigation"]))
         handler?(.reports(tree["irrigation_reports"]))
         handler?(.water(tree["water"]))
+        handler?(.mobitechStatus(tree["mobitech_status"]))
     }
 
     private func heartbeat() {

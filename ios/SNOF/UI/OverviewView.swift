@@ -19,16 +19,18 @@ struct OverviewView: View {
             if !store.firstSnapshot {
                 LoadingBlock()
             } else {
+                AttentionCard()
                 FlowHero()
                 if sizeClass == .regular {
-                    HStack(alignment: .top, spacing: 14) { IrrigationRingCard(); SolarCard(); HealthCard() }
+                    HStack(alignment: .top, spacing: 14) { IrrigationRingCard(); SolarSystemCard(); SecurityCard() }
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     IrrigationRingCard()
-                    HStack(alignment: .top, spacing: 12) { SolarCard(); HealthCard() }
+                    HStack(alignment: .top, spacing: 12) { SolarSystemCard(); SecurityCard() }
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 SwitchTiles()
+                AroundTheFarm()
             }
         }
         .navigationTitle("Home")
@@ -285,28 +287,36 @@ struct SwitchTiles: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        let operable = store.entities.filter { $0.isControllable && !$0.isBad }
+        // Only real switch and light modules: an inverter's export-limit
+        // switch or an AC's sleep mode is a setting, not a Home tile.
+        let operable = (store.systems[.switches]?.entities ?? []).filter { $0.isControllable && !$0.isBad }
             .sorted { (store.displayOn($0) ? 0 : 1, $0.name) < (store.displayOn($1) ? 0 : 1, $1.name) }
         let shown = Array(operable.prefix(8))
         if !shown.isEmpty {
             HStack {
                 Text("Switches").font(Theme.panelTitle).foregroundStyle(Theme.text)
                 Spacer()
-                LinkButton(label: operable.count > shown.count ? "\(operable.count - shown.count) more" : "All devices",
-                           run: { store.showDevices(status: .all) })
+                NavigationLink(value: SystemRoute(id: .switches)) {
+                    HStack(spacing: 4) {
+                        Text(operable.count > shown.count ? "All \(operable.count)" : "All")
+                        Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))
+                    }
+                    .font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
+                }
             }
             .padding(.top, 10)
             ControlNote()
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: sizeClass == .regular ? 4 : 2), spacing: 10) {
-                ForEach(shown) { e in SwitchTile(entity: e) }
+                ForEach(shown) { e in SwitchTile(entity: e, name: Systems.shortName(e, deviceName: store.deviceNames[e.device ?? ""])) }
             }
         }
     }
 }
 
-private struct SwitchTile: View {
+struct SwitchTile: View {
     @Environment(FarmStore.self) private var store
     let entity: Entity
+    var name: String? = nil
 
     var body: some View {
         let on = store.displayOn(entity)
@@ -318,7 +328,7 @@ private struct SwitchTile: View {
                     .frame(width: 38, height: 38)
                     .background(on ? Color.white.opacity(0.2) : Theme.panel2, in: Circle())
                 Spacer(minLength: 10)
-                Text(entity.name).font(Theme.font(14, .bold, relativeTo: .subheadline))
+                Text(name ?? entity.name).font(Theme.font(14, .bold, relativeTo: .subheadline))
                     .foregroundStyle(on ? .white : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
                 Text("\(store.areaName(entity.area)) · \(on ? "On" : "Off")").font(Theme.font(12, .regular, relativeTo: .caption))
                     .foregroundStyle(on ? .white.opacity(0.85) : Theme.muted).lineLimit(1)

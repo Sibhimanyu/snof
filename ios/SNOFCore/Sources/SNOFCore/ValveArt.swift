@@ -19,7 +19,8 @@ public enum ValveArt {
         "coco": "coconut", "coconut": "coconut",
         "gova": "guava", "guava": "guava",        // the controller spells it "Gova"
         "mango": "mango", "amla": "amla", "jamun": "jamun",
-        "pomegranate": "pomegranate", "backwash": "backwash",
+        "pomegranate": "pomegranate", "pomegra": "pomegranate",   // the log truncates it
+        "backwash": "backwash",
     ]
 
     /// - Parameters:
