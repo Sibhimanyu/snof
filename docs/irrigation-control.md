@@ -118,6 +118,13 @@ proves it with a status poll. Both consumers now turn this 400 into "the
 Mobitech app token has expired" instead of "Bad request". Signing in to the
 Mobitech app again ends the session, so expect to repeat this.
 
+**Update, same day (mitmproxy capture, [mobitech-app.md](mobitech-app.md)):**
+the token is the phone's Firebase push token plus `@ios`. Signing out and
+back in on the same phone keeps it, so it changes only when the phone's push
+token rotates. The app itself runs valves with `V…ON HH MM` and stops them
+with `MOFF`, not `FON` / `OFF`, and confirms through `cmd_status`
+(`sent: 2`).
+
 Also seen in the history: Mobitech's own app sends manual runs as
 `V003,000,…(10 slots)ON 00 15!1@A1` and, in the capture,
 `V012,015ON 01 20@A8`; `FON …` appears too. Our `FON` template is taken from
