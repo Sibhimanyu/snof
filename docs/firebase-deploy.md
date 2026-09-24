@@ -37,11 +37,24 @@ firebase functions:secrets:set DCON_TOKEN_ID
 firebase functions:secrets:set DCON_SERIAL
 ```
 
+A non-interactive deploy also needs the two plain parameters in
+`dashboard/functions/.env`. The repo's `.gitignore` keeps every `.env` out
+of git on purpose, so create it on each machine (neither value is secret):
+
+```bash
+printf 'DCON_BASE=https://dcon.mobitechwireless.com\nFARM_SLUG=snof\n' \
+  > dashboard/functions/.env
+```
+
 Then deploy:
 
 ```bash
 firebase deploy --only functions:reports
 ```
+
+The first 2nd-gen deploy on a project fails with "Permission denied while
+using the Eventarc Service Agent". Eventarc's permissions are still
+propagating. Wait about three minutes and run the same command again.
 
 The first deploy enables Cloud Functions, Cloud Build, Artifact Registry,
 Eventarc and Secret Manager on the project. That needs Blaze, which
