@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
-const base='http://localhost:8765/index.html';
+const base=(process.env.PREVIEW_BASE||'http://localhost:8765/index.html');
 const b=await chromium.launch(); let fail=0;
 const check=(n,ok,x='')=>{console.log(`${ok?'  PASS':'  FAIL'}  ${n}${x?'  '+x:''}`);if(!ok)fail++;};
 const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,height:900}});const p=await c.newPage();

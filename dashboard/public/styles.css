@@ -779,6 +779,41 @@ input[type=range][disabled]{opacity:.42}
   :root:not([data-theme]) .ico-moon{display:none}
 }
 
+/* ---------- water chain ----------
+   Three numbered stages joined by a thin vertical flow line, so the page
+   reads top to bottom the way the water goes: river, other farm, main farm.
+   Motor cards reuse .panel and .mb-facts; only the stage frame is new. */
+.more-note.note-bad{color:var(--bad)}
+.wchain{display:flex;flex-direction:column}
+.wstage-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.wstage-n{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;
+  background:var(--panel-3);color:var(--ink);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums}
+.wstage-title{font-size:19px;font-weight:750;letter-spacing:-.03em;color:var(--text);line-height:32px}
+.wstage-lead{font-size:13.5px;color:var(--muted)}
+.wstage-body{padding-left:46px}
+.wstage-body > .more-note{margin:0 0 12px}
+.wflow{display:flex;align-items:center;gap:12px;min-height:46px;padding-left:15px}
+.wflow span{width:2px;align-self:stretch;border-radius:2px;background:var(--line-2)}
+.wflow em{font-style:normal;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.wmotors{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:14px}
+.wmotor{display:flex;flex-direction:column;gap:14px;padding:18px 22px 16px}
+.wmotor .more-note{margin:0;padding:0;border:0}
+.wmotor .mb-facts{padding:0;border:0;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.wmotor-head{display:flex;align-items:center;gap:14px}
+.wmotor-art{flex:none;width:44px;height:44px;border-radius:12px;background:var(--panel-2);object-fit:contain}
+.wmotor-title{flex:1;min-width:0}
+.wmotor-title h3{font-size:16.5px;font-weight:750;letter-spacing:-.025em;color:var(--text);overflow-wrap:anywhere}
+.wmotor-title p{font-size:13px;color:var(--muted)}
+.wmotor-when{font-size:12.5px;color:var(--faint);border-top:1px solid var(--line-soft);padding-top:10px}
+.wmain{display:flex;align-items:center;gap:14px;padding:16px 22px;color:inherit}
+.wmain:hover{box-shadow:var(--shadow-card-hover)}
+.wmain > .ico{width:18px;height:18px;color:var(--faint)}
+@media (max-width:620px){
+  .wstage-body{padding-left:0}
+  .wmotor{padding:16px 16px 14px}
+  .wmotor .mb-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
 /* ---------- bottom tab bar (phones) ---------- */
 .tabbar{display:none}
 .only-narrow{display:none}
@@ -825,6 +860,8 @@ input[type=range][disabled]{opacity:.42}
   .toasts{left:16px;right:16px;bottom:calc(76px + var(--sab));max-width:none}
 }
 @media (max-width:620px){
+  .tabbar{gap:2px;padding-left:6px;padding-right:6px}
+  .tab-item{font-size:12px;letter-spacing:-.02em}
   .page-title{font-size:34px}
   .page-head{margin-bottom:20px}
   .pulse{padding:22px 18px 16px}

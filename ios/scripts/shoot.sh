@@ -17,6 +17,10 @@ shot 04-area-detail -area packing_shed
 shot 05-devices-real -tab devices -demo-real
 shot 06-devices-offline -tab devices -status offline -demo-real
 shot 07-irrigation -tab irrigation
+shot 07b-water -tab water
+shot 07c-water-light -tab water -AppleInterfaceStyle Light -appearance light
+shot 07d-water-expired -tab water -demo-admin -demo-liveskyexpired
+shot 07e-water-off -tab water -demo-wateroff
 shot 08-viewer -demo-viewer
 shot 09-control-off -demo-controloff
 shot 10-stale -demo-stale

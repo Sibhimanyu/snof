@@ -29,6 +29,9 @@ enum FarmEvent {
     case irrigationLock(Any?)
     /// farms/<farm>/mobitech_status: who is signed in to Mobitech (never the token).
     case mobitechStatus(Any?)
+    /// farms/<farm>/water: the river motor and the other farm's motors, as
+    /// the water functions last read them. Read-only.
+    case water(Any?)
     case controller(Bool)
     case admin(Bool)
     case serverTimeOffset(Double)
@@ -87,6 +90,13 @@ protocol FarmBackend: AnyObject {
     /// Stop SNOF using its session: remove the token and the status line.
     /// (Mobitech's own logout needs the token, which no client can read.)
     func clearMobitechSession() async throws
+    /// Append to /farms/<farm>/water_requests: "pull the water chain now".
+    /// Any viewer; the function pulls at most once per 15 s whoever asks.
+    func requestWaterRefresh(uid: String) async throws
+    /// POST to the water_session function (Livesky sign-in, admins only)
+    /// with this user's Firebase ID token. Returns its JSON answer; throws
+    /// with the function's own error text when it refuses.
+    func waterSession(_ body: [String: Any]) async throws -> [String: Any]
     /// Drop writes the server has not acknowledged yet. Called when a control
     /// times out, so a toggle queued while offline cannot fire minutes later.
     func cancelUnsentWrites()

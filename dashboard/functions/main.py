@@ -30,12 +30,13 @@ import time
 from typing import Any
 
 from firebase_admin import db, initialize_app
-from firebase_functions import db_fn, options
+from firebase_functions import db_fn, https_fn, options, scheduler_fn
 from firebase_functions.params import SecretParam, StringParam
 
 import dcon
 import irrigation_control
 import reports
+import water
 
 DCON_TOKEN_ID = SecretParam("DCON_TOKEN_ID")
 DCON_SERIAL = SecretParam("DCON_SERIAL")
@@ -224,3 +225,171 @@ def irrigation_command(event: db_fn.Event[Any]) -> None:
     if result is not None:
         _LOG.info("Irrigation command %s: %s %s", cmd_id,
                   "sent" if result.get("ok") else "not sent", result.get("message", ""))
+
+
+# ---------------------------------------------------------------- water chain
+#
+# The river motor (Livesky) and the other farm's two motors (Niagara), read
+# into /farms/<farm>/water. Read-only; docs/water.md. Both vendors answer
+# Google Cloud addresses, so these call them directly, never through the NUC.
+#
+# Kill switch: /farms/<farm>/meta/water/enabled must be true (service account
+# only). Off, nothing calls a vendor. Cost shape: one pull (1 Livesky + up to
+# 4 Niagara GETs) every 10 minutes, plus at most one per 15 s while someone
+# has the Water screen open. Refresh requests are deleted by the function
+# that reads them, and a delete is not a create, so nothing re-triggers.
+
+# Niagara has no authentication: the user id in the path is the credential,
+# and the host is a bare IP. Both secrets. Livesky's session is a 24-hour JWT
+# an admin creates by signing in (water_session), kept in /private/livesky.
+NIAGARA_BASE = SecretParam("NIAGARA_BASE")
+NIAGARA_USER_ID = SecretParam("NIAGARA_USER_ID")
+LIVESKY_BASE = StringParam("LIVESKY_BASE", default="https://gsm.liveskytech.com:3001")
+
+
+def _water_pull(store, root: str) -> dict | None:
+    """Pull both vendors unless switched off or another pull just ran."""
+    if store.reference(f"{root}/meta/water/enabled").get() is not True:
+        return None
+    if not water.claim_pull(store, root, time.time() * 1000):
+        return None
+    niagara = None
+    if NIAGARA_BASE.value.strip() and NIAGARA_USER_ID.value.strip():
+        niagara = water.NiagaraClient(NIAGARA_BASE.value.strip(), NIAGARA_USER_ID.value.strip())
+    result = water.pull(store, root, LIVESKY_BASE.value, niagara, time.time())
+    _LOG.info("Water pull: %s", result)
+    return result
+
+
+@db_fn.on_value_created(
+    reference="/farms/{farm}/water_requests/{req}",
+    instance="snof-live-default-rtdb",
+    region="asia-southeast1",
+    secrets=[NIAGARA_BASE, NIAGARA_USER_ID],
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60,
+    # One pull at a time, and the claim spaces them 15 s apart: a screen left
+    # open, or a client gone wrong, costs at most four pulls a minute.
+    max_instances=1,
+    concurrency=1,
+)
+def water_refresh(event: db_fn.Event[Any]) -> None:
+    """Someone has the Water screen open: pull now, unless a pull just ran."""
+    farm, req_id = event.params["farm"], event.params["req"]
+    store = _db()
+    try:
+        if farm == FARM_SLUG.value:
+            _water_pull(store, f"farms/{farm}")
+    finally:
+        store.reference(f"farms/{farm}/water_requests/{req_id}").delete()
+
+
+@scheduler_fn.on_schedule(
+    schedule="every 10 minutes",
+    region="asia-southeast1",
+    secrets=[NIAGARA_BASE, NIAGARA_USER_ID],
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60,
+    max_instances=1,
+)
+def water_poll(event: scheduler_fn.ScheduledEvent) -> None:
+    """Keep the water chain roughly current when nobody is looking."""
+    _water_pull(_db(), f"farms/{FARM_SLUG.value}")
+
+
+def _json(body: dict, status: int = 200) -> https_fn.Response:
+    import json
+    return https_fn.Response(json.dumps(body), status=status, content_type="application/json")
+
+
+@https_fn.on_request(
+    region="asia-southeast1",
+    secrets=[NIAGARA_BASE, NIAGARA_USER_ID],
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60,
+    max_instances=1,
+    concurrency=1,
+    cors=options.CorsOptions(cors_origins=["https://snof-live.web.app", "https://snof-live.firebaseapp.com"],
+                             cors_methods=["post"]),
+)
+def water_session(req: https_fn.Request) -> https_fn.Response:
+    """Sign SNOF in to Livesky with an SMS code, or out. Admins only.
+
+    POST {"action": "send_code", "mobile"} | {"action": "verify", "mobile", "code"}
+       | {"action": "sign_out"}, with the caller's Firebase ID token as
+    Authorization: Bearer. The Livesky token goes to /private/livesky and is
+    never returned; meta/water/livesky says who signed in and until when."""
+    from firebase_admin import auth as fb_auth
+
+    if req.method != "POST":
+        return _json({"ok": False, "error": "POST only."}, 405)
+    store = _db()
+    header = req.headers.get("Authorization", "")
+    try:
+        uid = fb_auth.verify_id_token(header.removeprefix("Bearer ").strip())["uid"]
+    except Exception:          # noqa: BLE001 — any failure is "not signed in"
+        return _json({"ok": False, "error": "Sign in to SNOF first."}, 401)
+    if store.reference(f"acl/admins/{uid}").get() is not True:
+        return _json({"ok": False, "error": "Only farm admins can sign in to Livesky."}, 403)
+
+    body = req.get_json(silent=True) or {}
+    action = body.get("action")
+    root = f"farms/{FARM_SLUG.value}"
+    status = store.reference(f"{root}/meta/water/livesky")
+    client = water.LiveskyClient(LIVESKY_BASE.value)
+
+    if action == "sign_out":
+        # Livesky's own logout revokes nothing (docs/livesky-app.md), so this
+        # only stops SNOF using the session.
+        store.reference(water.LIVESKY_PATH).delete()
+        status.update({"signedInAt": None, "expires": None, "by": None, "mobileLast4": None,
+                       "ok": False, "error": "Signed out of Livesky."})
+        return _json({"ok": True})
+
+    mobile = water.mobile10(body.get("mobile"))
+    if not mobile:
+        return _json({"ok": False, "error": "Enter the 10-digit mobile number on the Livesky account."}, 400)
+
+    if action == "send_code":
+        # One code per 30 s: each one is an SMS to the owner's phone.
+        last = (status.get() or {}).get("codeAt") or 0
+        if time.time() * 1000 - last < 30_000:
+            return _json({"ok": False, "error": "A code was sent seconds ago. Wait for the SMS."}, 429)
+        status.update({"codeAt": time.time() * 1000})
+        try:
+            client.send_code(mobile)
+        except water.VendorError as e:
+            return _json({"ok": False, "error": str(e)}, 502)
+        except Exception as e:          # noqa: BLE001
+            return _json({"ok": False, "error": f"Could not reach Livesky ({type(e).__name__})."}, 502)
+        return _json({"ok": True})
+
+    if action == "verify":
+        code = "".join(ch for ch in str(body.get("code") or "") if ch.isdigit())
+        if not 4 <= len(code) <= 8:
+            return _json({"ok": False, "error": "Enter the code from the SMS."}, 400)
+        try:
+            token = client.login(mobile, code)
+            # Prove the session before keeping it: list the account's starters
+            # (read-only), which is also where the IMEI comes from.
+            devices = water.LiveskyClient(LIVESKY_BASE.value, token).devices()
+        except water.VendorError as e:
+            return _json({"ok": False, "error": str(e)}, 502)
+        except Exception as e:          # noqa: BLE001
+            return _json({"ok": False, "error": f"Could not reach Livesky ({type(e).__name__})."}, 502)
+        if not devices:
+            return _json({"ok": False, "error": "Signed in, but the account lists no starter."}, 502)
+        exp = water.jwt_expiry(token)
+        device = str(devices[0].get("device_name") or "")[:64]
+        store.reference(water.LIVESKY_PATH).set({
+            "token": token, "exp": exp, "imei": str(devices[0]["imei"]), "device": device,
+            "at": reports.SERVER_TIMESTAMP, "uid": uid})
+        status.update({"signedInAt": reports.SERVER_TIMESTAMP, "expires": (exp or 0) * 1000 or None,
+                       "by": uid, "mobileLast4": mobile[-4:], "ok": True, "error": ""})
+        try:
+            _water_pull(store, root)
+        except Exception:          # noqa: BLE001 — the sign-in stands either way
+            _LOG.exception("Water pull after Livesky sign-in failed")
+        return _json({"ok": True, "expires": (exp or 0) * 1000, "device": water.scrub(device)})
+
+    return _json({"ok": False, "error": "Unknown action."}, 400)

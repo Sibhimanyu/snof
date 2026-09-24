@@ -1,0 +1,271 @@
+import SwiftUI
+import SNOFCore
+
+/* The water chain, top to bottom the way the water goes: the river motor
+ * (Livesky) pumps to the other farm, whose two Niagara motors send water on
+ * to the main farm and run that farm's own drip zones; the main farm's valves
+ * are the Irrigation tab. Read-only, like waterView() in app.js. */
+struct WaterView: View {
+    @Environment(FarmStore.self) private var store
+
+    private var water: WaterState { store.water }
+
+    var body: some View {
+        Page(eyebrow: "Water chain", title: "Water",
+             subtitle: "From the river to the main farm's drip lines.",
+             refresh: refresh) {
+            if let why = store.waterGateWhy { Note(text: why, tone: .warn) }
+            Note(text: pulledLine)
+            Stage(n: 1, title: "River", lead: "The river motor pumps to the other farm.") { river }
+            Flow(text: "To the other farm")
+            Stage(n: 2, title: "Other farm", lead: "Two motors on Niagara controllers.") { otherFarm }
+            Flow(text: "7.5 HP motor to the main farm")
+            Stage(n: 3, title: "Main farm", lead: "The Mobitech DCON controller runs the valves.") { mainFarm }
+        }
+        // Ask now, and every 30 s while this tab is on screen; SwiftUI
+        // cancels the task when the tab goes away.
+        .task {
+            while !Task.isCancelled {
+                await store.refreshWater()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    /// Swipe down to read again; not offered while readings are switched off.
+    private var refresh: (@MainActor () async -> Void)? {
+        guard water.enabled else { return nil }
+        let store = store
+        return { await store.refreshWater(force: true) }
+    }
+
+    private var pulledLine: String {
+        let read = water.pulledAt.map { "Read from the controllers \(ago(ms: $0))." } ?? "Not read yet."
+        return read + " Read-only: this app cannot switch a motor."
+    }
+
+    @ViewBuilder private var river: some View {
+        if store.isAdmin, let problem = store.liveskyProblem {
+            Note(text: problem + " Sign in from Account.", tone: .warn)
+        }
+        if let r = water.river {
+            MotorCard(motor: r, now: store.now,
+                      vendorError: water.livesky.status.ok == false ? water.livesky.status.error : nil)
+        } else {
+            EmptyBlock(title: "No reading from the river motor",
+                       message: water.livesky.status.error.isEmpty ? "It appears after the first pull." : water.livesky.status.error,
+                       symbol: "drop")
+        }
+    }
+
+    @ViewBuilder private var otherFarm: some View {
+        if water.motors.isEmpty {
+            EmptyBlock(title: "No reading from the other farm",
+                       message: water.niagara.error.isEmpty ? "It appears after the first pull." : water.niagara.error,
+                       symbol: "drop")
+        } else {
+            ForEach(water.motors) { m in MotorCard(motor: m, now: store.now) }
+            if water.niagara.ok == false, !water.niagara.error.isEmpty {
+                Note(text: "\(water.niagara.error) Showing the last readings.", tone: .warn)
+            }
+        }
+    }
+
+    private var mainFarm: some View {
+        Button { store.selectedTab = .irrigation } label: {
+            HStack(spacing: 14) {
+                Image("art-kulam").resizable().scaledToFit().frame(width: 44, height: 44)
+                    .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.irrigation.device ?? "Mobitech DCON").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                    Text("Valves, programs and reports are on the Irrigation tab.").font(Theme.meta).foregroundStyle(Theme.muted)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").foregroundStyle(Theme.faint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel(padding: 16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func ago(ms: Double) -> String { Water.ago(Date(timeIntervalSince1970: ms / 1000), now: store.now) }
+}
+
+enum Water {
+    static func ago(_ d: Date, now: Date) -> String {
+        let s = max(0, now.timeIntervalSince(d))
+        if s < 45 { return "just now" }
+        if s < 3600 { return "\(max(1, Int(s / 60))) min ago" }
+        if s < 86400 { return "\(Int(s / 3600)) h ago" }
+        return "\(Int(s / 86400)) d ago"
+    }
+}
+
+private struct Stage<Content: View>: View {
+    let n: Int
+    let title: String
+    let lead: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Text("\(n)").font(Theme.font(14, .bold, relativeTo: .subheadline).monospacedDigit())
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 30, height: 30).background(Theme.panel3, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.font(19, .bold, relativeTo: .title3)).foregroundStyle(Theme.text)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(lead).font(Theme.meta).foregroundStyle(Theme.muted)
+                }
+            }
+            content
+        }
+    }
+}
+
+private struct Flow: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 12) {
+            Capsule().fill(Theme.line2).frame(width: 2, height: 34).padding(.leading, 14)
+            Text(text).eyebrowStyle()
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+struct MotorCard: View {
+    let motor: WaterMotor
+    let now: Date
+    var vendorError: String? = nil
+
+    var body: some View {
+        let m = motor
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                Image(m.running == true ? "art-motor-on" : "art-motor-off").resizable().scaledToFit()
+                    .frame(width: 44, height: 44)
+                    .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(m.name).font(Theme.panelTitle).foregroundStyle(Theme.text)
+                    Text([m.vendor == "livesky" ? "Livesky" : "Niagara", m.roleText].filter { !$0.isEmpty }
+                        .joined(separator: " · "))
+                        .font(Theme.meta).foregroundStyle(Theme.muted)
+                }
+                Spacer(minLength: 8)
+                Tag(text: m.running == true ? "Running" : m.running == false ? "Off" : "Unknown",
+                    kind: m.running == true ? .on : .plain)
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
+                      alignment: .leading, spacing: 12) {
+                ForEach(facts, id: \.0) { k, v in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(k).eyebrowStyle()
+                        Text(v).font(Theme.font(14.5, .semibold, relativeTo: .subheadline).monospacedDigit())
+                            .foregroundStyle(Theme.text)
+                    }
+                }
+            }
+            if let p = m.pendingText { Note(text: p, tone: .warn) }
+            if !m.trips.isEmpty { Note(text: "Tripped: \(m.trips.joined(separator: ", ")).", tone: .bad) }
+            if let z = m.skippedZone { Note(text: "Zone \(z) was skipped: no valve feedback.", tone: .bad) }
+            if !m.event.isEmpty, !["001", "020", ""].contains(m.eventCode), m.skippedZone == nil {
+                Note(text: "Last event: \(m.event.lowercased().capitalizedFirst).")
+            }
+            if let e = vendorError, !e.isEmpty { Note(text: "\(e) Showing the last reading.", tone: .warn) }
+            Divider().overlay(Theme.line)
+            Text(m.lastReport.map { "Controller report \(Water.ago($0, now: now))" } ?? "No report time")
+                .font(Theme.small).foregroundStyle(Theme.faint)
+        }
+        .panel(padding: 16)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var facts: [(String, String)] {
+        let m = motor
+        var out: [(String, String)] = []
+        if m.vendor == "livesky" {
+            if m.running == true, let r = m.runMinutes { out.append(("Running for", WaterFormat.minutes(r))) }
+            if m.running == false, let s = m.stopMinutes { out.append(("Off for", WaterFormat.minutes(s))) }
+        }
+        if let p = m.program {
+            out.append(("Program", p + (m.zone.map { " · zone \($0)" } ?? "")))
+            if let left = m.zoneLeft { out.append(("Zone time left", WaterFormat.hms(left))) }
+        }
+        if let v = WaterFormat.list(m.volts, "V") { out.append(("Voltage", v)) }
+        if let a = WaterFormat.list(m.amps, "A"), m.running == true || m.amps.contains(where: { $0 > 0 }) {
+            out.append(("Current", a))
+        }
+        if let p = m.pressureOut, m.running == true { out.append(("Outlet pressure", String(format: p == p.rounded() ? "%.0f" : "%.1f", p))) }
+        out.append(("Power", m.power ? (m.supply.isEmpty ? "present" : m.supply.lowercased().replacingOccurrences(of: "phase", with: "phase present")) : "none reported"))
+        if let a = m.autoStart { out.append(("Auto-start", a ? "on" : "off")) }
+        if m.vendor == "livesky", m.connected == false { out.append(("Starter link", "not connected")) }
+        return out
+    }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+/// SNOF's Livesky session (the river motor): an SMS code through the
+/// water_session function, which keeps the 24-hour token. Admins only.
+struct LiveskySignIn: View {
+    enum Step { case idle, mobile, code }
+    @Environment(FarmStore.self) private var store
+    @State private var step = Step.idle
+    @State private var mobile = ""
+    @State private var code = ""
+    @State private var busy = false
+    @State private var confirmSignOut = false
+
+    var body: some View {
+        let ls = store.water.livesky
+        let signedIn = ls.signedInAt != nil || ls.expires != nil
+        Text("The river motor is read with a Livesky session that lasts 24 hours. Signing SNOF in does not sign the phone out.")
+            .font(Theme.meta).foregroundStyle(Theme.muted)
+        if !ls.mobileLast4.isEmpty { LabeledContent("Number", value: "ending \(ls.mobileLast4)") }
+        if let e = ls.expires {
+            LabeledContent("Session ends", value: Date(timeIntervalSince1970: e / 1000).formatted(date: .abbreviated, time: .shortened))
+        }
+        if let problem = store.liveskyProblem { Text(problem).foregroundStyle(Theme.warn) }
+
+        switch step {
+        case .idle:
+            Button(signedIn ? "Sign in again" : "Sign in to Livesky") { step = .mobile }
+            if signedIn {
+                Button("Sign SNOF out", role: .destructive) { confirmSignOut = true }
+                    .disabled(busy)
+                    .confirmationDialog("Sign SNOF out of Livesky?", isPresented: $confirmSignOut, titleVisibility: .visible) {
+                        Button("Sign out", role: .destructive) {
+                            busy = true
+                            Task { await store.liveskySignOut(); busy = false }
+                        }
+                    } message: { Text("The river motor is not read until someone signs in again.") }
+            }
+        case .mobile:
+            TextField("Livesky mobile number", text: $mobile)
+                .keyboardType(.numberPad).textContentType(.telephoneNumber)
+            Button(busy ? "Sending…" : "Send code") {
+                busy = true
+                Task { if await store.liveskySendCode(mobile) { step = .code }; busy = false }
+            }
+            .disabled(busy || Mobitech.mobile(mobile) == nil)
+            Button("Cancel", role: .cancel) { step = .idle; mobile = "" }.disabled(busy)
+        case .code:
+            TextField("Code from the SMS", text: $code)
+                .keyboardType(.numberPad).textContentType(.oneTimeCode)
+            Button(busy ? "Signing in…" : "Sign in") {
+                busy = true
+                Task {
+                    if await store.liveskySignIn(mobile, code: code) { step = .idle; code = ""; mobile = "" }
+                    busy = false
+                }
+            }
+            .disabled(busy || code.filter(\.isNumber).count < 4)
+            Button("Use another number", role: .cancel) { step = .mobile; code = "" }.disabled(busy)
+        }
+    }
+}

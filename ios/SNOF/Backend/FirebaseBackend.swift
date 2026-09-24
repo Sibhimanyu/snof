@@ -129,6 +129,7 @@ final class FirebaseBackend: FarmBackend {
                 onDenied: nil) { handler(.irrigationResults($0)) }
         observe("\(farm)/irrigation_lock", onDenied: nil) { handler(.irrigationLock($0)) }
         observe("\(farm)/mobitech_status", onDenied: nil) { handler(.mobitechStatus($0)) }
+        observe("\(farm)/water", onDenied: nil) { handler(.water($0)) }
     }
 
     func detach() {
@@ -210,6 +211,32 @@ final class FirebaseBackend: FarmBackend {
     func clearMobitechSession() async throws {
         try await set("private/mobitech", nil)
         try await set("farms/\(Farm.slug)/mobitech_status", nil)
+    }
+
+    func requestWaterRefresh(uid: String) async throws {
+        try await push("farms/\(Farm.slug)/water_requests", ["uid": uid, "at": ServerValue.timestamp()])
+    }
+
+    /// The function lives beside the database (asia-southeast1). The project
+    /// id comes from GoogleService-Info.plist; nothing here is hardcoded.
+    func waterSession(_ body: [String: Any]) async throws -> [String: Any] {
+        guard let project = FirebaseApp.app()?.options.projectID,
+              let url = URL(string: "https://asia-southeast1-\(project).cloudfunctions.net/water_session") else {
+            throw BackendError.notConfigured("Firebase is not configured in this build.")
+        }
+        guard let user = Auth.auth().currentUser else { throw BackendError.other("Sign in to SNOF first.") }
+        let idToken = try await user.getIDToken()
+        var req = URLRequest(url: url, timeoutInterval: 45)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard (resp as? HTTPURLResponse)?.statusCode == 200, Parse.bool(json["ok"]) == true else {
+            throw BackendError.other(Parse.string(json["error"]) ?? "The function answered \((resp as? HTTPURLResponse)?.statusCode ?? 0).")
+        }
+        return json
     }
 
     private func set(_ path: String, _ node: [String: Any]?) async throws {

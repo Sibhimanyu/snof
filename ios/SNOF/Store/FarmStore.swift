@@ -11,7 +11,7 @@ enum Phase: Equatable {
     case app
 }
 
-enum AppTab: Hashable { case overview, areas, devices, irrigation }
+enum AppTab: Hashable { case overview, areas, devices, irrigation, water }
 
 enum StatusFilter: String, CaseIterable, Identifiable {
     case all, active, offline
@@ -165,6 +165,7 @@ final class FarmStore {
         irrigationTask?.cancel(); irrigationPending = nil
         meta = FarmMeta(); metaLoaded = false; mobitechStatus = nil; mobitechPendingToken = nil; areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
+        water = WaterState(); rawWater = nil; rawMeta = nil; waterAsked = .distantPast
         firstSnapshot = false; canControl = false; isAdmin = false
         deviceStatus = .all; deviceDomain = nil
     }
@@ -174,6 +175,11 @@ final class FarmStore {
         case .meta(let v):
             meta = Parse.meta(v)
             metaLoaded = true
+            rawMeta = v
+            water = Parse.water(rawWater, meta: rawMeta)
+        case .water(let v):
+            rawWater = v
+            water = Parse.water(rawWater, meta: rawMeta)
         case .areas(let v):
             areas = Parse.areas(v)
             applyRooms()
@@ -449,6 +455,79 @@ final class FarmStore {
     /* ---- irrigation control ---- */
 
     /// The Run/Stop the NUC has not answered yet.
+    /* ---- water chain (read-only) ---- */
+
+    /// The river motor and the other farm's two motors, as the water
+    /// functions last read them (docs/water.md). Parsed from farms/<farm>/water
+    /// and meta/water together, so the gate and the session travel with it.
+    private(set) var water = WaterState()
+    private var rawWater: Any?
+    private var rawMeta: Any?
+    private var waterAsked = Date.distantPast
+
+    var waterGateWhy: String? { water.enabled ? nil : "Water readings are switched off for now." }
+
+    /// Ask the functions for a fresh read. Called when the Water tab opens and
+    /// every 30 s while it stays open; `force` (pull to refresh) may ask again
+    /// after 5 s. The function spaces pulls 15 s apart whoever asks.
+    func refreshWater(force: Bool = false) async {
+        guard let uid = user?.uid, water.enabled else { return }
+        let since = Date().timeIntervalSince(waterAsked)
+        guard since > (force ? 5 : 28) else { return }
+        waterAsked = Date()
+        try? await backend.requestWaterRefresh(uid: uid)
+    }
+
+    var liveskyKind: LiveskySession.Kind { water.livesky.kind(nowMs: nowMs + skewMs) }
+
+    /// One line for any screen, or nil when the session is fine.
+    var liveskyProblem: String? {
+        switch liveskyKind {
+        case .ok: return nil
+        case .none: return "SNOF is not signed in to Livesky, so the river motor cannot be read."
+        case .expired:
+            let when = water.livesky.expires.map { Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .shortened) } ?? ""
+            return "The Livesky session ended \(when). Sign in again to read the river motor."
+        case .error: return water.livesky.status.error
+        }
+    }
+
+    /// Ask Livesky to text a code. True when it did.
+    func liveskySendCode(_ raw: String) async -> Bool {
+        guard isAdmin else { show(.err, "Only farm admins can sign in to Livesky."); return false }
+        guard let mobile = Mobitech.mobile(raw) else { show(.err, "Enter the 10-digit mobile number on the Livesky account."); return false }
+        do {
+            _ = try await backend.waterSession(["action": "send_code", "mobile": mobile])
+            return true
+        } catch {
+            show(.err, "No code sent: \(error.localizedDescription)"); return false
+        }
+    }
+
+    /// Sign in with the code. The function keeps the token; the app never sees it.
+    func liveskySignIn(_ raw: String, code: String) async -> Bool {
+        guard isAdmin, let mobile = Mobitech.mobile(raw) else { return false }
+        let otp = code.filter(\.isNumber)
+        guard (4...8).contains(otp.count) else { show(.err, "Enter the code from the SMS."); return false }
+        do {
+            let j = try await backend.waterSession(["action": "verify", "mobile": mobile, "code": otp])
+            let until = Parse.double(j["expires"]).map { Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .shortened) } ?? ""
+            show(.ok, "Signed in to Livesky\(until.isEmpty ? "" : " until \(until)"). The river motor is read with this session.")
+            return true
+        } catch {
+            show(.err, "Not signed in: \(error.localizedDescription)"); return false
+        }
+    }
+
+    func liveskySignOut() async {
+        do {
+            _ = try await backend.waterSession(["action": "sign_out"])
+            show(.ok, "Signed SNOF out of Livesky. The river motor will not be read until someone signs in again.")
+        } catch {
+            show(.err, "Could not sign out: \(error.localizedDescription)")
+        }
+    }
+
     /* ---- Mobitech sign-in (admins) ---- */
 
     struct MobitechStatus: Equatable {
