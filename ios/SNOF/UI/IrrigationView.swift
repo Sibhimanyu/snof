@@ -55,6 +55,7 @@ struct IrrigationView: View {
             }
         }
         .navigationTitle("Irrigation")
+        .task { await store.autoRefreshIrrigationIfStale() }
         .sheet(item: $opened) { open in
             ReportSheet(reportKey: open.id)
         }

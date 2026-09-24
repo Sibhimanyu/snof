@@ -169,6 +169,7 @@ final class FarmStore {
         meta = FarmMeta(); metaLoaded = false; mobitechStatus = nil; mobitechPendingToken = nil; areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         water = WaterState(); rawWater = nil; rawMeta = nil; waterAsked = .distantPast
+        systems = [:]; deviceSystems = [:]
         firstSnapshot = false; canControl = false; isAdmin = false
         deviceStatus = .all; deviceDomain = nil
     }
@@ -186,7 +187,9 @@ final class FarmStore {
         case .areas(let v):
             areas = Parse.areas(v)
             applyRooms()
-        case .devices(let v): deviceNames = Parse.devices(v)
+        case .devices(let v):
+            deviceNames = Parse.devices(v)
+            rebuildSystems()
         case .entities(let v):
             received = Parse.entities(v).sorted(by: Sorting.byName)
             applyRooms()
@@ -252,6 +255,16 @@ final class FarmStore {
     private func applyRooms() {
         entities = Sorting.inRooms(received, areas: areas)
         index = Dictionary(entities.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        rebuildSystems()
+    }
+
+    /// Systems are rebuilt when entities or device names change, not on every
+    /// read: Home reads them from several cards on every clock tick.
+    private func rebuildSystems() {
+        systems = Systems.build(entities, names: deviceNames)
+        var out: [String: FarmSystemID] = [:]
+        for (id, sys) in systems { for d in sys.devices { out[d.id] = id } }
+        deviceSystems = out
     }
 
     func areaName(_ id: String) -> String {
@@ -383,18 +396,28 @@ final class FarmStore {
     /// irrigation_requests keys sent by the Overview's Refresh; they settle
     /// quietly, with one toast for the lot.
     private var refreshKeys: Set<String> = []
+    /// The refresh in flight was a background one: settle it without toasts.
+    private var quietRefresh = false
     var refreshingIrrigation: Bool { !refreshKeys.isDisjoint(with: waitingReports) }
 
     /// Overview → Refresh: what the controller is doing now, power and
     /// pressure now, and yesterday-and-today's runs. Three ordinary report
     /// requests — each a press, never a poll — so the rules, the kill switch
     /// and the function's own checks all apply unchanged.
-    func refreshIrrigation() async {
-        if !canControl { show(.err, "Your account can view, but not run reports."); return }
+    func refreshIrrigation(quiet: Bool = false) async {
+        if !canControl { if !quiet { show(.err, "Your account can view, but not run reports.") }; return }
         let g = gate(.irrigation)
-        if !g.ok { show(.err, g.why); return }
-        if !connected { show(.err, BackendError.notConnected.localizedDescription); return }
+        if !g.ok { if !quiet { show(.err, g.why) }; return }
+        if !connected { if !quiet { show(.err, BackendError.notConnected.localizedDescription) }; return }
         guard let uid = user?.uid, !refreshingIrrigation else { return }
+        quietRefresh = quiet
+        // Three reads through the farm box per press: a second press within
+        // 45 s of the last read adds load and nothing new (27 presses were
+        // seen in one evening, 2026-09-24).
+        if let last = irrigation.program?.at ?? irrigation.lastUpdated, nowMs + skewMs - last < 45_000 {
+            if !quiet { show(.ok, "Just checked.") }
+            return
+        }
         let zone = FarmTime.zone(irrigation.timeZone)
         let today = FarmTime.today(Date(), zone: zone), yesterday = FarmTime.yesterday(Date(), zone: zone)
         var sent = 0
@@ -420,6 +443,18 @@ final class FarmStore {
         if sent > 0 { settleReports() }
     }
 
+    /// Opening Home or Irrigation with controller data older than 15 minutes
+    /// fetches it again, at most once every 10 minutes, so nobody has to press
+    /// Refresh to trust what they see. Quiet unless it fails.
+    private var autoRefreshedAt = Date.distantPast
+    func autoRefreshIrrigationIfStale() async {
+        guard canControl, connected, !refreshingIrrigation, gate(.irrigation).ok else { return }
+        let last = irrigation.program?.at ?? irrigation.lastUpdated ?? 0
+        guard nowMs + skewMs - last > 15 * 60_000, Date().timeIntervalSince(autoRefreshedAt) > 10 * 60 else { return }
+        autoRefreshedAt = Date()
+        await refreshIrrigation(quiet: true)
+    }
+
     /// Swipe down on Overview or Irrigation: the same three requests as the
     /// Refresh button, but the spinner stays until the controller has
     /// answered (or 30 s pass — the "Irrigation updated." toast or the
@@ -439,6 +474,9 @@ final class FarmStore {
             reportTasks[key]?.cancel()
             reportTasks[key] = nil
             refreshKeys.remove(key)
+            // A background refresh stays silent; a failure still shows up in
+            // Needs a look ("Could not reach the controller").
+            if quietRefresh { continue }
             if rep.status == "error" { show(.err, "\(rep.label) failed: \(rep.error.isEmpty ? "controller error" : rep.error)") }
             else if !refreshingIrrigation { show(.ok, "Irrigation updated.") }
         }
@@ -461,7 +499,11 @@ final class FarmStore {
     /* ---- the farm, by system (SNOFCore Systems.swift) ---- */
 
     /// Devices sorted into what they are; appliances off at the wall are not faults.
-    var systems: [FarmSystemID: FarmSystem] { Systems.build(entities, names: deviceNames) }
+    private(set) var systems: [FarmSystemID: FarmSystem] = [:]
+
+    /// Device id -> its system, so any screen can tell a fault from an
+    /// appliance switched off at the wall.
+    private(set) var deviceSystems: [String: FarmSystemID] = [:]
 
     /// Everything that deserves a look, worst first (Home's first card).
     var attention: [AttentionItem] {
@@ -484,7 +526,7 @@ final class FarmStore {
     /// reports, and dozens of identical cards buried the one asked for.
     var latestReports: [Report] {
         var seen = Set<String>()
-        return reports.filter { seen.insert("\($0.type)|\($0.from ?? "")|\($0.to ?? "")").inserted }.prefix(8).map { $0 }
+        return reports.filter { seen.insert("\($0.type)|\($0.from ?? "")|\($0.to ?? "")").inserted }.prefix(12).map { $0 }
     }
 
     /* ---- water chain (read-only) ---- */

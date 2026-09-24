@@ -306,6 +306,25 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   Refresh (water + the three irrigation reads), and every card shows its
   data's age — stale data must never look live. Vendor sign-ins are on
   Irrigation ("Mobitech account") and Water ("Livesky account").
+- **Home v3 and farm systems** (2026-09-25 overnight; web PR #24, iOS
+  0.9.0 PR #25). Home leads with **Needs a look**: one list across every
+  system, worst first, each row opening where it is handled (farm box
+  offline, valve faults, missing phase, runs cut short in 24 h, controller
+  reads failing, trips, zones skipped, old water readings, cameras / inverter
+  / switch modules offline). Devices are sorted into **systems from their
+  own entities** (`farmSystems()` in app.js, `Systems.swift` in SNOFCore —
+  keep them identical): Solar, Security, Lights & switches, Climate, TVs, 3D
+  printer. Offline is a fault only for security, solar and switch modules;
+  ACs, TVs and the printer are "off at the wall", never flagged. Home switch
+  tiles come only from the switches system (never an inverter or AC
+  setting). System pages: web `#/sys/<id>`, iOS `SystemRoute`. Irrigation:
+  **Watered** (minutes per crop, Today/Yesterday, cut-short runs amber, dry
+  irrigation valves listed) replaces the valve list; the valve list exists
+  only while picking valves for a run. Reports show the latest of each kind
+  and range (max 8): every Refresh writes three reports. **Review with real
+  data**: web `?replay=1&fresh=1` reads `dashboard/preview/replay.local.json`
+  (gitignored; export with `firebase database:get /farms/snof`), iOS
+  `SNOF_DEMO_TREE=<farm.json>` (+ `-system <id>` to open a system page).
 - **Brand** (2026-09-23): the logo green `#018843` is the brand colour and
   SNOF's only green, used on the web (deployed, commit `e741322`) and on iOS
   0.1.2. Fill with `--brand`/`Theme.brand`, and write green text with

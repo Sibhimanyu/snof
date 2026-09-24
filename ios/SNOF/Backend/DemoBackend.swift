@@ -109,6 +109,16 @@ final class DemoBackend: FarmBackend {
            let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
            let real = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             for (k, v) in real { tree[k] = v }
+            // -demo-watering: a manual run in progress, 6 of 20 minutes done.
+            if flag("watering"), var irr = tree["irrigation"] as? [String: Any] {
+                let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+                f.timeZone = TimeZone(secondsFromGMT: 19_800); f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                irr["program"] = ["name": "Manual Mode", "kind": "Manual", "running": true, "valves": "4 Veg, 6 Kulam",
+                                  "start": f.string(from: Date(timeIntervalSince1970: now / 1000 - 360)), "plannedMin": 20,
+                                  "remainingMin": 14, "lastSeen": f.string(from: Date(timeIntervalSince1970: now / 1000 - 60)),
+                                  "at": now - 60_000] as [String: Any]
+                tree["irrigation"] = irr
+            }
             var m = tree["meta"] as? [String: Any] ?? [:]
             var b = m["bridge"] as? [String: Any] ?? [:]
             b["lastSeen"] = now - 5_000

@@ -37,6 +37,7 @@ struct OverviewView: View {
         // Home is the first screen: keep the water picture current while it is
         // open (the function spaces pulls 15 s apart whoever asks).
         .task {
+            await store.autoRefreshIrrigationIfStale()
             while !Task.isCancelled {
                 await store.refreshWater()
                 try? await Task.sleep(for: .seconds(30))
@@ -214,9 +215,11 @@ struct IrrigationRingCard: View {
             } else {
                 HStack(spacing: 14) {
                     if say.running, let p = c.program {
-                        let planned = Double(p.plannedMin ?? 0), left = Double(max(0, p.remainingMin ?? 0))
+                        // The same countdown as the Now card: from the controller's
+                        // last report, not the raw figure in it.
+                        let planned = Double(p.plannedMin ?? 0), left = Double(max(0, say.leftMin ?? p.remainingMin ?? 0))
                         Ring(fraction: planned > 0 ? 1 - left / planned : 0.5, color: Theme.brand,
-                             label: p.remainingMin.map { Format.minutes(max(0, $0)) } ?? "On", sub: "left")
+                             label: say.leftMin.map { Format.minutes(max(0, $0)) } ?? "On", sub: "left")
                     } else if let last {
                         let planned = Double(last.plannedMin ?? 0)
                         let got = Double(last.deliveredMin ?? (last.finished ? last.plannedMin ?? 0 : 0))
@@ -651,7 +654,7 @@ struct WaterNow: View {
         .accessibilityElement(children: .combine)
     }
 
-    struct Say { var running: Bool; var title: String; var detail: String; var checked: String? }
+    struct Say { var running: Bool; var title: String; var detail: String; var checked: String?; var leftMin: Int? = nil }
 
     private var state: Say { Self.say(cache: cache, zone: zone, now: now) }
 
@@ -668,7 +671,7 @@ struct WaterNow: View {
                 var bits = [p.valves].filter { !$0.isEmpty }
                 if let left, let planned = p.plannedMin { bits.append("about \(Format.minutes(left)) left of \(Format.minutes(planned))") }
                 if let since = FarmTime.when(p.start, now: now, zone: zone) { bits.append("since \(since)") }
-                return Say(running: true, title: p.name, detail: bits.joined(separator: " · "), checked: checked)
+                return Say(running: true, title: p.name, detail: bits.joined(separator: " · "), checked: checked, leftMin: left)
             }
         }
         if let last = Irrigation.runs(cache).first {
@@ -711,8 +714,9 @@ struct IrrigationControls: View {
                         .background(Theme.brand, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(refusal != nil)
-                .opacity(refusal != nil ? 0.5 : 1)
+                // A second manual run is refused by the farm while one is going.
+                .disabled(refusal != nil || manual)
+                .opacity(refusal != nil || manual ? 0.5 : 1)
                 if manual {
                     Button { confirmStop = true } label: {
                         HStack(spacing: 6) {
@@ -1133,7 +1137,11 @@ struct AreaCard: View {
     var body: some View {
         // Devices, like the tiles: one switched-off printer is one offline.
         let devices = Sorting.byDevice(entities, names: store.deviceNames)
-        let bad = devices.filter(\.isOffline).count
+        // An AC or TV off at the wall is "off", not an alarm; red is for faults.
+        let index = store.deviceSystems
+        let down = devices.filter(\.isOffline)
+        let fault = down.filter { (index[$0.id] ?? .other).offlineIsFault }.count
+        let off = down.count - fault
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
                 Text(name).font(Theme.font(15.5, .bold, relativeTo: .headline)).tracking(-0.4)
@@ -1142,7 +1150,8 @@ struct AreaCard: View {
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
             }
             (Text("\(devices.count) \(devices.count == 1 ? "device" : "devices")")
-                + (bad > 0 ? Text(" · ") + Text("\(bad) offline").foregroundColor(Theme.bad).bold() : Text("")))
+                + (fault > 0 ? Text(" · ") + Text("\(fault) offline").foregroundColor(Theme.bad).bold() : Text(""))
+                + (off > 0 ? Text(" · \(off) off") : Text("")))
                 .font(Theme.meta).foregroundStyle(Theme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

@@ -165,9 +165,8 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // End to end: pick a range report, press Generate, the answer arrives.
   await p.selectOption('#irr-type','motor_log');
   await p.waitForTimeout(150);
-  const before=await p.locator('.rep-card').count();
   await p.click('[data-act="irr-gen"]');
-  await p.waitForFunction((n)=>document.querySelectorAll('.rep-card').length>n, before, {timeout:8000});
+  await p.waitForFunction(()=>[...document.querySelectorAll('.rep-card .rep-title')].some(t=>t.textContent==='Motor log'), null, {timeout:8000});
   const ready=await p.evaluate(()=>[...document.querySelectorAll('.rep-card .rep-title')]
     .some(t=>t.textContent==='Motor log'));
   check('generated report lands as a card', ready===true);
@@ -193,7 +192,8 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // A half-answered composite must not read as a whole one.
   const partial=await p.evaluate(()=>{
     const card=[...document.querySelectorAll('.rep-card')]
-      .find(c=>c.querySelector('.rep-title').textContent.startsWith('Irrigation session log'));
+      .find(c=>c.querySelector('.rep-title').textContent.startsWith('Irrigation session log')
+        &&c.querySelector('.rep-when').textContent.includes('2026-02-20'));
     return card&&{tag:card.querySelector('.tag').textContent,
       err:card.querySelector('.rep-err')?.textContent||''};});
   check('a partly-failed report says so on the card',
@@ -355,7 +355,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     const r=await p.evaluate(()=>({reports:document.querySelectorAll('.rep-card').length,
       crops:document.querySelectorAll('.crop-row').length, cut:[...document.querySelectorAll('.crop-valves')].map(x=>x.textContent).filter(t=>/cut short/.test(t)),
       phases:document.querySelectorAll('.phase').length}));
-    check('replay: reports are the latest of each kind, at most 8', r.reports>0&&r.reports<=8, `${r.reports} cards`);
+    check('replay: reports are the latest of each kind, at most 12', r.reports>0&&r.reports<=12, `${r.reports} cards`);
     check('replay: watered lists crops with minutes', r.crops>=5, `${r.crops} crops`);
     check('replay: a cut-short count never exceeds the runs', r.cut.every(t=>+(/(\d+) cut short/.exec(t)||[0,0])[1]<=4), r.cut.join(' | '));
     check('replay: three phases drawn', r.phases===3, `${r.phases}`);

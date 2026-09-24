@@ -40,9 +40,12 @@ struct AreaDetailView: View {
         let inArea = store.entities.filter { $0.area == areaId }
         let list = inArea.filter { $0.matches(search, areaName: store.areaName(areaId)) }
         let devices = Sorting.byDevice(inArea, names: store.deviceNames)
-        let bad = devices.filter(\.isOffline).count
+        let index = store.deviceSystems
+        let down = devices.filter(\.isOffline)
+        let fault = down.filter { (index[$0.id] ?? .other).offlineIsFault }.count
         Page(title: store.areaName(areaId),
-             subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices")" + (bad > 0 ? " · \(bad) offline" : "")) {
+             subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices")"
+                + (fault > 0 ? " · \(fault) offline" : "") + (down.count - fault > 0 ? " · \(down.count - fault) off" : "")) {
             if list.isEmpty {
                 // An empty area and an area whose contents the search hid are
                 // different problems, and only one of them is the user's to fix.
