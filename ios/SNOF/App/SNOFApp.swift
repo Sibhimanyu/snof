@@ -21,7 +21,8 @@ struct SNOFApp: App {
                 .environment(store)
                 .environment(updates)
                 .onChange(of: scenePhase, initial: true) { _, phase in
-                    if phase == .active { Task { await updates.check() } }
+                    // Demo data (and the offline review harness) makes no network calls.
+                    if phase == .active, !store.backend.isDemo { Task { await updates.check() } }
                 }
                 .onAppear {
                     if store.phase == .boot { store.start() }

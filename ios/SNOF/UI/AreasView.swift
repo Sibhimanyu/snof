@@ -10,6 +10,7 @@ struct AreasView: View {
         let areas = Sorting.groupByArea(matching, name: store.areaName)
         Page(title: "Rooms") {
             RoomsSwitch()
+            SearchField(text: $search, prompt: "Search devices, rooms, states")
             if !store.firstSnapshot {
                 LoadingBlock()
             } else if areas.isEmpty {
@@ -26,7 +27,6 @@ struct AreasView: View {
             }
         }
         .navigationTitle("Rooms")
-        .searchable(text: $search, prompt: "Search devices, rooms, states")
     }
 }
 
@@ -46,6 +46,7 @@ struct AreaDetailView: View {
         Page(title: store.areaName(areaId),
              subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices")"
                 + (fault > 0 ? " · \(fault) offline" : "") + (down.count - fault > 0 ? " · \(down.count - fault) off" : "")) {
+            SearchField(text: $search, prompt: "Search this room")
             if list.isEmpty {
                 // An empty area and an area whose contents the search hid are
                 // different problems, and only one of them is the user's to fix.
@@ -61,16 +62,19 @@ struct AreaDetailView: View {
                 // one line at the end instead (a switched-off printer was 56
                 // dead rows). A search still finds its readings.
                 let deadIDs = Set(devices.filter(\.isOffline).map(\.id))
-                let shown = search.isEmpty ? list.filter { !deadIDs.contains($0.device ?? $0.key) } : list
+                // Settings (power-on behaviour, timers, firmware notices) stay
+                // out unless searched for, as on the system pages.
+                let shown = search.isEmpty
+                    ? list.filter { !deadIDs.contains($0.device ?? $0.key) && !Entity.settingDomains.contains($0.domain) } : list
                 ForEach(Sorting.domainsForArea(shown), id: \.domain) { group in
-                    TitledPanel(title: Entity.humanDomain(group.domain).capitalized, count: group.entities.count) {
+                    TitledPanel(title: Entity.sectionTitle(group.domain), count: group.entities.count) {
                         if Farm.controllable.contains(group.domain) {
                             ForEach(Array(group.entities.enumerated()), id: \.element.id) { i, e in
                                 if i > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
                                 DeviceCard(entity: e, showArea: false)
                             }
                         } else {
-                            RowList(items: group.entities, framed: false) { DeviceRow(entity: $0) }
+                            RowList(items: group.entities, framed: false) { DeviceRow(entity: $0, showDomain: false) }
                         }
                     }
                 }
@@ -86,7 +90,6 @@ struct AreaDetailView: View {
         .navigationTitle(store.areaName(areaId))
         .toolbarTitleDisplayMode(.inline)
         .toolbar(removing: .title)
-        .searchable(text: $search, prompt: "Search this area")
     }
 }
 

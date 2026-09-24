@@ -299,32 +299,39 @@ struct SwitchTile: View {
     @Environment(FarmStore.self) private var store
     let entity: Entity
     var name: String? = nil
+    /// Own presses only: a switch flipped by someone else must not buzz this phone.
+    @State private var presses = 0
 
     var body: some View {
         let on = store.displayOn(entity)
         let busy = store.pending[entity.id] != nil
-        Button { store.toggle(entity) } label: {
+        let can = store.canOperate(entity)
+        Button { presses += 1; store.toggle(entity) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Image(systemName: Theme.symbol(entity.domain)).font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(on ? .white : Theme.muted)
                     .frame(width: 38, height: 38)
                     .background(on ? Color.white.opacity(0.2) : Theme.panel2, in: Circle())
+                    .opacity(can ? 1 : 0.6)
                 Spacer(minLength: 10)
                 Text(name ?? entity.name).font(Theme.font(14, .bold, relativeTo: .subheadline))
                     .foregroundStyle(on ? .white : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
                 Text("\(store.areaName(entity.area)) · \(on ? "On" : "Off")").font(Theme.font(12, .regular, relativeTo: .caption))
-                    .foregroundStyle(on ? .white.opacity(0.85) : Theme.muted).lineLimit(1)
+                    .foregroundStyle(on ? .white : Theme.muted).lineLimit(1)
             }
             .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
             .padding(14)
             .background(on ? Theme.brand : Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous).strokeBorder(on ? .clear : Theme.edge, lineWidth: 1))
-            .shadow(color: Theme.cardShadow, radius: 10, y: 4)
-            .opacity(busy ? 0.7 : store.canOperate(entity) ? 1 : 0.55)
+            // Not pressable: flat, the icon dimmed, but the words at full
+            // strength. A whole-tile fade left the name at 2.2:1 and hid the
+            // state a viewer came to read.
+            .shadow(color: can ? Theme.cardShadow : .clear, radius: 10, y: 4)
+            .opacity(busy ? 0.7 : 1)
         }
-        .buttonStyle(.plain)
-        .disabled(!store.canOperate(entity))
-        .sensoryFeedback(.impact(weight: .light), trigger: on)
+        .buttonStyle(TileButtonStyle())
+        .disabled(!can)
+        .sensoryFeedback(.impact(weight: .light), trigger: presses)
         .accessibilityLabel(entity.name)
         .accessibilityValue(on ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
@@ -567,16 +574,18 @@ struct IrrigationControls: View {
         let waiting = store.irrigationPending != nil
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
+                // A second manual run is refused by the farm while one is going.
+                // Disabled reads grey on grey at full strength, not a faded
+                // green (white on a 50% brand was 2.0:1).
+                let canRun = refusal == nil && !manual
                 Button { picking = true } label: {
                     Label("Run valves…", systemImage: "drop")
                         .frame(maxWidth: .infinity, minHeight: Theme.hit)
-                        .foregroundStyle(.white)
-                        .background(Theme.brand, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                        .foregroundStyle(canRun ? .white : Theme.muted)
+                        .background(canRun ? Theme.brand : Theme.panel3, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                // A second manual run is refused by the farm while one is going.
-                .disabled(refusal != nil || manual)
-                .opacity(refusal != nil || manual ? 0.5 : 1)
+                .buttonStyle(TileButtonStyle())
+                .disabled(!canRun)
                 if manual {
                     Button { confirmStop = true } label: {
                         HStack(spacing: 6) {
@@ -603,6 +612,7 @@ struct IrrigationControls: View {
                      ? "Sent — confirming with the controller. Run and Stop unlock when it shows the change."
                      : "Sent to the farm — waiting for the controller to answer.")
             }
+            else if manual { Note(text: "One manual run at a time.") }
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
         .sheet(isPresented: $picking) { RunValvesSheet(cache: cache).environment(store) }

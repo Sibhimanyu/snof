@@ -191,6 +191,48 @@ struct Tag: View {
     }
 }
 
+/// Search inside the page, under its title. `.searchable` put the field in
+/// the bar above the page's own large title, upside down for iOS.
+struct SearchField: View {
+    @Binding var text: String
+    let prompt: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.muted)
+            TextField(prompt, text: $text)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .submitLabel(.search).focused($focused)
+            if !text.isEmpty {
+                Button { text = ""; focused = false } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.faint)
+                        .frame(minWidth: Theme.hit, minHeight: 40)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .font(Theme.font(15.5, .regular, relativeTo: .body))
+        .foregroundStyle(Theme.text)
+        .padding(.leading, 12)
+        .frame(minHeight: 40)
+        .background(Theme.panel2, in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+    }
+}
+
+/// A press that scales a little, and no automatic dimming when disabled: the
+/// plain style fades a disabled label, which left a viewer's switch tiles at
+/// 2.2:1. The view says itself how it looks when it cannot be pressed.
+struct TileButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .animation(.snappy(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 /// Left to right, onto a new line when the next child would not fit. Tags
 /// never shrink, so two long ones in an HStack widen the card, and with it
 /// the whole page, past the screen.
@@ -464,14 +506,16 @@ struct DeviceRow: View {
     @Environment(FarmStore.self) private var store
     let entity: Entity
     var withArea = false
+    /// Off under a room section that already names the kind ("Detectors").
+    var showDomain = true
 
     var body: some View {
         HStack(spacing: 12) {
             DeviceIcon(domain: entity.domain, tone: entity.tone, size: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entity.name).font(Theme.font(14.5, .semibold, relativeTo: .subheadline))
-                    .foregroundStyle(Theme.text).lineLimit(1)
-                Text(meta).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
+                    .foregroundStyle(Theme.text).lineLimit(2)
+                if !meta.isEmpty { Text(meta).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if store.canControl && entity.isControllable && !entity.isBad {
@@ -491,7 +535,7 @@ struct DeviceRow: View {
     }
 
     private var meta: String {
-        [withArea ? store.areaName(entity.area) : entity.humanDomain, entity.subtitle]
+        [withArea ? store.areaName(entity.area) : showDomain ? entity.humanDomain : "", entity.subtitle]
             .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }

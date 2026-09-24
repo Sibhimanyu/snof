@@ -24,6 +24,18 @@ const BAD_STATES = new Set(['unavailable', 'unknown']);
 
 const el = (id) => document.getElementById(id);
 const humanDomain = (d) => String(d).replace(/_/g, ' ');
+/* Room sections named for what they are, not Home Assistant's domains
+ * ("Binary Sensor", "Alarm Control Panel"), in this order after the operable
+ * ones. Mirrors Entity.sectionTitles in SNOFCore. */
+const SECTION_TITLE = { light: 'Lights', switch: 'Switches', fan: 'Fans', input_boolean: 'Toggles',
+  climate: 'Air conditioning', media_player: 'TVs & speakers', remote: 'Remotes', camera: 'Cameras',
+  alarm_control_panel: 'Alarm', binary_sensor: 'Detectors', sensor: 'Readings', device_tracker: 'Presence' };
+const SECTION_ORDER = Object.keys(SECTION_TITLE);
+/* Settings rather than things to look at (a switch's power-on behaviour, an
+ * AC's timer, a firmware notice): left out of room and system pages unless
+ * searched for. Mirrors Entity.settingDomains. */
+const SETTING_DOMAINS = new Set(['select', 'input_select', 'number', 'input_number', 'time', 'date', 'datetime',
+  'button', 'input_button', 'image', 'text', 'input_text', 'update', 'event']);
 
 let state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, irrigation_reports: {}, water: {}, acl: {} };
 let canControl = false;
@@ -967,7 +979,10 @@ function attentionItems(all, systems) {
       continue;
     }
     const down = sys.devices.filter((d) => deviceOffline(d) && !isAppliance(d));
-    if (down.length) add('warn', `${down.length === 1 ? down[0].name : `${down.length} switch modules`} offline`,
+    // A module named after its room ("Family Room" in the family room) says
+    // what it is, or the row reads as the whole room being down.
+    const one = down[0] && (down[0].name.toLowerCase() === areaName(down[0].area).toLowerCase() ? `${down[0].name} switch module` : down[0].name);
+    if (down.length) add('warn', `${down.length === 1 ? one : `${down.length} switch modules`} offline`,
       down.length === 1 ? areaName(down[0].area) : down.map((d) => d.name).join(', '), '#/sys/switches');
   }
   return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1));
@@ -1100,7 +1115,7 @@ function systemView(all, id) {
   const live = devices.filter((d) => !deviceOffline(d));
   const off = devices.filter(deviceOffline);
   const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
-      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !['select', 'number', 'time', 'button', 'image'].includes(e.domain)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
+      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !SETTING_DOMAINS.has(e.domain)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
   // Per device, as on a room page: a fan on the switches page is switched
   // off, not offline.
   const offFault = id === 'security' ? [] : off.filter((d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d));
@@ -1161,14 +1176,15 @@ function areaView(all, id) {
   const deadIds = new Set(dead.map((d) => d.id));
   const byDomain = new Map();
   for (const e of list) {
-    if (!search && deadIds.has(e.device || e.key)) continue;
+    if (!search && (deadIds.has(e.device || e.key) || SETTING_DOMAINS.has(e.domain))) continue;
     if (!byDomain.has(e.domain)) byDomain.set(e.domain, []);
     byDomain.get(e.domain).push(e);
   }
   // Operable domains first: the reason to open a room is usually to do something.
+  const rank = (d) => (SECTION_ORDER.includes(d) ? SECTION_ORDER.indexOf(d) : 99);
   const order = [...byDomain.keys()].sort((a, b) => {
     const ca = CONTROLLABLE.has(a) ? 0 : 1, cb = CONTROLLABLE.has(b) ? 0 : 1;
-    return ca - cb || a.localeCompare(b);
+    return ca - cb || rank(a) - rank(b) || a.localeCompare(b);
   });
   const split = offlineSplit(devices, deviceSystems(all));
   const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')}` +
@@ -1178,10 +1194,10 @@ function areaView(all, id) {
     (canControl && !bridgeGate('control').ok ? controlNote() : '') +
     order.map((d) => {
       const items = byDomain.get(d).sort(byName);
-      const title = cap(humanDomain(d));
+      const title = SECTION_TITLE[d] || cap(humanDomain(d));
       return `<section class="panel area-sec">` + panelHead(title, null, items.length) + (CONTROLLABLE.has(d)
         ? `<div class="dev-list${items.length > 8 ? ' cols' : ''}">${items.map((e) => deviceCard(e, 'area')).join('')}</div>`
-        : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e)).join('')}</div>`) +
+        : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e, false, false)).join('')}</div>`) +
         `</section>`;
     }).join('') + (search ? '' : (() => {
       const index = deviceSystems(all);
@@ -2114,7 +2130,8 @@ function irrNowModule() {
     </div>
     ${irrPending ? `<p class="more-note">${irrConfirming ? 'Confirming with the controller…' : 'Sent. Waiting for the farm…'}</p>`
       : refusal && refusal !== 'Only farm admins can open or close valves.' ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
-      : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>` : ''}` : '';
+      : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>`
+      : s.running && s.manual ? '<p class="more-note">One manual run at a time.</p>' : ''}` : '';
   return `<section class="panel now${s.running ? ' is-on' : ''}" aria-label="Now">
     <div class="now-top">
       <p class="now-label"><span class="dot"></span>${s.running ? 'Watering now' : 'Not watering'}</p>
@@ -3009,12 +3026,15 @@ function deviceCard(ent, mode = 'area') {
   </div>`;
 }
 
-function row(ent, withArea = false) {
+/** withDomain: off under a room section that already names the kind. */
+function row(ent, withArea = false, withDomain = true) {
+  const meta = [withArea ? areaName(ent.area) : withDomain ? humanDomain(ent.domain) : '', subtitle(ent).replace(/^ · /, '')]
+    .filter(Boolean).join(' · ');
   return `<div class="row ${isBad(ent) ? 'is-bad' : isOn(ent) ? 'is-on' : ''}" data-key="${escapeHtml(ent.key)}">
     <span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-${iconFor(ent)}"/></svg></span>
     <span class="row-main">
       <span class="row-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
-      <span class="row-meta">${escapeHtml(withArea ? areaName(ent.area) : humanDomain(ent.domain))}${subtitle(ent)}</span>
+      ${meta ? `<span class="row-meta">${escapeHtml(meta)}</span>` : ''}
     </span>
     <span class="dev-state ${stateClass(ent)}">${escapeHtml(formatState(ent))}</span>
   </div>`;
@@ -3221,8 +3241,12 @@ function wire(all) {
 
 /* ---- formatting ---- */
 
+/* Domains without a drawing of their own borrow the nearest one, not the
+ * placeholder square, which reads as broken. */
+const ICON_ALIAS = { alarm_control_panel: 'shield', remote: 'media_player', siren: 'alert', input_select: 'select', input_number: 'number' };
 function iconName(domain) {
-  return document.getElementById(`i-${domain}`) ? domain : 'default';
+  const d = ICON_ALIAS[domain] || domain;
+  return document.getElementById(`i-${d}`) ? d : 'default';
 }
 function iconFor(ent) {
   return ent ? iconName(ent.domain) : 'default';

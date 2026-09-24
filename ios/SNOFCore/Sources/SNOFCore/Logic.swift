@@ -73,6 +73,24 @@ extension Entity {
     public var humanDomain: String { Entity.humanDomain(domain) }
     public static func humanDomain(_ d: String) -> String { d.replacingOccurrences(of: "_", with: " ") }
 
+    /// Room sections named for what they are, not Home Assistant's domains
+    /// ("Binary Sensor", "Alarm Control Panel"). Mirrors SECTION_TITLE in app.js.
+    public static let sectionTitles: [(domain: String, title: String)] = [
+        ("light", "Lights"), ("switch", "Switches"), ("fan", "Fans"), ("input_boolean", "Toggles"),
+        ("climate", "Air conditioning"), ("media_player", "TVs & speakers"), ("remote", "Remotes"),
+        ("camera", "Cameras"), ("alarm_control_panel", "Alarm"), ("binary_sensor", "Detectors"),
+        ("sensor", "Readings"), ("device_tracker", "Presence"),
+    ]
+    public static func sectionTitle(_ d: String) -> String {
+        sectionTitles.first { $0.domain == d }?.title ?? humanDomain(d).capitalized
+    }
+    /// Settings rather than things to look at (a switch's power-on behaviour,
+    /// an AC's timer, a firmware notice): left out of room and system pages
+    /// unless searched for. Mirrors SETTING_DOMAINS in app.js.
+    public static let settingDomains: Set<String> = ["select", "input_select", "number", "input_number", "time", "date",
+                                                     "datetime", "button", "input_button", "image", "text", "input_text",
+                                                     "update", "event"]
+
     /// Search haystack, matching app.js `matches()`.
     public func matches(_ query: String, areaName: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -156,12 +174,14 @@ public enum Sorting {
 
     /// Operable domains first: the reason to open a room is usually to do something.
     public static func domainsForArea(_ ents: [Entity]) -> [(domain: String, entities: [Entity])] {
-        Dictionary(grouping: ents, by: \.domain)
+        let rank = { (d: String) in Entity.sectionTitles.firstIndex { $0.domain == d } ?? 99 }
+        return Dictionary(grouping: ents, by: \.domain)
             .map { (domain: $0.key, entities: $0.value.sorted(by: byName)) }
             .sorted { a, b in
                 let ca = Farm.controllable.contains(a.domain) ? 0 : 1
                 let cb = Farm.controllable.contains(b.domain) ? 0 : 1
-                return ca != cb ? ca < cb : a.domain < b.domain
+                if ca != cb { return ca < cb }
+                return (rank(a.domain), a.domain) < (rank(b.domain), b.domain)
             }
     }
 

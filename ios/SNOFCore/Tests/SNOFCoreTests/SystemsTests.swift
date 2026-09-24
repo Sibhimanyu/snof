@@ -73,6 +73,9 @@ import Foundation
         #expect(texts.contains("Warehouse camera offline"))
         #expect(texts.contains("Family Room offline"))
         #expect(!texts.contains { $0.contains("AC") || $0.contains("P1S") || $0.contains("Samsung") })
+        // Named after its room: say what it is, not "Family Room offline".
+        i.areaName = ["a1": "Family room"]
+        #expect(Attention.items(i).map(\.text).contains("Family Room switch module offline"))
         i.bridgeDown = true
         #expect(Attention.items(i).first?.text == "Bridge not reporting")   // worst first
     }

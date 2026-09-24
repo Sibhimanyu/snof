@@ -48,6 +48,7 @@ struct DevicesView: View {
             }
             .pickerStyle(.segmented)
             .sensoryFeedback(.selection, trigger: store.deviceStatus)
+            SearchField(text: $search, prompt: "Name, entity id, state or room")
 
             if !store.firstSnapshot {
                 LoadingBlock()
@@ -67,7 +68,6 @@ struct DevicesView: View {
             }
         }
         .navigationTitle("Rooms")
-        .searchable(text: $search, prompt: "Name, entity id, state or room")
     }
 
     /// Devices with at least one reading in each state.

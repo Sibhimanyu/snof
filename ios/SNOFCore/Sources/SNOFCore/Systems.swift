@@ -431,7 +431,13 @@ public enum Attention {
         }
         if let sw = i.systems[.switches] {
             let down = sw.devices.filter { $0.isOffline && !Systems.isAppliance($0) }
-            if down.count == 1 { out.append(.init(.warn, "\(down[0].name) offline", room(down[0].area), .system(.switches))) }
+            // A module named after its room ("Family Room" in the family room)
+            // says what it is, or the row reads as the whole room being down.
+            if down.count == 1 {
+                let d = down[0]
+                let name = d.name.lowercased() == room(d.area).lowercased() ? "\(d.name) switch module" : d.name
+                out.append(.init(.warn, "\(name) offline", room(d.area), .system(.switches)))
+            }
             else if down.count > 1 {
                 out.append(.init(.warn, "\(down.count) switch modules offline", down.map(\.name).joined(separator: ", "), .system(.switches)))
             }
