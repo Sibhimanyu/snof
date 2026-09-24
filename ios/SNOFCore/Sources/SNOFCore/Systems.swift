@@ -64,6 +64,8 @@ public struct SystemSummary: Sendable {
 
 public enum Systems {
     static func lname(_ e: Entity) -> String { e.name.lowercased() }
+    /// "custom bypass" -> "Custom bypass" (the web's cap()).
+    static func firstUpper(_ s: String) -> String { s.prefix(1).uppercased() + s.dropFirst() }
     static func number(_ e: Entity?) -> Double? {
         guard let e, !e.isBad, let s = e.state else { return nil }
         return Double(s)
@@ -137,7 +139,7 @@ public enum Systems {
             let p = panels.first { $0.state == "triggered" } ?? panels.first { ($0.state ?? "").hasPrefix("armed") } ?? panels.first
             let st = p?.state ?? ""
             let armed: String = p == nil ? "" : st == "triggered" ? "Alarm triggered" : st == "disarmed" ? "Disarmed"
-                : st.hasPrefix("armed_") ? "Armed · " + st.dropFirst(6).replacingOccurrences(of: "_", with: " ").capitalized : st.capitalized
+                : st.hasPrefix("armed_") ? "Armed · " + firstUpper(st.dropFirst(6).replacingOccurrences(of: "_", with: " ")) : firstUpper(st)
             let camLine = cams.isEmpty ? "" : "\(camsOn) of \(cams.count) cameras online"
             let state: SystemState = st == "triggered" ? .bad : !active.isEmpty ? .on : camsOn < cams.count ? .warn : .rest
             return SystemSummary(state: state, line: armed.isEmpty ? (camLine.isEmpty ? "No alarm" : camLine) : armed,
@@ -160,7 +162,7 @@ public enum Systems {
             if allOffline { return SystemSummary(state: .off, line: "Off", sub: "Switched off") }
             let prog = find { n, e in n.contains("progress") && e.attrs.unit == "%" }
             let stage = find { n, _ in matches(n, "current stage|print status") }
-            let stageText = stage.flatMap { $0.isBad ? nil : ($0.state ?? "").replacingOccurrences(of: "_", with: " ").capitalized }
+            let stageText = stage.flatMap { $0.isBad ? nil : firstUpper(($0.state ?? "").replacingOccurrences(of: "_", with: " ")) }
             if let pct = number(prog), pct > 0, pct < 100 {
                 return SystemSummary(state: .on, line: "Printing \(Int(pct.rounded()))%", sub: stageText ?? "")
             }
@@ -183,6 +185,11 @@ public enum Systems {
 
 /* ---- watered, by crop ---- */
 
+public struct ValveWater: Hashable, Sendable {
+    public let name: String
+    public let minutes: Int
+}
+
 public struct CropWater: Hashable, Sendable, Identifiable {
     public var id: String { key }
     public let key: String
@@ -190,7 +197,9 @@ public struct CropWater: Hashable, Sendable, Identifiable {
     public let label: String
     public var minutes: Int
     public var cutShort: Int
-    public var valves: [String]
+    public var valves: [ValveWater]
+    /// Valves of one crop can run in separate programs (Mango1, Mango2).
+    public var sameMinutes: Bool { valves.allSatisfy { $0.minutes == valves.first?.minutes } }
 }
 
 extension Irrigation {
@@ -200,48 +209,73 @@ extension Irrigation {
         "jamun": "Jamun", "pomegranate": "Pomegranate",
     ]
 
+    /// "12 Coco 1" -> 12; also "valve 12", which a report writes when its
+    /// name lookup failed.
     static func valveNumber(_ name: String) -> Int? {
-        let digits = name.trimmingCharacters(in: .whitespaces).prefix { $0.isNumber }
-        return digits.isEmpty ? nil : Int(digits)
+        var t = name.trimmingCharacters(in: .whitespaces)
+        if t.lowercased().hasPrefix("valve ") { t = String(t.dropFirst(6)) }
+        let digits = t.prefix { $0.isNumber }
+        return digits.isEmpty || digits.count > 2 ? nil : Int(digits)
+    }
+
+    /// A run whose planned end has not passed may still be going: the log
+    /// writes an unfinished run as "stopped", so it is not cut short yet.
+    public static func mayStillRun(_ r: ProgramRun, now: Date, zone: TimeZone) -> Bool {
+        guard let planned = r.plannedMin, let start = FarmTime.date(r.start, zone: zone) else { return false }
+        return start.addingTimeInterval(Double(planned) * 60) > now
     }
 
     /// What each crop got on one farm day, from the controller's run log.
-    /// Valves of one program run together, so a crop got as long as its
-    /// longest-watered valve, and its cut-short count is per run. Also the
-    /// irrigation valves that got nothing that day.
-    public static func crops(_ c: IrrigationCache, day: String) -> (crops: [CropWater], dry: [String], runs: [ProgramRun]) {
+    /// A crop got as long as its longest-watered valve; each valve keeps its
+    /// own minutes; cut-short counts are per run. Also the irrigation valves
+    /// that got nothing, and whether the cached log may be missing earlier
+    /// runs of that day (it holds the newest runs only).
+    public static func crops(_ c: IrrigationCache, day: String, now: Date = Date())
+        -> (crops: [CropWater], dry: [String], runs: [ProgramRun], partial: Bool) {
+        let zone = FarmTime.zone(c.timeZone)
+        let rows = c.valveNames.isEmpty ? c.valves : c.valveNames
+        var byNumber: [Int: String] = [:]
+        for r in rows { if let id = r["id"].flatMap(Int.init), let n = r["name"] { byNumber[id] = n } }
         let dayRuns = runs(c).filter { $0.day == day && !$0.valves.isEmpty }
-        var valves: [String: (min: Int, cut: Int)] = [:]
+        var valves: [String: (no: Int?, min: Int, cut: Int)] = [:]
         var order: [String] = []
         for r in dayRuns {
-            for n in r.valves.components(separatedBy: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !n.isEmpty {
-                if valves[n] == nil { order.append(n) }
-                var v = valves[n] ?? (0, 0)
+            let cut = !r.finished && !mayStillRun(r, now: now, zone: zone)
+            for raw in r.valves.components(separatedBy: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !raw.isEmpty {
+                let no = valveNumber(raw)
+                let name = no.flatMap { byNumber[$0] } ?? raw
+                if valves[name] == nil { order.append(name) }
+                var v = valves[name] ?? (no, 0, 0)
                 v.min += r.deliveredMin ?? 0
-                if !r.finished { v.cut += 1 }
-                valves[n] = v
+                if cut { v.cut += 1 }
+                valves[name] = v
             }
         }
         var crops: [String: CropWater] = [:]
+        var keys: [String] = []
         for n in order {
             guard let v = valves[n] else { continue }
             let art = ValveArt.key(name: n, type: "irrigation").flatMap { $0 == "backwash" ? nil : $0 }
             let key = art ?? "v:\(n)"
             let label = art.flatMap { cropLabels[$0] } ?? String(n.drop { $0.isNumber || $0 == " " })
+            if crops[key] == nil { keys.append(key) }
             var cw = crops[key] ?? CropWater(key: key, art: art, label: label.isEmpty ? n : label, minutes: 0, cutShort: 0, valves: [])
             cw.minutes = max(cw.minutes, v.min)
             cw.cutShort = max(cw.cutShort, v.cut)
-            cw.valves.append(n)
+            cw.valves.append(ValveWater(name: n, minutes: v.min))
             crops[key] = cw
         }
-        let watered = Set(order.compactMap(valveNumber))
-        let rows = c.valveNames.isEmpty ? c.valves : c.valveNames
+        let watered = Set(valves.values.compactMap(\.no))
         let dry = rows.filter { ($0["type"] ?? "").lowercased() == "irrigation" }
             .filter { r in (r["id"].flatMap(Int.init)).map { !watered.contains($0) } ?? false }
             .sorted { (Int($0["id"] ?? "") ?? 0) < (Int($1["id"] ?? "") ?? 0) }
             .compactMap { $0["name"] }
-        let sorted = crops.values.sorted { $0.minutes != $1.minutes ? $0.minutes > $1.minutes : $0.label < $1.label }
-        return (sorted, dry, dayRuns)
+        let oldest = c.timerLog.compactMap { $0["at"] }.min() ?? ""
+        // A truncated log is exactly at a cap: 32 before 2026-09-25, 150 since.
+        let partial = (c.timerLog.count == 32 || c.timerLog.count >= 150) && String(oldest.prefix(10)) >= day
+        let sorted = keys.compactMap { crops[$0] }
+            .sorted { $0.minutes != $1.minutes ? $0.minutes > $1.minutes : $0.label < $1.label }
+        return (sorted, dry, dayRuns, partial)
     }
 }
 
@@ -250,7 +284,7 @@ extension Irrigation {
 public struct AttentionItem: Hashable, Sendable, Identifiable {
     public enum Level: Int, Sendable { case bad = 0, warn = 1 }
     public enum Place: Hashable, Sendable { case home, irrigation, water, system(FarmSystemID) }
-    public var id: String { "\(level.rawValue)|\(text)" }
+    public var id: String { "\(level.rawValue)|\(text)|\(sub)" }
     public let level: Level
     public let text: String
     public let sub: String
@@ -260,36 +294,62 @@ public struct AttentionItem: Hashable, Sendable, Identifiable {
     }
 }
 
+extension Systems {
+    /// An appliance (a fan, an AC, a TV, a remote) is "off at the wall" when
+    /// unavailable, whatever system it sits in: a smart fan counted as a
+    /// switch module was flagged every night (review, 2026-09-25).
+    public static func isAppliance(_ g: DeviceGroup) -> Bool {
+        g.entities.contains { ["fan", "climate", "media_player", "remote"].contains($0.domain) }
+    }
+
+    /// Whether this device being offline deserves a look.
+    public static func offlineIsFault(_ g: DeviceGroup, system: FarmSystemID?) -> Bool {
+        (system ?? .other).offlineIsFault && !isAppliance(g)
+    }
+}
+
 public enum Attention {
     public struct Input: Sendable {
         public var bridgeDown = false
         public var bridgeQuietFor: String = ""
         public var irrigation = IrrigationCache()
+        /// The controller's own running state, counted down (WaterNow).
+        public var programRunning = false
         public var now = Date()
-        public var mobitechProblem: String? = nil
-        public var liveskyProblem: String? = nil
+        public var mobitechSignInNeeded = false
+        /// Only a missing or ended session: an outage is not a sign-in problem.
+        public var liveskySignInNeeded = false
         public var water = WaterState()
         public var systems: [FarmSystemID: FarmSystem] = [:]
+        public var areaName: [String: String] = [:]
         public init() {}
     }
 
     public static func items(_ i: Input) -> [AttentionItem] {
         var out: [AttentionItem] = []
+        let room = { (id: String) in i.areaName[id] ?? "" }
         if i.bridgeDown {
             out.append(.init(.bad, "Farm box offline",
                              "Switches and controller reads are paused" + (i.bridgeQuietFor.isEmpty ? "" : " · quiet for \(i.bridgeQuietFor)"), .home))
         }
         let c = i.irrigation
         let zone = FarmTime.zone(c.timeZone)
-        if let p = c.program, p.running { for f in p.faults { out.append(.init(.bad, "Valve \(f)", "during the running program", .irrigation)) } }
-        if let s = Irrigation.supply(c), s.hasVoltage {
+        // Only what the controller said recently: an hours-old "no signal"
+        // or "no power" must not read as a present problem.
+        let checked = c.program?.at ?? c.lastUpdated ?? 0
+        let recent = i.now.timeIntervalSince1970 * 1000 - checked < 60 * 60_000
+        if i.programRunning, let p = c.program { for f in p.faults { out.append(.init(.bad, "Valve \(f)", "during the running program", .irrigation)) } }
+        if recent, let s = Irrigation.supply(c), s.hasVoltage {
             if !s.powerOn { out.append(.init(.warn, "No power at the pump", s.at.map { "as of \($0)" } ?? "", .irrigation)) }
-            else if s.missingPhase { out.append(.init(.bad, "A power phase is missing", "\(s.livePhases) of 3 phases live", .irrigation)) }
+            else if s.missingPhase {
+                out.append(.init(.bad, "A power phase is missing", "\(s.livePhases) of 3 phases live" + (s.at.map { " · \($0)" } ?? ""), .irrigation))
+            }
         }
         let since = i.now.addingTimeInterval(-86_400)
         // Programs with no valves assigned end at 0m by design; not faults.
         let cut = Irrigation.runs(c).filter { r in
-            !r.finished && r.plannedMin != nil && !r.valves.isEmpty && (FarmTime.date(r.start, zone: zone).map { $0 >= since } ?? false)
+            !r.finished && r.plannedMin != nil && !r.valves.isEmpty && !Irrigation.mayStillRun(r, now: i.now, zone: zone)
+                && (FarmTime.date(r.start, zone: zone).map { $0 >= since } ?? false)
         }
         if !cut.isEmpty {
             out.append(.init(.warn, "\(cut.count) \(cut.count == 1 ? "run" : "runs") stopped early",
@@ -299,28 +359,36 @@ public enum Attention {
             let short = err.replacingOccurrences(of: "^DCON [a-z_]+: ", with: "", options: .regularExpression)
             out.append(.init(.warn, "Could not reach the controller", String(short.prefix(80)), .irrigation))
         }
-        if let m = i.mobitechProblem { out.append(.init(.warn, "Mobitech sign-in needed", m, .irrigation)) }
+        if i.mobitechSignInNeeded {
+            out.append(.init(.warn, "Mobitech sign-in needed", "valve control is off until an admin signs in", .irrigation))
+        }
         let w = i.water
         for m in ([w.river] + w.motors.map { Optional($0) }).compactMap({ $0 }) {
             if !m.trips.isEmpty { out.append(.init(.bad, "\(m.name) tripped", m.trips.joined(separator: ", "), .water)) }
             if let z = m.skippedZone { out.append(.init(.warn, "\(m.name): zone \(z) skipped", "no valve feedback", .water)) }
         }
         if w.enabled {
-            if let l = i.liveskyProblem { out.append(.init(.warn, "Livesky sign-in needed", l, .water)) }
+            if i.liveskySignInNeeded { out.append(.init(.warn, "Livesky sign-in needed", "the river motor is not being read", .water)) }
             else if w.livesky.status.ok == false, !w.livesky.status.error.isEmpty {
                 out.append(.init(.warn, "River motor not read", w.livesky.status.error, .water))
             }
             if w.niagara.ok == false, !w.niagara.error.isEmpty { out.append(.init(.warn, "Other farm not read", w.niagara.error, .water)) }
             if let t = w.pulledAt, i.now.timeIntervalSince1970 * 1000 - t > 30 * 60_000 {
-                out.append(.init(.warn, "Water readings are old", "", .water))
+                out.append(.init(.warn, "Water readings are old",
+                                 "last read \(Format.age(max(0, i.now.timeIntervalSince1970 - t / 1000))) ago", .water))
             }
         }
         if let sec = i.systems[.security] {
             if Systems.summary(sec).state == .bad { out.append(.init(.bad, "Alarm triggered", "", .system(.security))) }
+            let panels = sec.entities.filter { $0.domain == "alarm_control_panel" }
+            if !panels.isEmpty, panels.allSatisfy(\.isBad) {
+                out.append(.init(.warn, "Alarm station offline", "the alarm state is unknown", .system(.security)))
+            }
             let down = sec.entities.filter { $0.domain == "camera" && $0.isBad }
             if down.count == 1 {
-                let name = down[0].name.replacingOccurrences(of: " camera", with: "", options: .caseInsensitive)
-                out.append(.init(.warn, "\(name) camera offline", "", .system(.security)))
+                var name = down[0].name
+                if name.lowercased().hasSuffix(" camera") { name = String(name.dropLast(7)) }
+                out.append(.init(.warn, "\(name) camera offline", room(down[0].area), .system(.security)))
             } else if down.count > 1 {
                 out.append(.init(.warn, "\(down.count) cameras offline", down.map(\.name).joined(separator: ", "), .system(.security)))
             }
@@ -333,8 +401,8 @@ public enum Attention {
             }
         }
         if let sw = i.systems[.switches] {
-            let down = sw.devices.filter(\.isOffline)
-            if down.count == 1 { out.append(.init(.warn, "\(down[0].name) offline", "", .system(.switches))) }
+            let down = sw.devices.filter { $0.isOffline && !Systems.isAppliance($0) }
+            if down.count == 1 { out.append(.init(.warn, "\(down[0].name) offline", room(down[0].area), .system(.switches))) }
             else if down.count > 1 {
                 out.append(.init(.warn, "\(down.count) switch modules offline", down.map(\.name).joined(separator: ", "), .system(.switches)))
             }

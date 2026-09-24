@@ -27,11 +27,23 @@ public enum FarmTime {
     /// "2026-09-23 20:32:00" (or without seconds) in farm time.
     public static func date(_ s: String?, zone: TimeZone) -> Date? {
         guard let s, s.count >= 16 else { return nil }
+        return formatter(zone).date(from: String(s.prefix(16)))
+    }
+
+    /// One formatter per zone: this runs for every logged run on every
+    /// refresh, and a DateFormatter is expensive to make.
+    nonisolated(unsafe) private static var formatters: [Int: DateFormatter] = [:]
+    private static let lock = NSLock()
+    private static func formatter(_ zone: TimeZone) -> DateFormatter {
+        lock.lock(); defer { lock.unlock() }
+        let key = zone.secondsFromGMT()
+        if let f = formatters[key] { return f }
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = zone
         f.dateFormat = "yyyy-MM-dd HH:mm"
-        return f.date(from: String(s.prefix(16)))
+        formatters[key] = f
+        return f
     }
 
     public static func today(_ now: Date, zone: TimeZone) -> String {

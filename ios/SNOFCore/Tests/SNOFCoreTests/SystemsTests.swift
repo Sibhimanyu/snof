@@ -101,4 +101,69 @@ import Foundation
         #expect(r.dry == ["5 Onion"])                      // backwash is not an irrigation valve
         #expect(!r.crops.contains { $0.label.contains("Amla") })  // a program with no valves waters nothing
     }
+
+    // ---- review findings (2026-09-25) ----
+
+    @Test func aRunStillGoingIsNotCutShort() {
+        var c = IrrigationCache()
+        c.timeZone = "+05:30"
+        c.timerLog = [["at": "2026-09-24 23:23:06", "event": "Program · Mango1", "detail": "22m of 1h, stopped · 16 Mango 1 · started by timer", "source": "timer"]]
+        let zone = FarmTime.zone("+05:30")
+        let start = FarmTime.date("2026-09-24 23:23:06", zone: zone)!
+        let r = Irrigation.crops(c, day: "2026-09-24", now: start.addingTimeInterval(30 * 60))
+        #expect(r.crops.first?.cutShort == 0, "22 minutes into a 1h run is not cut short")
+        var i = Attention.Input(); i.irrigation = c; i.now = start.addingTimeInterval(30 * 60)
+        #expect(!Attention.items(i).contains { $0.text.contains("stopped early") })
+        i.now = start.addingTimeInterval(90 * 60)
+        #expect(Attention.items(i).contains { $0.text == "1 run stopped early" }, "once its hour has passed it is")
+    }
+
+    @Test func failedNameLookupStillResolves() {
+        var c = IrrigationCache()
+        c.timerLog = [["at": "2026-09-24 19:02:05", "event": "Program · Coconut", "detail": "1h, finished · valve 12 · started by timer", "source": "timer"]]
+        c.valveNames = [["id": "12", "name": "12 Coco 1", "type": "Irrigation"], ["id": "5", "name": "5 Onion", "type": "Irrigation"]]
+        let r = Irrigation.crops(c, day: "2026-09-24")
+        #expect(r.crops.first?.label == "Coconut" && r.crops.first?.valves.first?.name == "12 Coco 1")
+        #expect(r.dry == ["5 Onion"], "12 was watered, whatever the log called it")
+    }
+
+    @Test func valvesInSeparateProgramsKeepTheirMinutes() {
+        var c = IrrigationCache()
+        c.timerLog = [
+            ["at": "2026-09-24 16:32:19", "event": "Program · Mango2", "detail": "1h, finished · 17 Mango 2 · started by timer", "source": "timer"],
+            ["at": "2026-09-24 15:17:01", "event": "Program · Mango1", "detail": "1h, finished · 16 Mango 1 · started by timer", "source": "timer"],
+            ["at": "2026-09-24 12:00:00", "event": "Program · Mango1", "detail": "30m, finished · 16 Mango 1 · started by timer", "source": "timer"],
+        ]
+        let mango = Irrigation.crops(c, day: "2026-09-24").crops.first { $0.label == "Mango" }!
+        #expect(mango.minutes == 90 && !mango.sameMinutes)
+        #expect(mango.valves.map(\.minutes).sorted() == [60, 90])
+    }
+
+    @Test func partialDayIsFlagged() {
+        var c = IrrigationCache()
+        c.timerLog = (0..<32).map { i in ["at": "2026-09-24 \(String(format: "%02d", 23 - i / 2)):00:00", "event": "Program · X", "detail": "1h, finished · 12 Coco 1", "source": "timer"] }
+        #expect(Irrigation.crops(c, day: "2026-09-24").partial, "32 rows all on the day: earlier runs may be missing")
+        c.timerLog.removeLast()
+        #expect(!Irrigation.crops(c, day: "2026-09-24").partial, "31 rows is the whole log")
+    }
+
+    @Test func aFanIsNeverASwitchModuleFault() {
+        let fan = [e("fan", "f", "Fan", "unavailable", device: "fan"), e("switch", "fs", "Fan Sleep mode", "unavailable", device: "fan")]
+        var i = Attention.Input()
+        i.systems = Systems.build(fan, names: ["fan": "Fan"])
+        #expect(Attention.items(i).isEmpty)
+    }
+
+    @Test func theAlarmStationGoingQuietIsFlagged() {
+        var f = farm
+        f[4] = e("alarm_control_panel", "home", "Sibhi Home", "unavailable", device: "station")
+        var i = Attention.Input(); i.systems = Systems.build(f, names: names)
+        #expect(Attention.items(i).contains { $0.text == "Alarm station offline" })
+    }
+
+    @Test func alarmStatesReadLikeTheWeb() {
+        var f = farm
+        f[4] = e("alarm_control_panel", "home", "Sibhi Home", "armed_custom_bypass", device: "station")
+        #expect(Systems.summary(Systems.build(f, names: names)[.security]!).line == "Armed · Custom bypass")
+    }
 }

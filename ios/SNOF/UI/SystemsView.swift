@@ -142,7 +142,7 @@ struct SecurityCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(s.line).font(Theme.font(16, .bold, relativeTo: .headline))
                             .foregroundStyle(s.state == .bad ? Theme.bad : Theme.text).lineLimit(1).minimumScaleFactor(0.8)
-                        Text(s.cameras > 0 ? "\(s.camerasOnline) of \(s.cameras) cameras" : s.sub)
+                        Text(s.detecting > 0 ? "\(s.detecting) detecting now" : s.cameras > 0 ? "\(s.camerasOnline) of \(s.cameras) cameras" : s.sub)
                             .font(Theme.meta).foregroundStyle(Theme.muted)
                         HStack(spacing: 5) {
                             ForEach(cams) { c in Circle().fill(c.isBad ? Theme.bad : Theme.brand).frame(width: 8, height: 8) }
@@ -212,7 +212,7 @@ struct SystemView: View {
                 if id == .security { cameras(sys) }
                 if [.switches, .other].contains(id) {
                     let ops = sys.entities.filter { $0.isControllable && !$0.isBad }
-                        .sorted { ($0.isOn ? 0 : 1, $0.name) < ($1.isOn ? 0 : 1, $1.name) }
+                        .sorted { $0.isOn != $1.isOn ? $0.isOn : Sorting.natural($0.name, $1.name) }
                     if !ops.isEmpty {
                         ControlNote()
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
@@ -221,9 +221,9 @@ struct SystemView: View {
                     }
                 }
                 if ![.security, .solar, .switches].contains(id) {
-                    ForEach(sys.devices.filter { !$0.isOffline }) { d in
+                    ForEach(sys.devices.filter { !$0.isOffline }.sorted { Sorting.natural($0.name, $1.name) }) { d in
                         let rows = d.entities.filter { !$0.isBad && !$0.isControllable && !["select", "number", "time", "button", "image"].contains($0.domain) }
-                            .sorted(by: Sorting.byName)
+                            .sorted { Sorting.natural($0.name, $1.name) }
                         TitledPanel(title: d.name) {
                             if rows.isEmpty {
                                 Text(store.areaName(d.area)).font(Theme.meta).foregroundStyle(Theme.muted).padding(14)
@@ -335,22 +335,24 @@ struct WateredCard: View {
         let c = store.irrigation
         let zone = FarmTime.zone(c.timeZone)
         let today = FarmTime.today(store.now, zone: zone), yesterday = FarmTime.yesterday(store.now, zone: zone)
-        let hasToday = Irrigation.runs(c).contains { $0.day == today }
+        let hasToday = Irrigation.runs(c).contains { $0.day == today && !$0.valves.isEmpty }
         let which = pick ?? (hasToday ? "today" : "yesterday")
         let day = which == "today" ? today : yesterday
-        let r = Irrigation.crops(c, day: day)
+        let r = Irrigation.crops(c, day: day, now: store.now)
+        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
         let pump = Irrigation.pumpDays(c).first { $0.day == day }
         if !Irrigation.runs(c).isEmpty || !Irrigation.pumpDays(c).isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("Watered").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                    if let checked { Text(checked).font(Theme.small).foregroundStyle(Theme.faint) }
                     Spacer()
                     Picker("Day", selection: Binding(get: { which }, set: { pick = $0 })) {
                         Text("Today").tag("today")
                         Text("Yesterday").tag("yesterday")
                     }
-                    .pickerStyle(.segmented).frame(width: 190)
-                    .sensoryFeedback(.selection, trigger: which)
+                    .pickerStyle(.segmented).fixedSize()
+                    .sensoryFeedback(.selection, trigger: pick)
                 }
                 .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 10)
                 let water = r.runs.reduce(0) { $0 + ($1.deliveredMin ?? 0) }
@@ -371,7 +373,12 @@ struct WateredCard: View {
                         Hairline()
                         CropRow(crop: crop, fraction: Double(crop.minutes) / Double(maxMin))
                     }
-                    if !r.dry.isEmpty {
+                    if r.partial {
+                        Hairline()
+                        Text("Only the latest runs of this day are here. Pull down to refresh for the full day.")
+                            .font(Theme.meta).foregroundStyle(Theme.muted)
+                            .padding(.horizontal, 18).padding(.vertical, 12)
+                    } else if !r.dry.isEmpty {
                         Hairline()
                         Text("Not watered: " + r.dry.joined(separator: ", "))
                             .font(Theme.meta).foregroundStyle(Theme.muted)
@@ -399,7 +406,8 @@ private struct CropRow: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(crop.label).font(Theme.font(14.5, .bold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
-                Text(crop.valves.joined(separator: ", ") + (cut ? " · \(crop.cutShort) cut short" : ""))
+                Text((crop.sameMinutes ? crop.valves.map(\.name) : crop.valves.map { "\($0.name) \(Format.minutes($0.minutes))" })
+                        .joined(separator: ", ") + (cut ? " · \(crop.cutShort) cut short" : ""))
                     .font(Theme.font(12, .regular, relativeTo: .caption)).foregroundStyle(cut ? Theme.warn : Theme.muted).lineLimit(1)
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
@@ -457,8 +465,8 @@ struct PumpPowerCard: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(p.value).font(Theme.font(22, .bold, relativeTo: .title2).monospacedDigit()).foregroundStyle(Theme.ink)
                             Text("Inlet pressure").eyebrowStyle()
-                            if let out = c.pressure.last?["detail"], out.hasPrefix("outlet") {
-                                Text(out).font(Theme.meta).foregroundStyle(Theme.muted)
+                            if let d = c.pressure.last?["detail"], let r = d.range(of: #"outlet [\d.]+ ?bar"#, options: .regularExpression) {
+                                Text(String(d[r])).font(Theme.meta).foregroundStyle(Theme.muted)
                             }
                         }
                         .padding(.bottom, 4)
@@ -472,7 +480,10 @@ struct PumpPowerCard: View {
                             else if let imb = s.imbalancePct, imb >= Supply.imbalanceWarn { Tag(text: "\(Format.trim(imb))% phase imbalance", kind: .warn) }
                             else { Tag(text: "All three phases", kind: .on) }
                         }
-                        if let d = s.pumpDrawing { Tag(text: d ? "Pump running" : "Pump off", kind: d ? .on : .plain) }
+                        if let d = s.pumpDrawing {
+                            Tag(text: d ? "Pump running · " + s.currentA.map { String(format: "%.1f", $0) }.joined(separator: " / ") + " A" : "Pump off",
+                                kind: d ? .on : .plain)
+                        }
                     }
                 }
             }
