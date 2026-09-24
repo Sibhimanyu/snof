@@ -98,13 +98,19 @@ explicit empty state if nothing is operable.
 ## The Overview
 
 Left column: the **farm pulse** (`pulsePanel()` — one sentence chosen by how
-much is offline, with the bridge going quiet outranking everything; mirrored
-by `Pulse.summary` in SNOFCore, keep the wording in step), three tiles
-(reporting / active / unavailable devices, each a link into All devices), and
-**Areas at a glance**. Right column: the **attention card** (devices fully
-offline, worst first, each row opening its room) and **Quick controls** (rows,
-never tiles; unavailable devices excluded). Below 900px it is one column in
-the order you need it: attention, pulse, tiles, controls, areas.
+much is offline, with the bridge going quiet outranking everything, then one
+reporting/offline meter and three figures — reporting / active / offline
+devices, each a link into All devices) and **Areas at a glance**. The sentence
+names *where*; the figures carry the counts, so the two never repeat each
+other (the separate stat tiles and the giant area count were folded in on
+2026-09-24 because the page was saying every number three times). The iOS
+Overview no longer shows a pulse, so `Pulse.summary` in SNOFCore is not kept
+in step. Right column: the **attention card** and **Quick controls** (five
+rows, on-first, never tiles; unavailable devices excluded). The attention card
+lists offline devices while there are four or fewer; past that it lists
+rooms, worst first, each with an "n of m offline" bar, because a wall of
+identical "Offline" rows says less than where they are. Below 900px it is one
+column in the order you need it: attention, pulse, controls, areas.
 
 **All devices** lists devices, not readings: one line per device with its
 room and status, opening to its readings. A filter or search opens the
