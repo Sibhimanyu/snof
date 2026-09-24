@@ -152,17 +152,30 @@ struct MotorCard: View {
     @State private var showDetails = false
 
     private static let headlineKeys: Set<String> = ["Running for", "Off for", "Program", "Zone time left"]
-    private var headline: [(String, String)] { facts.filter { Self.headlineKeys.contains($0.0) } }
+    private static let timed: Set<String> = ["Running for", "Off for", "Zone time left"]
+    /// Timers are only true as of the controller's report: say when that was
+    /// once it is more than 15 minutes old.
+    private var headline: [(String, String)] {
+        let stale = motor.lastReport.map { now.timeIntervalSince($0) > 15 * 60 } ?? false
+        return facts.filter { Self.headlineKeys.contains($0.0) }.map { k, v in
+            (k, stale && Self.timed.contains(k) ? "\(v) · as of \(Water.ago(motor.lastReport!, now: now))" : v)
+        }
+    }
     private var details: [(String, String)] { facts.filter { !Self.headlineKeys.contains($0.0) } }
 
     private func factGrid(_ items: [(String, String)]) -> some View {
         LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
                   alignment: .leading, spacing: 12) {
             ForEach(items, id: \.0) { k, v in
+                // "2 h 07 min · as of 1 h ago": the age on its own line.
+                let parts = v.components(separatedBy: " · as of ")
                 VStack(alignment: .leading, spacing: 3) {
                     Text(k).eyebrowStyle()
-                    Text(v).font(Theme.font(14.5, .semibold, relativeTo: .subheadline).monospacedDigit())
+                    Text(parts[0]).font(Theme.font(14.5, .semibold, relativeTo: .subheadline).monospacedDigit())
                         .foregroundStyle(Theme.text)
+                    if parts.count > 1 {
+                        Text("as of \(parts[1])").font(Theme.font(12, .medium, relativeTo: .caption)).foregroundStyle(Theme.warn)
+                    }
                 }
             }
         }

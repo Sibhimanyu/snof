@@ -304,7 +304,7 @@ struct SwitchTile: View {
             .background(on ? Theme.brand : Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous).strokeBorder(on ? .clear : Theme.edge, lineWidth: 1))
             .shadow(color: Theme.cardShadow, radius: 10, y: 4)
-            .opacity(busy ? 0.7 : 1)
+            .opacity(busy ? 0.7 : store.canOperate(entity) ? 1 : 0.55)
         }
         .buttonStyle(.plain)
         .disabled(!store.canOperate(entity))
@@ -513,7 +513,7 @@ struct WaterNow: View {
         }
         if let last = Irrigation.runs(cache).first {
             var bits: [String] = []
-            if let a = last.amount { bits.append(last.finished ? "\(a), finished" : "\(a), stopped early") }
+            if let a = last.amount { bits.append(last.finished ? "\(a), finished" : "\(a), cut short") }
             if !last.valves.isEmpty { bits.append(last.valves) }
             if let w = FarmTime.when(last.start, now: now, zone: zone) { bits.append("started \(w)") }
             return Say(running: false, title: "Last: \(last.name)", detail: bits.joined(separator: " · "),
@@ -685,7 +685,7 @@ struct DayFigures: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if day.stopped > 0 { Tag(text: "\(day.stopped) stopped early", kind: .warn) }
+            if day.stopped > 0 { Tag(text: "\(day.stopped) cut short", kind: .warn) }
             HStack(alignment: .top, spacing: 10) {
                 Figure(value: "\(day.runs.count)", label: day.runs.count == 1 ? "Run" : "Runs")
                 Figure(value: Format.minutes(day.waterMin), label: "Water")

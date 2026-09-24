@@ -368,5 +368,40 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   } else console.log('  skip  replay checks (no replay.local.json)');
   await c.close();
 }
+// QA-agent regressions (2026-09-25).
+{
+  const [p,c]=await open('?replay=1&fresh=1#/devices');
+  const ok=await p.waitForSelector('.dgroups',{timeout:5000}).then(()=>true).catch(()=>false);
+  if(ok){
+    await p.click('.seg button[data-status=offline]'); await p.waitForTimeout(150);
+    const r=await p.evaluate(()=>({tags:[...document.querySelectorAll('.dgroup .tag')].map(t=>t.textContent),
+      names:[...document.querySelectorAll('.dgroup-name')].map(t=>t.textContent),
+      open:document.querySelectorAll('.dgroup.open').length}));
+    check('not reporting lists wholly offline devices, closed', r.names.length>0&&r.open===0&&!r.names.includes('GoodWe'), `${r.names.length} devices, ${r.open} open`);
+    check('an appliance off at the wall is "Off", not red "Offline"', r.tags.includes('Off')&&r.tags.includes('Offline'), [...new Set(r.tags)].join(', '));
+    await p.click('.seg button[data-status=all]'); await p.fill('#search','offline'); await p.waitForTimeout(200);
+    const found=await p.evaluate(()=>document.querySelectorAll('.dgroup').length);
+    check('searching "offline" finds what is not reporting', found>0, `${found} devices`);
+    await p.fill('#search',''); await p.goto(p.url().split('#')[0]+'#/area/family_room'); await p.waitForTimeout(400);
+    const room=await p.evaluate(()=>({rows:document.querySelectorAll('.row').length, units:[...document.querySelectorAll('.dev-state, .row-state')].map(x=>x.textContent).filter(t=>/unavailable\s*\S/.test(t)).length,
+      note:[...document.querySelectorAll('.more-note')].map(n=>n.textContent).join(' | ')}));
+    check('a room collapses wholly offline devices into one line', room.rows<40&&/Switched off|Offline/.test(room.note), `${room.rows} rows · ${room.note.slice(0,80)}`);
+    check('"unavailable" never carries a unit', room.units===0, `${room.units}`);
+  } else console.log('  skip  replay regressions (no replay.local.json)');
+  await c.close();
+}
+{
+  // Needs a look: the rest opens on "N more".
+  const [p,c]=await open('?live=1&stale=1#/');
+  await p.waitForSelector('.attn');
+  const n=await p.evaluate(()=>{const a=state.water||{};a.river=Object.assign({},a.river,{trips:['dry run'],name:'River Motor'});
+    a.motors=Object.assign({},a.motors);for(const k of Object.keys(a.motors))a.motors[k]=Object.assign({},a.motors[k],{skippedZone:4});state.water=a;render();
+    return document.querySelectorAll('.attn-row').length;});
+  const more=await p.$('[data-act="attn-more"]');
+  if(more){ await more.click(); await p.waitForTimeout(100); }
+  const after=await p.evaluate(()=>document.querySelectorAll('.attn-row').length);
+  check('"N more" in Needs a look opens the rest', !more || after>n, `${n} -> ${after}`);
+  await c.close();
+}
 await b.close();
 console.log(fail?`\n${fail} issue(s) found`:'\nno issues found');
