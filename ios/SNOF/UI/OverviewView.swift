@@ -223,9 +223,12 @@ struct IrrigationRingCard: View {
                     } else if let last {
                         let planned = Double(last.plannedMin ?? 0)
                         let got = Double(last.deliveredMin ?? (last.finished ? last.plannedMin ?? 0 : 0))
-                        Ring(fraction: planned > 0 ? got / planned : 1, color: last.finished ? Theme.brand : Theme.warn,
+                        // Caught part-way by the last read: "so far", neither green nor amber.
+                        let open = Irrigation.mayStillRun(last, readAt: Irrigation.logReadAt(c, now: store.now), zone: FarmTime.zone(c.timeZone))
+                        Ring(fraction: planned > 0 ? got / planned : 1,
+                             color: last.finished ? Theme.brand : open ? Theme.muted : Theme.warn,
                              label: last.deliveredMin.map(Format.minutes) ?? last.amount ?? "—",
-                             sub: last.finished ? "last run" : "stopped")
+                             sub: last.finished ? "last run" : open ? "so far" : "cut short")
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(say.running ? say.title : say.title.replacingOccurrences(of: "Last: ", with: ""))
@@ -390,8 +393,7 @@ struct Hairline: View {
 /// "12h ago" for a server-millisecond stamp.
 func ago(_ ms: Double?, now: Date) -> String? {
     guard let ms, ms > 0 else { return nil }
-    let s = now.timeIntervalSince1970 - ms / 1000
-    return s < 60 ? "just now" : "\(Format.age(max(0, s))) ago"
+    return Water.ago(Date(timeIntervalSince1970: ms / 1000), now: now)
 }
 
 /* ---- irrigation ---- */
@@ -471,8 +473,14 @@ struct WaterNow: View {
                 Text(s.detail).font(Theme.font(14, .regular, relativeTo: .subheadline)).lineSpacing(2)
                     .foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
             }
+            // A fault names the valve and what went wrong, so it wraps rather
+            // than riding on a fixed-width tag that can outgrow the card.
             if s.running, let faults = cache.program?.faults, !faults.isEmpty {
-                ForEach(faults, id: \.self) { Tag(text: $0, kind: .bad) }
+                ForEach(faults, id: \.self) { f in
+                    Label(f, systemImage: "exclamationmark.triangle.fill")
+                        .font(Theme.font(12.5, .bold, relativeTo: .caption)).foregroundStyle(Theme.bad)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let next = cache.program?.next {
                 Rectangle().fill(Theme.tintLine).frame(height: 1).padding(.vertical, 2)
@@ -513,7 +521,9 @@ struct WaterNow: View {
         }
         if let last = Irrigation.runs(cache).first {
             var bits: [String] = []
-            if let a = last.amount { bits.append(last.finished ? "\(a), finished" : "\(a), cut short") }
+            if let a = last.amount {
+                bits.append(last.finished ? "\(a), finished" : a + Irrigation.outcome(last, readAt: Irrigation.logReadAt(cache, now: now), zone: zone))
+            }
             if !last.valves.isEmpty { bits.append(last.valves) }
             if let w = FarmTime.when(last.start, now: now, zone: zone) { bits.append("started \(w)") }
             return Say(running: false, title: "Last: \(last.name)", detail: bits.joined(separator: " · "),
@@ -582,7 +592,7 @@ struct IrrigationControls: View {
             }
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
-        .sheet(isPresented: $picking) { RunValvesSheet(cache: cache) }
+        .sheet(isPresented: $picking) { RunValvesSheet(cache: cache).environment(store) }
         .confirmationDialog("Stop the manual run?", isPresented: $confirmStop, titleVisibility: .visible) {
             Button("Stop watering", role: .destructive) { Haptics.warn(); Task { await store.stopIrrigation() } }
         } message: {
@@ -674,113 +684,6 @@ struct RunValvesSheet: View {
     private func summary(_ valves: [IrrigationValve]) -> String {
         let names = picked.compactMap { id in valves.first { $0.id == id }?.name }
         return "Water \(names.joined(separator: ", ")) for \(Format.minutes(minutes))?"
-    }
-}
-
-/// The newest day the logs cover: runs, water, pump, energy.
-struct DayFigures: View {
-    let day: Irrigation.Day
-    let zone: TimeZone
-    let now: Date
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if day.stopped > 0 { Tag(text: "\(day.stopped) cut short", kind: .warn) }
-            HStack(alignment: .top, spacing: 10) {
-                Figure(value: "\(day.runs.count)", label: day.runs.count == 1 ? "Run" : "Runs")
-                Figure(value: Format.minutes(day.waterMin), label: "Water")
-                Figure(value: day.pump.map { Format.minutes($0.pumpMin) } ?? "—", label: "Pump")
-                Figure(value: day.pump?.kwh.map { String(format: "%.1f", $0) } ?? "—", unit: day.pump?.kwh == nil ? nil : "kWh",
-                       label: "Energy")
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 14)
-    }
-}
-
-/// Three-phase supply and pressure, from the last live reading.
-struct SupplyRow: View {
-    let cache: IrrigationCache
-    let zone: TimeZone
-    let now: Date
-
-    var body: some View {
-        let supply = Irrigation.supply(cache)
-        let pressure = Irrigation.pressure(cache)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                if let supply, supply.hasVoltage {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(alignment: .firstTextBaseline, spacing: 3) {
-                            Text(supply.phaseV.map { String(Int($0.rounded())) }.joined(separator: " · "))
-                                .font(Theme.font(18, .bold, relativeTo: .title3).monospacedDigit()).tracking(-0.5)
-                                .foregroundStyle(supply.missingPhase || !supply.powerOn ? Theme.bad : Theme.ink)
-                            Text("V").font(Theme.font(12, .semibold, relativeTo: .caption)).foregroundStyle(Theme.faint)
-                        }
-                        Text("Supply" + (supply.at.map { " · \($0)" } ?? "")).font(Theme.font(10.5, .bold, relativeTo: .caption2))
-                            .tracking(1).textCase(.uppercase).foregroundStyle(Theme.faint)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if let pressure {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(pressure.value).font(Theme.font(18, .bold, relativeTo: .title3).monospacedDigit())
-                            .tracking(-0.5).foregroundStyle(Theme.ink)
-                        Text("Pressure" + (FarmTime.when(pressure.at, now: now, zone: zone).map { " · \($0)" } ?? ""))
-                            .font(Theme.font(10.5, .bold, relativeTo: .caption2)).tracking(1).textCase(.uppercase)
-                            .foregroundStyle(Theme.faint).lineLimit(1).minimumScaleFactor(0.8)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            if let supply {
-                HStack(spacing: 14) {
-                    if !supply.powerOn { Tag(text: "No power", kind: .bad) }
-                    else if supply.missingPhase { Tag(text: "Phase missing — \(supply.livePhases) of 3 live", kind: .bad) }
-                    else if let imb = supply.imbalancePct, imb >= Supply.imbalanceWarn {
-                        Tag(text: "\(imb.formatted(.number.precision(.fractionLength(0...1))))% phase imbalance", kind: .warn)
-                    }
-                    else if supply.hasVoltage { Tag(text: "All three phases", kind: .on) }
-                    if let drawing = supply.pumpDrawing {
-                        Tag(text: drawing ? "Pump drawing current" : "Pump off", kind: drawing ? .on : .plain)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct RunRow: View {
-    let run: ProgramRun
-    /// Set when the run is on a different day from the header's.
-    var otherDay: String?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(String(run.start.dropFirst(11).prefix(5)))
-                if let otherDay { Text(otherDay).font(Theme.font(11, .medium, relativeTo: .caption2)) }
-            }
-            .font(Theme.font(12.5, .semibold, relativeTo: .caption).monospacedDigit())
-            .foregroundStyle(Theme.faint).frame(width: 48, alignment: .leading)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(run.name).font(Theme.font(14, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                if !run.valves.isEmpty {
-                    Text(run.valves).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if let a = run.amount {
-                Text(a).font(Theme.font(13, .bold, relativeTo: .footnote).monospacedDigit())
-                    .foregroundStyle(run.finished ? Theme.ink : Theme.warn)
-                    .lineLimit(1).fixedSize()
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
     }
 }
 

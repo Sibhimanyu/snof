@@ -54,6 +54,8 @@ final class FarmStore {
     private(set) var areas: [String: Area] = [:]
     /// Device id -> name, for devices in a room.
     private(set) var deviceNames: [String: String] = [:]
+    /// Home Assistant's own device names, before DeviceNames tidies them.
+    private var rawDeviceNames: [String: String] = [:]
     /// Entities in a room — the only ones the app knows about. See `Sorting.inRooms`.
     private(set) var entities: [Entity] = []
     /// Everything the entities node carried, before the room filter.
@@ -166,7 +168,7 @@ final class FarmStore {
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []; refreshKeys = []
         irrigationTask?.cancel(); irrigationPending = nil
-        meta = FarmMeta(); metaLoaded = false; mobitechStatus = nil; mobitechPendingToken = nil; areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
+        meta = FarmMeta(); metaLoaded = false; mobitechStatus = nil; mobitechPendingToken = nil; areas = [:]; deviceNames = [:]; rawDeviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         water = WaterState(); rawWater = nil; rawMeta = nil; waterAsked = .distantPast
         systems = [:]; deviceSystems = [:]
@@ -188,8 +190,8 @@ final class FarmStore {
             areas = Parse.areas(v)
             applyRooms()
         case .devices(let v):
-            deviceNames = Parse.devices(v)
-            rebuildSystems()
+            rawDeviceNames = Parse.devices(v)
+            applyRooms()
         case .entities(let v):
             received = Parse.entities(v).sorted(by: Sorting.byName)
             applyRooms()
@@ -252,8 +254,13 @@ final class FarmStore {
 
     /// Areas and entities arrive on separate listeners, so either can change
     /// which entities are in a real room.
+    /// Device names are tidied here too (a printer called by its serial
+    /// number reads "P1S printer"), so every screen gets the same names.
     private func applyRooms() {
-        entities = Sorting.inRooms(received, areas: areas)
+        let tidy = DeviceNames.apply(Sorting.inRooms(received, areas: areas), names: rawDeviceNames)
+        // Re-sorted: "T8400P… Motion detected" was placed under T, and now reads "Goats …".
+        entities = tidy.names == rawDeviceNames ? tidy.entities : tidy.entities.sorted(by: Sorting.byName)
+        deviceNames = tidy.names
         index = Dictionary(entities.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         rebuildSystems()
     }
@@ -266,7 +273,7 @@ final class FarmStore {
     /// Systems are rebuilt when entities or device names change, not on every
     /// read: Home reads them from several cards on every clock tick.
     private func rebuildSystems() {
-        systems = Systems.build(entities, names: deviceNames)
+        systems = Systems.build(entities, names: deviceNames, raw: rawDeviceNames)
         var out: [String: FarmSystemID] = [:]
         for (id, sys) in systems { for d in sys.devices { out[d.id] = id } }
         deviceSystems = out

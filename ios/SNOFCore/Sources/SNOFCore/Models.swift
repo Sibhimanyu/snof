@@ -198,6 +198,8 @@ public struct IrrigationCache: Hashable, Sendable {
     public var pressure: [ReportRow] = []
     /// Program runs, newest first — from the last session or timer log.
     public var timerLog: [ReportRow] = []
+    /// When that log was read (server ms); nil from a function before 2026-09-25.
+    public var timerLogAt: Double?
     /// One row per pump day, newest first — from the last session or motor log.
     public var motorLog: [ReportRow] = []
     /// What the controller was doing at the last controller pull.

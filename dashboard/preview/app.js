@@ -280,8 +280,61 @@ function flatEntities() {
       }
     }
   }
+  tidyNames(out);
   return out;
 }
+
+/* Some integrations name a device by its serial number: the 3D printer is
+ * "P1S_01P09C510500118", its AMS "P1S_01P09C510500118_AMS_1", a camera
+ * station "T8400P202040124D". They read as what they are here; renaming the
+ * device in Home Assistant fixes it at the source. Mirrors DeviceNames in
+ * SNOFCore. */
+const BAMBU_NAME = /^(P1S|P1P|X1C|X1E|X1|A1M|A1|H2D|H2S)_(?=(?:[A-Z]*\d){6})[0-9A-Z]{12,}(?:_(.+))?$/;
+const SERIAL_NAME = /^(?=(?:[A-Z]*\d){6})[A-Z0-9]{10,}$/;
+function tidyDeviceName(raw, objectIds) {
+  const b = BAMBU_NAME.exec(raw || '');
+  if (b) {
+    if (!b[2]) return `${b[1]} printer`;
+    const rest = b[2].replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+    return `${b[1]} ${/^[A-Z]{2}/.test(rest) ? rest : rest.toLowerCase()}`;
+  }
+  if (SERIAL_NAME.test(raw || '') && objectIds.length) {
+    // Home Assistant keeps the name a device had when its entities were made
+    // in their ids: "goats_motion_detected", under a station now called by
+    // its serial number.
+    const parts = objectIds.map((o) => o.split('_'));
+    let n = 0;
+    while (parts.every((p) => p.length > n && p[n] === parts[0][n])) n++;
+    const slug = parts[0].slice(0, n).join(' ');
+    if (slug.length >= 3 && !raw.toLowerCase().startsWith(parts[0][0])) return slug.charAt(0).toUpperCase() + slug.slice(1);
+  }
+  return raw;
+}
+
+/** deviceId -> { raw, tidy } for the devices tidyDeviceName() renamed. */
+let renamedDevices = new Map();
+function tidyNames(ents) {
+  const ids = new Map();
+  for (const e of ents) if (e.device) (ids.get(e.device) || ids.set(e.device, []).get(e.device)).push(e.objectId);
+  renamedDevices = new Map();
+  for (const [id, oids] of ids) {
+    const raw = state.devices?.[id]?.name;
+    const tidy = raw && tidyDeviceName(raw, oids);
+    if (tidy && tidy !== raw) renamedDevices.set(id, { raw, tidy });
+  }
+  for (const e of ents) {
+    const d = renamedDevices.get(e.device);
+    if (d && typeof e.name === 'string' && e.name.startsWith(d.raw) && [undefined, ' '].includes(e.name[d.raw.length])) {
+      // "T8400P202040124D Goats" is the station's own entity: "Goats", not "Goats Goats".
+      const rest = e.name.slice(d.raw.length).trim();
+      const repeats = rest.toLowerCase().startsWith(d.tidy.toLowerCase()) && [undefined, ' '].includes(rest[d.tidy.length]);
+      e.name = repeats ? rest : rest ? `${d.tidy} ${rest}` : d.tidy;
+    }
+  }
+}
+/** A device's name as the farm reads it; `rawDeviceName` for matching on. */
+const deviceName = (id) => renamedDevices.get(id)?.tidy || state.devices?.[id]?.name || '';
+const rawDeviceName = (id) => state.devices?.[id]?.name || '';
 
 const areaName = (id) => state.areas?.[id]?.name || id;
 
@@ -292,7 +345,7 @@ function byDevice(ents) {
   const map = new Map();
   for (const e of ents) {
     const id = e.device || e.key;
-    if (!map.has(id)) map.set(id, { id, name: state.devices?.[e.device]?.name || e.name || e.key, area: e.area, ents: [] });
+    if (!map.has(id)) map.set(id, { id, name: deviceName(e.device) || e.name || e.key, raw: rawDeviceName(e.device), area: e.area, ents: [] });
     map.get(id).ents.push(e);
   }
   return [...map.values()];
@@ -636,8 +689,9 @@ function irrigationCard() {
     const last = irrRuns()[0];
     if (last) {
       frac = last.planned ? (last.delivered ?? (last.finished ? last.planned : 0)) / last.planned : 1;
-      tone = last.finished ? 'is-done' : 'is-warn';
-      label = runAmount(last).split(' of ')[0] || '—'; sub = last.finished ? 'last run' : 'cut short';
+      tone = last.finished ? 'is-done' : mayStillRun(last) ? '' : 'is-warn';
+      label = runAmount(last).split(' of ')[0] || '—';
+      sub = last.finished ? 'last run' : mayStillRun(last) ? 'so far' : 'cut short';
       valves = last.valves;
     }
   }
@@ -658,7 +712,7 @@ function tileFor(e) {
   const on = want ? want === 'on' : isOn(e);
   const can = canControl && bridgeGate('control').ok;
   const full = e.name || e.entity_id;
-  const dev = state.devices?.[e.device]?.name || '';
+  const dev = deviceName(e.device);
   const trimmed = dev && full.startsWith(`${dev} `) ? full.slice(dev.length + 1) : full;
   const name = trimmed || full;
   return `<button class="tile${on ? ' is-on' : ''}${want ? ' busy' : ''}" data-key="${escapeHtml(e.key)}" data-act="toggle"` +
@@ -730,10 +784,11 @@ function farmSystems(all) {
   const rest = [];
   for (const g of groups) {
     const id = systemOfDevice(g);
-    if (id === 'printer') { printers.push(g.name); put(id, g); } else rest.push([id, g]);
+    if (id === 'printer') { printers.push(g.raw || g.name); put(id, g); } else rest.push([id, g]);
   }
-  // A printer's add-ons (its AMS, the external spool) are named after it.
-  for (const [id, g] of rest) put(printers.some((p) => g.name.startsWith(`${p}_`)) ? 'printer' : id, g);
+  // A printer's add-ons (its AMS, the external spool) are named after it,
+  // in Home Assistant's own names rather than the tidied ones.
+  for (const [id, g] of rest) put(printers.some((p) => (g.raw || g.name).startsWith(`${p}_`)) ? 'printer' : id, g);
   return out;
 }
 
@@ -1744,11 +1799,13 @@ function parseRun(r) {
   const kind = headParts.length > 1 ? headParts[0] : 'Program';
   const name = headParts.length > 1 ? headParts.slice(1).join(' · ') : r.event;
   const pieces = String(r.detail || '').split(' · ');
-  let delivered = null, planned = null, finished = false;
+  let delivered = null, planned = null, finished = false, going = false;
   const first = pieces[0] || '';
-  if (/, (finished|stopped)$/.test(first)) {
-    finished = first.endsWith(', finished');
-    const amount = first.split(',')[0];
+  const tail = /^(.*?)(?:, (finished|stopped)| (so far))$/.exec(first);
+  if (tail) {
+    finished = tail[2] === 'finished';
+    going = !!tail[3];
+    const amount = tail[1];
     const parts = amount.split(' of ');
     if (parts.length === 2) { delivered = parseRuntimeMinutes(parts[0]); planned = parseRuntimeMinutes(parts[1]); }
     else { planned = parseRuntimeMinutes(amount); delivered = finished ? planned : null; }
@@ -1757,12 +1814,20 @@ function parseRun(r) {
   let valves = pieces[0] || '';
   const l = valves.toLowerCase();
   if (l.includes('backwash') || l.startsWith('started by') || l.startsWith('ended by') || valves === 'no valves') valves = '';
-  return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, valves };
+  return { kind, name, start: r.at, day: r.at.slice(0, 10), delivered, planned, finished, going, valves };
 }
-/** A run whose planned end has not passed yet may still be going: the log
- *  writes an unfinished run as "stopped" (join_runs), so it is not flagged
- *  as cut short until its time is up. */
-const mayStillRun = (r) => r.planned != null && (farmMs(r.start) ?? 0) + r.planned * 60000 > serverNow();
+/** Not known to have ended, so never "cut short": the function writes "so
+ *  far" for a run it caught part-way, and an older log (which wrote every
+ *  unfinished run as "stopped") is judged against when it was read, not
+ *  against this clock. A run read 22 minutes into its hour is not cut short
+ *  two hours later (2026-09-25). The slack is the backwash pauses, as
+ *  RUN_SLACK_MIN in reports.py. */
+const RUN_SLACK_MS = 30 * 60000;
+const logReadAt = () => Math.min(serverNow(), irrig().timerLogAt || irrig().meta?.lastUpdated || serverNow());
+const mayStillRun = (r) => !r.finished && (r.going ||
+  (r.planned != null && (farmMs(r.start) ?? 0) + r.planned * 60000 + RUN_SLACK_MS > logReadAt()));
+/** ", finished" / " so far" / ", cut short" after a run's amount. */
+const runOutcome = (r) => (r.finished ? ', finished' : mayStillRun(r) ? ' so far' : ', cut short');
 const runAmount = (x) => (x.planned == null ? (x.delivered != null ? fmtMin(x.delivered) : '')
   : x.finished ? fmtMin(x.planned) : `${fmtMin(x.delivered || 0)} of ${fmtMin(x.planned)}`);
 const irrRuns = () => (irrig().timerLog || []).map(parseRun).filter(Boolean)
@@ -1829,7 +1894,7 @@ function irrNowState() {
   if (last) {
     const bits = [];
     const a = runAmount(last);
-    if (a) bits.push(last.finished ? a : `${a}, cut short`);
+    if (a) bits.push(a + runOutcome(last));
     if (last.valves) bits.push(last.valves);
     const w = farmWhen(last.start);
     if (w) bits.push(w);
@@ -3219,7 +3284,8 @@ function flashChanged(ents) {
 function humanAge(sec) {
   if (sec < 90) return `${Math.round(sec)}s`;
   if (sec < 5400) return `${Math.round(sec / 60)}m`;
-  return `${Math.round(sec / 3600)}h`;
+  if (sec < 172800) return `${Math.round(sec / 3600)}h`;
+  return `${Math.round(sec / 86400)}d`;
 }
 
 function escapeHtml(v) {

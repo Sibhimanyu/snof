@@ -373,6 +373,15 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const [p,c]=await open('?replay=1&fresh=1#/devices');
   const ok=await p.waitForSelector('.dgroups',{timeout:5000}).then(()=>true).catch(()=>false);
   if(ok){
+    // Devices Home Assistant names by serial number read as what they are,
+    // and the printer keeps its AMS and spool, which are matched on the raw names.
+    const n=await p.evaluate(()=>{const s=farmSystems(flatEntities());
+      return {serial:flatEntities().map(e=>e.name).concat([...document.querySelectorAll('.dgroup-name')].map(t=>t.textContent))
+        .filter(t=>/\b(P1S|X1C|A1)_\d|T8400P\d/.test(t)),
+        printer:(s.printer?.devices||[]).map(d=>d.name), doubled:flatEntities().filter(e=>/^(\S+) \1\b/.test(e.name)).map(e=>e.name)};});
+    check('replay: no device or entity reads as a serial number', n.serial.length===0, n.serial.slice(0,3).join(' | '));
+    check('replay: the printer keeps its AMS and spool after renaming', n.printer.length>=3, n.printer.join(', '));
+    check('replay: a renamed device never doubles its name', n.doubled.length===0, n.doubled.slice(0,3).join(' | '));
     await p.click('.seg button[data-status=offline]'); await p.waitForTimeout(150);
     const r=await p.evaluate(()=>({tags:[...document.querySelectorAll('.dgroup .tag')].map(t=>t.textContent),
       names:[...document.querySelectorAll('.dgroup-name')].map(t=>t.textContent),
@@ -401,6 +410,41 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   if(more){ await more.click(); await p.waitForTimeout(100); }
   const after=await p.evaluate(()=>document.querySelectorAll('.attn-row').length);
   check('"N more" in Needs a look opens the rest', !more || after>n, `${n} -> ${after}`);
+  await c.close();
+}
+{
+  // A run the log caught part-way reads "so far", never "cut short", however
+  // long ago the log was read (2026-09-25: Mango2, read 22 minutes into its
+  // hour, read as cut short on Home two hours later).
+  const [p,c]=await open('?live=1#/irrigation');
+  await p.waitForSelector('#view .panel');
+  const r=await p.evaluate(()=>{
+    const read=serverNow()-2*3600e3, start=read-22*60e3;
+    const stamp=(ms)=>{const t=new Date(ms+farmTz()*60000).toISOString();return t.slice(0,10)+' '+t.slice(11,19);};
+    state.irrigation=Object.assign({},state.irrigation,{meta:{lastUpdated:read},program:{at:read,running:false},
+      timerLog:[{at:stamp(start),event:'Program · Mango2',detail:'11m of 1h, stopped · 17 Mango 2 · started by timer',source:'timer'},
+                {at:stamp(start-3*3600e3),event:'Program · Mango1',detail:'25m of 1h, stopped · 16 Mango 1 · started by A8',source:'timer'}]});
+    render(); const irr=document.getElementById('view').innerText;
+    location.hash='#/'; render(); return {irr, home:document.getElementById('view').innerText};});
+  check('a run the log caught part-way reads "so far", not "cut short"', /11m of 1h so far/.test(r.irr)&&!/Mango2[^\n]*cut short|11m of 1h, cut short/.test(r.irr),
+        (r.irr.match(/.{0,24}(so far|cut short).{0,16}/)||[''])[0]);
+  check('Needs a look counts only the run the log saw end', /1 run cut short/.test(r.home)&&!/2 runs cut short/.test(r.home),
+        (r.home.match(/\d+ runs? cut short[^\n]*/)||['none'])[0]);
+  await c.close();
+}
+{
+  // Every page, on the narrowest phone, with the real farm's names and
+  // readings: nothing is wider than the screen. (The iOS Irrigation page
+  // once was, from two tags that could not wrap.)
+  let hasReplay=true; try{readFileSync(new URL('./replay.local.json',import.meta.url));}catch{hasReplay=false;}
+  const c=await b.newContext({viewport:{width:320,height:800}}); const p=await c.newPage();
+  const wide=[];
+  for (const r of ['#/','#/irrigation','#/water','#/areas','#/devices','#/sys/solar','#/sys/security','#/admin']) {
+    await p.goto(base+(hasReplay?'?replay=1&fresh=1':'?live=1')+r); await p.waitForTimeout(700);
+    const w=await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
+    if(w>0) wide.push(`${r} +${w}px`);
+  }
+  check(`no page is wider than a 320px phone (${hasReplay?'replay':'mock'})`, wide.length===0, wide.join(', '));
   await c.close();
 }
 await b.close();

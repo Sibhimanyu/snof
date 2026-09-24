@@ -30,6 +30,7 @@ struct WaterView: View {
                     .navigationTitle("Livesky account").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { account = false } } }
             }
+            .environment(store)
         }
         // Ask now, and every 30 s while this tab is on screen; SwiftUI
         // cancels the task when the tab goes away.
@@ -102,12 +103,12 @@ struct WaterView: View {
 }
 
 enum Water {
+    /// "just now", "12m ago", "2h ago", "3d ago": the app's one age format,
+    /// as agoText() in app.js. (Two formats once put "checked 2h ago" and
+    /// "1 h ago" for the same pull on one screen.)
     static func ago(_ d: Date, now: Date) -> String {
         let s = max(0, now.timeIntervalSince(d))
-        if s < 45 { return "just now" }
-        if s < 3600 { return "\(max(1, Int(s / 60))) min ago" }
-        if s < 86400 { return "\(Int(s / 3600)) h ago" }
-        return "\(Int(s / 86400)) d ago"
+        return s < 45 ? "just now" : "\(Format.age(s)) ago"
     }
 }
 

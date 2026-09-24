@@ -92,6 +92,8 @@ public struct ProgramRun: Hashable, Sendable {
     public let plannedMin: Int?
     public let finished: Bool
     public let valves: String
+    /// The function caught it part-way ("11m of 1h so far"): not ended.
+    public var going = false
 
     public var day: String { String(start.prefix(10)) }
 
@@ -142,10 +144,11 @@ public enum Irrigation {
         let kind = head.count > 1 ? head[0] : "Program"
         let name = head.count > 1 ? head.dropFirst().joined(separator: " · ") : event
         var pieces = (row["detail"] ?? "").components(separatedBy: " · ")
-        var delivered: Int?, planned: Int?, finished = false
-        if let first = pieces.first, first.hasSuffix(", finished") || first.hasSuffix(", stopped") {
+        var delivered: Int?, planned: Int?, finished = false, going = false
+        if let first = pieces.first, first.hasSuffix(", finished") || first.hasSuffix(", stopped") || first.hasSuffix(" so far") {
             finished = first.hasSuffix(", finished")
-            let amount = first.components(separatedBy: ",")[0]
+            going = first.hasSuffix(" so far")
+            let amount = going ? String(first.dropLast(" so far".count)) : first.components(separatedBy: ",")[0]
             let parts = amount.components(separatedBy: " of ")
             if parts.count == 2 {
                 delivered = Format.runtimeMinutes(parts[0])
@@ -161,7 +164,8 @@ public enum Irrigation {
             return p.isEmpty || l.contains("backwash") || l.hasPrefix("started by") || l.hasPrefix("ended by") ? nil : p
         } ?? ""
         return ProgramRun(kind: kind, name: name, start: start, deliveredMin: delivered,
-                          plannedMin: planned, finished: finished, valves: valves == "no valves" ? "" : valves)
+                          plannedMin: planned, finished: finished, valves: valves == "no valves" ? "" : valves,
+                          going: going)
     }
 
     /// "pump 16h 21m of 19h 42m with power · 77.89 kWh".

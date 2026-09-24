@@ -160,6 +160,32 @@ import Foundation
         #expect(mango.cutShort == 3, "two Mango1 runs and one Mango2 run were cut")
     }
 
+    @Test func aRunTheLogCaughtPartWayIsNotCutShortHoursLater() {
+        // The real case (2026-09-25): the log read at 00:02 caught Mango2 22
+        // minutes into its hour. At 01:50 it had read "cut short" on Home.
+        var c = IrrigationCache()
+        c.timeZone = "+05:30"
+        c.timerLog = [
+            ["at": "2026-09-24 21:45:22", "event": "Program · Mango1", "detail": "25m of 1h, stopped · 16 Mango 1 · started by A8", "source": "timer"],
+            ["at": "2026-09-24 23:40:08", "event": "Program · Mango2", "detail": "11m of 1h, stopped · 17 Mango 2 · started by timer", "source": "timer"],
+        ]
+        let zone = FarmTime.zone("+05:30")
+        c.lastUpdated = FarmTime.date("2026-09-25 00:02:00", zone: zone)!.timeIntervalSince1970 * 1000
+        let late = FarmTime.date("2026-09-25 01:50:00", zone: zone)!
+        let mango = Irrigation.crops(c, day: "2026-09-24", now: late).crops.first { $0.label == "Mango" }!
+        #expect(mango.cutShort == 1, "only the Mango1 run, which the log saw end")
+        var i = Attention.Input(); i.irrigation = c; i.now = late
+        #expect(Attention.items(i).contains { $0.text == "1 run cut short in the last 24 h" })
+        let mango2 = Irrigation.runs(c).first!
+        #expect(Irrigation.outcome(mango2, readAt: Irrigation.logReadAt(c, now: late), zone: zone) == " so far")
+        // The function now says so itself, and stamps when it read the log.
+        c.timerLog[1]["detail"] = "11m of 1h so far · 17 Mango 2 · started by timer"
+        c.timerLogAt = c.lastUpdated
+        let r = Irrigation.runs(c).first!
+        #expect(r.going && !r.finished && r.deliveredMin == 11 && r.plannedMin == 60 && r.valves == "17 Mango 2")
+        #expect(Irrigation.mayStillRun(r, readAt: late.addingTimeInterval(86_400), zone: zone), "until a later read says otherwise")
+    }
+
     @Test func aFanIsNeverASwitchModuleFault() {
         let fan = [e("fan", "f", "Fan", "unavailable", device: "fan"), e("switch", "fs", "Fan Sleep mode", "unavailable", device: "fan")]
         var i = Attention.Input()

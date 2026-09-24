@@ -523,12 +523,29 @@ def _control(code: str) -> str:
     return V.CONTROL_CODES.get(code, code)
 
 
-def run_row(run: dict, names: dict[str, str]) -> dict:
+# A run the log caught part-way is not "stopped": its planned minutes, plus
+# room for backwash pauses (the countdown halts for each), had not passed
+# when the log was read. Such a row says "so far". (2026-09-25: Mango2, read
+# 22 minutes into its hour, was written "11m of 1h, stopped" and read on
+# Home as cut short.)
+RUN_SLACK_MIN = 30
+
+
+def still_going(run: dict, read_at: _dt.datetime | None) -> bool:
+    start = V.parse_stamp(run["start"])
+    return bool(read_at and start and run["plannedMin"] is not None
+                and not run["finished"] and not run["endedBy"]
+                and start + _dt.timedelta(minutes=run["plannedMin"] + RUN_SLACK_MIN) > read_at)
+
+
+def run_row(run: dict, names: dict[str, str], read_at: _dt.datetime | None = None) -> dict:
     planned = run["plannedMin"]
     if planned is None:
         amount = ""
     elif run["finished"]:
         amount = f"{V.fmt_minutes(planned)}, finished"
+    elif still_going(run, read_at):
+        amount = f"{V.fmt_minutes(run['deliveredMin'] or 0)} of {V.fmt_minutes(planned)} so far"
     else:
         amount = f"{V.fmt_minutes(run['deliveredMin'] or 0)} of {V.fmt_minutes(planned)}, stopped"
     bits = [amount, _valve_list(run["valves"], names)]
@@ -545,7 +562,8 @@ def run_row(run: dict, names: dict[str, str]) -> dict:
 
 
 def timer_sections(segments: list[dict] | None, err: str, names: dict[str, str],
-                   window: str) -> tuple[list[dict], list[dict], list[dict]]:
+                   window: str, read_at: _dt.datetime | None = None
+                   ) -> tuple[list[dict], list[dict], list[dict]]:
     """-> (sections, runs, timeline rows newest first)."""
     if err:
         return [section("timeline", "Program runs", error=err)], [], []
@@ -557,9 +575,11 @@ def timer_sections(segments: list[dict] | None, err: str, names: dict[str, str],
     washes = V.backwash_stats(segments)
     delivered = sum(r["deliveredMin"] or 0 for r in runs)
     finished = sum(1 for r in runs if r["finished"])
+    going = sum(1 for r in runs if still_going(r, read_at))
     faults = sum(len(r["faults"]) for r in runs)
     rows = [metric("Runs", len(runs), note=f"{finished} finished, "
-                   f"{len(runs) - finished} stopped early"),
+                   f"{len(runs) - finished - going} stopped early"
+                   + (f", {going} still going" if going else "")),
             metric("Water time", V.fmt_minutes(delivered),
                    note="by the controller's countdown"),
             metric("Backwashes", washes["count"],
@@ -569,7 +589,7 @@ def timer_sections(segments: list[dict] | None, err: str, names: dict[str, str],
     by_program: dict[str, int] = {}
     for r in runs:
         by_program[r["name"]] = by_program.get(r["name"], 0) + (r["deliveredMin"] or 0)
-    timeline = [run_row(r, names) for r in reversed(runs)]
+    timeline = [run_row(r, names, read_at) for r in reversed(runs)]
     out = [section("metrics", "Programs", rows)]
     if len(by_program) > 1:
         out.append(section("bars", "Water time per program",
@@ -594,10 +614,11 @@ def report_timer_log(src, params):
     window = _window(params)
     segments = _timer_leg(src, params)
     names = _names_leg(src)
-    sections, runs, timeline = timer_sections(segments, "", names, window)
+    read_at = farm_now()
+    sections, runs, timeline = timer_sections(segments, "", names, window, read_at)
     finished = sum(1 for r in runs if r["finished"])
     return (sections, f"{len(runs)} runs, {finished} finished · {window}",
-            timeline, {"timerLog": timeline[:CACHE_RUNS]})
+            timeline, {"timerLog": timeline[:CACHE_RUNS], "timerLogAt": SERVER_TIMESTAMP})
 
 
 # ---- motor log: power, pump, energy -------------------------------------------------
@@ -667,7 +688,7 @@ def report_session_log(src, params):
     segments, terr = leg(lambda: _timer_leg(src, params))
     days, merr = leg(lambda: V.motor_days(src.motor_log(params["from"], params["to"])))
     names = _names_leg(src) if segments else {}
-    tsec, runs, tline = timer_sections(segments, terr, names, window)
+    tsec, runs, tline = timer_sections(segments, terr, names, window, farm_now())
     msec, mline = motor_sections(days, merr, window)
     merged = sorted(tline + mline, key=lambda r: r["at"], reverse=True)
     heads = [s for s in tsec + msec if s["kind"] != "timeline"]
@@ -681,7 +702,10 @@ def report_session_log(src, params):
             f"pump {V.fmt_minutes(pump)}" if days else "", window]
     patch = {}
     if segments is not None:
+        # When the log was read: the apps judge "cut short" against it, not
+        # against the phone's clock.
         patch["timerLog"] = tline[:CACHE_RUNS]
+        patch["timerLogAt"] = SERVER_TIMESTAMP
     if days is not None:
         patch["motorLog"] = mline[:CACHE_RUNS]
     return sections, " · ".join(b for b in bits if b), merged, patch

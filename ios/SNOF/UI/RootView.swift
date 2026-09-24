@@ -58,7 +58,10 @@ struct MainTabs: View {
         .tint(Theme.text)
         .toolbarBackground(.bar, for: .tabBar)
         .sensoryFeedback(.selection, trigger: store.selectedTab)
-        .sheet(isPresented: $account) { AccountSheet() }
+        // The store is handed to every sheet explicitly: a sheet on this
+        // TabView was built without it on Catalyst (fatal "No Observable
+        // object of type FarmStore found", snapshot review 2026-09-25).
+        .sheet(isPresented: $account) { AccountSheet().environment(store) }
         #if DEBUG
         .onAppear {
             if let id = Snapshot.value("-area") { store.selectedTab = .areas; areasPath.append(AreaRoute(id: id)) }

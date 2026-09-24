@@ -349,10 +349,14 @@ struct WateredCard: View {
         let pump = Irrigation.pumpDays(c).first { $0.day == day }
         if !Irrigation.runs(c).isEmpty || !Irrigation.pumpDays(c).isEmpty {
             VStack(alignment: .leading, spacing: 0) {
+                // The age sits under the title: beside it, title + age + the
+                // day picker is wider than a 375pt phone has room for.
                 HStack {
-                    Text("Watered").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    if let checked { Text(checked).font(Theme.small).foregroundStyle(Theme.faint) }
-                    Spacer()
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Watered").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                        if let checked { Text(checked).font(Theme.small).foregroundStyle(Theme.faint) }
+                    }
+                    Spacer(minLength: 8)
                     Picker("Day", selection: Binding(get: { which }, set: { pick = $0 })) {
                         Text("Today").tag("today")
                         Text("Yesterday").tag("yesterday")
@@ -482,7 +486,7 @@ struct PumpPowerCard: View {
                     }
                 }
                 if let s = supply {
-                    HStack(spacing: 14) {
+                    FlowRow {
                         if s.hasVoltage {
                             if !s.powerOn { Tag(text: "No power", kind: .bad) }
                             else if s.missingPhase { Tag(text: "Phase missing · \(s.livePhases) of 3 live", kind: .bad) }

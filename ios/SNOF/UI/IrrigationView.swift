@@ -57,7 +57,7 @@ struct IrrigationView: View {
         .navigationTitle("Irrigation")
         .task { await store.autoRefreshIrrigationIfStale() }
         .sheet(item: $opened) { open in
-            ReportSheet(reportKey: open.id)
+            ReportSheet(reportKey: open.id).environment(store)
         }
         .sheet(isPresented: $building) {
             NavigationStack {
@@ -66,6 +66,7 @@ struct IrrigationView: View {
                     .navigationTitle("New report").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { building = false } } }
             }
+            .environment(store)
             .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $account) {
@@ -76,6 +77,7 @@ struct IrrigationView: View {
                 .navigationTitle("Mobitech account").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { account = false } } }
             }
+            .environment(store)
         }
         #if DEBUG
         .task {

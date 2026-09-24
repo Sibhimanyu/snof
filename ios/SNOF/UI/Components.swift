@@ -191,6 +191,51 @@ struct Tag: View {
     }
 }
 
+/// Left to right, onto a new line when the next child would not fit. Tags
+/// never shrink, so two long ones in an HStack widen the card, and with it
+/// the whole page, past the screen.
+struct FlowRow: Layout {
+    var spacing: CGFloat = 14
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let lines = arrange(proposal.width ?? .infinity, subviews)
+        let height = lines.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(0, lines.count - 1))
+        return CGSize(width: lines.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in arrange(bounds.width, subviews) {
+            var x = bounds.minX
+            for i in line.items {
+                let size = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y + (line.height - size.height) / 2), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += line.height + lineSpacing
+        }
+    }
+
+    private struct Line { var items: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ maxWidth: CGFloat, _ subviews: Subviews) -> [Line] {
+        var lines: [Line] = [], line = Line()
+        for i in subviews.indices {
+            let size = subviews[i].sizeThatFits(.unspecified)
+            if !line.items.isEmpty, line.width + spacing + size.width > maxWidth {
+                lines.append(line)
+                line = Line()
+            }
+            line.width += (line.items.isEmpty ? 0 : spacing) + size.width
+            line.height = max(line.height, size.height)
+            line.items.append(i)
+        }
+        if !line.items.isEmpty { lines.append(line) }
+        return lines
+    }
+}
+
 /* ---- bridge ---- */
 
 struct BridgePill: View {

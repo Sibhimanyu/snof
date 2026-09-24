@@ -127,6 +127,7 @@ public enum Parse {
             c.timeZone = string(dcon["timeZone"]).flatMap { $0.isEmpty ? nil : $0 }
         }
         c.timerLog = rows(d["timerLog"])
+        c.timerLogAt = double(d["timerLogAt"])
         c.motorLog = rows(d["motorLog"])
         if let p = d["program"] as? [String: Any] {
             c.program = CurrentProgram(name: string(p["name"]) ?? "", kind: string(p["kind"]) ?? "",

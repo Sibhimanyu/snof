@@ -461,7 +461,8 @@ public enum Format {
     public static func age(_ sec: Double) -> String {
         if sec < 90 { return "\(Int(sec.rounded()))s" }
         if sec < 5400 { return "\(Int((sec / 60).rounded()))m" }
-        return "\(Int((sec / 3600).rounded()))h"
+        if sec < 172_800 { return "\(Int((sec / 3600).rounded()))h" }
+        return "\(Int((sec / 86400).rounded()))d"
     }
 
     /// "1h 20m", "45m".
