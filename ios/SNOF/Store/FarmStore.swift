@@ -46,6 +46,9 @@ final class FarmStore {
     private(set) var user: AppUser?
 
     private(set) var meta = FarmMeta()
+    /// meta has arrived at least once. Before that nothing is known, and
+    /// "not reporting" would be a false alarm on every launch.
+    private(set) var metaLoaded = false
     private(set) var areas: [String: Area] = [:]
     /// Device id -> name, for devices in a room.
     private(set) var deviceNames: [String: String] = [:]
@@ -160,7 +163,7 @@ final class FarmStore {
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []; refreshKeys = []
         irrigationTask?.cancel(); irrigationPending = nil
-        meta = FarmMeta(); areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
+        meta = FarmMeta(); metaLoaded = false; areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         firstSnapshot = false; canControl = false; isAdmin = false
         deviceStatus = .all; deviceDomain = nil
@@ -168,7 +171,9 @@ final class FarmStore {
 
     private func receive(_ event: FarmEvent) {
         switch event {
-        case .meta(let v): meta = Parse.meta(v)
+        case .meta(let v):
+            meta = Parse.meta(v)
+            metaLoaded = true
         case .areas(let v):
             areas = Parse.areas(v)
             applyRooms()
@@ -458,6 +463,8 @@ final class FarmStore {
     /// Why Run/Stop cannot be pressed right now, or nil.
     func irrigationRefusal() -> String? {
         if !isAdmin { return "Only farm admins can open or close valves." }
+        // Still loading: the buttons wait, but nothing is blamed.
+        if !metaLoaded { return "" }
         let g = gate(.irrigationControl)
         if !g.ok { return g.why }
         if !connected { return BackendError.notConnected.localizedDescription }
@@ -484,7 +491,9 @@ final class FarmStore {
     func stopIrrigation() async { await sendIrrigation(.stop) }
 
     private func sendIrrigation(_ cmd: IrrigationCommand) async {
-        if let why = irrigationRefusal() { show(.err, why); return }
+        if let why = irrigationRefusal() {
+            show(.err, why.isEmpty ? "Still loading the farm — try again in a moment." : why); return
+        }
         guard let uid = user?.uid else { return }
         do {
             let key = try await backend.sendIrrigation(cmd, uid: uid)

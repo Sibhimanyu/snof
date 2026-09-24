@@ -244,12 +244,17 @@ extension Gate {
                 ? Gate(ok: false, why: "Irrigation reports are switched off for now.")
                 : .open
         }
+        // Valve control is spoken of as valve control: the owner thinks of the
+        // Mobitech side as its own thing, not as "the bridge".
+        let valves = capability == .irrigationControl
         guard let hb, let last = hb.lastSeen else {
-            return Gate(ok: false, why: "The bridge has not reported in yet, so nothing would act on that.")
+            return Gate(ok: false, why: valves ? "Valve control has not checked in yet."
+                        : "The bridge has not reported in yet, so nothing would act on that.")
         }
         let age = (nowMs + skewMs - last) / 1000
         if hb.status == "offline" || age > (hb.heartbeatSeconds ?? 30) * Farm.staleFactor {
-            return Gate(ok: false, why: "The bridge is not reporting in, so nothing would act on that.")
+            return Gate(ok: false, why: valves ? "Valve control is not answering right now, so a Run or Stop would not reach the controller."
+                        : "The bridge is not reporting in, so nothing would act on that.")
         }
         switch capability {
         case .control where hb.control == false:
