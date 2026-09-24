@@ -185,7 +185,7 @@ def test_second_command_inside_ten_seconds_is_refused():
 def test_refusals_never_send():
     cases = {
         "booster pump is not an irrigation valve": (cmd(valves="2"), Reads()),
-        "a program is running": (cmd(), Reads(PROGRAM)),
+        "a manual run is already going": (cmd(), Reads(MANUAL)),
         "stop with nothing running": (cmd(action="stop", valves=None, minutes=None), Reads(IDLE)),
         "stop a scheduled program": (cmd(action="stop", valves=None, minutes=None), Reads(PROGRAM)),
         "stale": (cmd(at=(time.time() - 300) * 1000), Reads()),
@@ -201,6 +201,12 @@ def test_refusals_never_send():
         result, c = run(store, "-x", command, reads=reads)
         assert c.sent == [] and result["ok"] is False, f"sent for: {why} -> {result}"
         assert store.reference(f"{ROOT}/irrigation_commands/-x").get() is None, f"left behind: {why}"
+
+
+def test_a_manual_run_starts_while_a_scheduled_cycle_is_going():
+    store = enabled_store()
+    result, c = run(store, "-a", cmd(), reads=Reads(PROGRAM))
+    assert len(c.sent) == 1 and c.sent[0].startswith("FON 004,006") and result["ok"], result
 
 
 def test_stop_a_manual_run():

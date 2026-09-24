@@ -363,7 +363,13 @@ private struct RunValvesSheet: View {
             List {
                 if busy, let p = cache.program {
                     Section {
-                        Note(text: "\(p.name) is running. The farm will refuse a manual run until it ends\(p.isManual ? " or is stopped" : "").", tone: .warn)
+                        // A scheduled cycle does not block a manual run; only
+                        // another manual run does (owner, 2026-09-24).
+                        if p.isManual {
+                            Note(text: "A manual run is already going. Stop it before starting another.", tone: .warn)
+                        } else {
+                            Note(text: "\(p.name) is running on its schedule. A manual run can still be started.")
+                        }
                     }
                 }
                 Section {

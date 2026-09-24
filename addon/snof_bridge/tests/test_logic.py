@@ -475,16 +475,18 @@ def _dash(timer_type, completed, name="Coconut"):
                                                 "timer_name": name}}}}
 
 
-def test_only_irrigation_valves_and_only_when_the_controller_is_idle():
+def test_only_irrigation_valves_and_never_over_another_manual_run():
     allowed = ic.irrigation_valves(NODES)
     assert allowed == {12: "12 Coco 1", 15: "15 Coco 2"}, "never the tank, booster or backwash"
     idle = ic.controller_state(_dash("1", "1"))
     ic.check_against("run", [12, 15], idle, allowed)
     assert "not an irrigation valve: 2, 3" in _refused(ic.check_against, "run", [2, 3], idle, allowed)
     busy = ic.controller_state(_dash("1", "0"))
-    assert "Coconut is running" in _refused(ic.check_against, "run", [12], busy, allowed)
+    # A scheduled cycle (Coconut) running does not block a manual run (owner, 2026-09-24)...
+    ic.check_against("run", [12], busy, allowed)
+    # ...but another manual run does: two manual commands would collide.
     manual = ic.controller_state(_dash("3", "0", "Manual Mode"))
-    assert "running" in _refused(ic.check_against, "run", [12], manual, allowed)
+    assert "manual run is already going" in _refused(ic.check_against, "run", [12], manual, allowed)
     ic.check_against("stop", [], manual, allowed)
     assert "scheduled program" in _refused(ic.check_against, "stop", [], busy, allowed)
     assert "no manual run" in _refused(ic.check_against, "stop", [], idle, allowed)

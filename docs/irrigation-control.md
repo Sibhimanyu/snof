@@ -39,7 +39,7 @@ The command endpoint is `POST /v1/command/` with JSON
 ```
 app (admin) ──▶ /farms/snof/irrigation_commands/<id>   {action, valves, minutes, uid, at}
 NUC         ◀── stream; validate; get_node (Irrigation valves only);
-                dashboard (refuse run if anything runs, stop unless manual);
+                dashboard (refuse run only over another manual run, stop unless manual);
                 POST /v1/command/
 NUC         ──▶ /farms/snof/irrigation_command_results/<id>  {ok, status, message, valves, minutes}
 ```
@@ -81,3 +81,16 @@ state shows the last change took. Enforced at every layer:
 Consequence to know: Stop is locked too while a change is being confirmed
 (usually well under 2 minutes). The lock expires by itself after 3 minutes,
 so a crash mid-confirmation cannot block control for ever.
+
+## A scheduled cycle does not block a manual run (2026-09-24)
+
+Owner: "the cycle timer is ongoing but the manual mode should still work".
+`check_against` refuses a run only while a **manual** run is active (two
+manual commands would collide); a scheduled program such as Coconut running
+on its timer no longer blocks it. Stop is unchanged: manual runs only.
+
+Unproven: what the dashboard's `timers.current` shows while a manual run
+overlaps a cycle. Confirmation reads it; if a manual run during a cycle ends
+"not confirmed" although the valves opened, switch confirmation to the
+timer_log (a timer_type 3 / start_control MM entry after the send), built
+against a real payload, not blind.
