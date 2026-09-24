@@ -516,9 +516,21 @@ def test_irrigation_control_is_off_without_every_setting():
                 dcon_command_auth="x@ios", dcon_device_id="1", dcon_user_slot="A8",
                 irrigation_max_minutes=60)
     assert ic.IrrigationControl(NS(**full), None, None).enabled
-    for key, off in [("allow_irrigation_control", False), ("dcon_command_auth", ""),
+    for key, off in [("allow_irrigation_control", False),
                      ("dcon_device_id", ""), ("dcon_user_slot", ""), ("dcon_user_slot", "U8")]:
         assert not ic.IrrigationControl(NS(**{**full, key: off}), None, None).enabled, key
+    # The command token may come from signing in to Mobitech in the app
+    # (private/mobitech), so an empty option does not switch control off.
+    assert ic.IrrigationControl(NS(**{**full, "dcon_command_auth": ""}), None, None).enabled
+
+
+def test_the_signed_in_mobitech_session_wins_over_the_option():
+    live, old = "L" * 60 + "@ios", "O" * 60 + "@ios"
+    assert ic.pick_token(live, old) == live
+    assert ic.pick_token(None, old) == old, "no sign-in yet: the option still works"
+    assert ic.pick_token("", old) == old
+    assert ic.pick_token("not-a-token", "") == "", "only app-shaped tokens count"
+    assert ic.pick_token(None, None) == ""
 
 
 def test_the_read_relay_still_cannot_send_a_command():

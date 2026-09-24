@@ -128,6 +128,7 @@ final class FirebaseBackend: FarmBackend {
         observe(db.reference(withPath: "\(farm)/irrigation_command_results").queryLimited(toLast: 10),
                 onDenied: nil) { handler(.irrigationResults($0)) }
         observe("\(farm)/irrigation_lock", onDenied: nil) { handler(.irrigationLock($0)) }
+        observe("\(farm)/mobitech_status", onDenied: nil) { handler(.mobitechStatus($0)) }
     }
 
     func detach() {
@@ -197,6 +198,26 @@ final class FirebaseBackend: FarmBackend {
         node["uid"] = uid
         node["at"] = ServerValue.timestamp()
         return try await push("farms/\(Farm.slug)/irrigation_commands", node)
+    }
+
+    func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws {
+        try await set("private/mobitech", ["token": session.token, "at": ServerValue.timestamp(), "uid": uid])
+        try await set("farms/\(Farm.slug)/mobitech_status",
+                      ["at": ServerValue.timestamp(), "uid": uid, "name": session.name,
+                       "user": session.user, "mobileLast4": mobileLast4])
+    }
+
+    private func set(_ path: String, _ node: [String: Any]) async throws {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            db.reference(withPath: path).setValue(node) { err, _ in
+                if let err = err as NSError? {
+                    cont.resume(throwing: err.localizedDescription.lowercased().contains("permission")
+                                ? BackendError.refused : BackendError.other(err.localizedDescription))
+                } else {
+                    cont.resume()
+                }
+            }
+        }
     }
 
     func cancelUnsentWrites() {

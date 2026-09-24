@@ -264,9 +264,16 @@ def test_a_dead_app_token_says_so_and_does_not_hang_confirming():
     store = enabled_store()
     reads = Reads()
     result, c = run(store, "-a", cmd(), reads=reads, commander=DeadToken(reads))
-    assert result["ok"] is False and "token has expired" in result["message"], result
+    assert result["ok"] is False and "session has expired" in result["message"], result
     assert "confirming" not in result or result["confirming"] is False
     assert store.reference(f"{ROOT}/irrigation_lock").get() is None
+
+
+def test_the_signed_in_mobitech_session_wins_over_the_secret():
+    live, old = "L" * 60 + "@ios", "O" * 60 + "@ios"
+    assert IC.pick_token(live, old) == live
+    assert IC.pick_token(None, old) == old
+    assert IC.pick_token("junk", None) == ""
 
 
 def test_command_template_matches_the_add_on():

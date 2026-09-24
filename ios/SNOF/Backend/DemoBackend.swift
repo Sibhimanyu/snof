@@ -262,6 +262,14 @@ final class DemoBackend: FarmBackend {
         return key
     }
 
+    func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws {
+        if flag("viewer") { throw BackendError.refused }
+        let status: [String: Any] = ["at": Date().timeIntervalSince1970 * 1000, "uid": uid,
+                                     "name": session.name, "user": session.user, "mobileLast4": mobileLast4]
+        tree["mobitech_status"] = status
+        handler?(.mobitechStatus(status))
+    }
+
     func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String {
         if flag("viewer") || flag("controloff") { throw BackendError.refused }
         let key = "demo_irr_\(UUID().uuidString.prefix(8))"
