@@ -3,7 +3,7 @@ const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:1
 const page=await ctx.newPage(); let fail=0;
 const check=(name,ok,extra='')=>{console.log(`${ok?'  PASS ':'  FAIL '} ${name} ${extra}`); if(!ok)fail++;};
 
-await page.goto('http://localhost:8765/index.html');
+await page.goto((process.env.PREVIEW_BASE||'http://localhost:8765/index.html'));
 let r=await page.evaluate(()=>({
   view:document.body.dataset.view,
   gate:getComputedStyle(document.getElementById('gate')).display,

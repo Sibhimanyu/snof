@@ -34,6 +34,7 @@ struct MainTabs: View {
     @State private var areasPath: [AreaRoute] = []
     @State private var devicesPath: [AreaRoute] = []
     @State private var irrigationPath: [AreaRoute] = []
+    @State private var waterPath: [AreaRoute] = []
 
     var body: some View {
         @Bindable var store = store
@@ -50,6 +51,9 @@ struct MainTabs: View {
             .badge(store.entities.filter(\.isBad).count > 0 ? Text("") : nil)
             Tab("Irrigation", systemImage: "drop", value: AppTab.irrigation) {
                 stack(path: $irrigationPath) { IrrigationView() }
+            }
+            Tab("Water", systemImage: "water.waves", value: AppTab.water) {
+                stack(path: $waterPath) { WaterView() }
             }
         }
         .tint(Theme.text)
@@ -140,6 +144,13 @@ struct AccountSheet: View {
                     LabeledContent("Device control", value: store.meta.bridge?.control == false ? "Switched off" : store.meta.bridge?.control == true ? "On" : "Unknown")
                 }
                 if store.isAdmin {
+                    Section {
+                        LiveskySignIn()
+                    } header: {
+                        Text("Livesky account (river motor)")
+                    } footer: {
+                        Text("The number and the SMS code are never stored. The session is kept by SNOF's cloud function, where no app can read it.")
+                    }
                     Section {
                         MobitechSignIn()
                     } header: {

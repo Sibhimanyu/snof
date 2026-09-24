@@ -74,6 +74,27 @@
     data.areas=f.areas; data.entities=f.entities; data.devices=f.devices||{};
     data.meta.name='Sibhi Natural Orchards and Farms';
   }
+  // The water chain (water functions): river motor on Livesky, the other
+  // farm's two motors on Niagara. Invented values, real shapes.
+  // ?water=off is the kill switch off; ?livesky=expired an ended session;
+  // ?nowater=1 before the first pull.
+  {
+    const iso=(ms)=>new Date(ms).toISOString();
+    data.meta.water={enabled:params.get('water')!=='off', lastPull:now-20000, runtime:'cloud-functions',
+      livesky:params.get('livesky')==='expired'
+        ? {ok:false,error:'The Livesky session has expired.',expires:now-3600000,signedInAt:now-90000000,mobileLast4:'3210'}
+        : {ok:true,error:'',at:now-20000,expires:now+20*3600000,signedInAt:now-4*3600000,mobileLast4:'3210'},
+      niagara:{ok:true,error:'',at:now-20000}};
+    if(!params.get('nowater')) data.water={pulledAt:now-20000,
+      river:{name:'River Motor',vendor:'livesky',running:true,pending:false,connected:true,reportedAt:iso(now-45000),
+        volts:[451,468,458],amps:[10.2,10.2],power:true,runMinutes:196,stopMinutes:93,autoStart:true,trips:[],signal:25},
+      motors:{
+        wellmotor75hp:{name:'Wellmotor75HP',group:'Water 7.5hp',role:'main-farm',vendor:'niagara',model:4,running:false,
+          requested:false,power:true,supply:'3 PHASE',event:'MOTOR OFF III PHASE',eventCode:'020',reportedAt:iso(now-3*3600000)},
+        'well-motor':{name:'Well motor',group:'GROUP ONE',role:'drip',vendor:'niagara',model:5,running:true,requested:true,
+          power:true,supply:'3 PHASE',event:'Zone changed',eventCode:'044',reportedAt:iso(now-70000),liveAt:iso(now-30000),
+          volts:[231,232,235],amps:[8.6,8.4],pressureOut:21.9,program:'P1',zone:3,zoneRun:'00:00:32',zoneLeft:'01:04:28'}}};
+  }
   if(params.get('noirrig')) delete data.irrigation;
   // ?mobitech=ok|rejected seeds SNOF's Mobitech status line (never a token).
   if(params.get('mobitech')){

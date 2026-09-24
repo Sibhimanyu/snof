@@ -92,6 +92,21 @@
           "$other": { ".validate": false }
         },
 
+        // "Pull the water chain now": appended while someone has the Water
+        // screen open. Any viewer may ask, because it only reads the river
+        // and the other farm's motors (Livesky, Niagara). The water_refresh
+        // function deletes the node, pulls at most once per 15 s whoever
+        // asks, and does nothing while meta/water.enabled is not true. What
+        // it reads lands in water/, which no client can write.
+        "water_requests": {
+          "$req": {
+            ".write": "auth != null && root.child('acl/viewers').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['uid','at'])",
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "at": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+
         // Report requests for the Mobitech DCON irrigation controller.
         // Same shape of trust as commands: a
         // controller may append a request and nothing else. A Cloud Function
@@ -139,6 +154,14 @@
     // rules do not apply to. Outside /farms on purpose, because a read grant
     // on a parent cannot be taken back on a child.
     "private": {
+      // The Livesky session (a 24-hour JWT) and the river starter's IMEI.
+      // Only the water_session function writes it, after an admin signs in
+      // with an SMS code; only the water functions read it. No client may
+      // do either: the explicit false is documentation, the root already
+      // denies.
+      "livesky": {
+        ".write": false
+      },
       "mobitech": {
         ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true",
         ".validate": "newData.hasChildren(['token', 'at', 'uid'])",

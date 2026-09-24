@@ -15,8 +15,7 @@ river ──[Livesky: "River Motor", 3φ]──▶ other farm
 ```
 
 The first leg is in [livesky-app.md](livesky-app.md) and the last in
-[mobitech-app.md](mobitech-app.md). Niagara support was removed from SNOF
-on 2026-09-23 at the owner's request. This page is documentation only.
+[mobitech-app.md](mobitech-app.md). SNOF reads it (read-only) since 2026-09-24: see [water.md](water.md).
 
 ## Host and transport
 

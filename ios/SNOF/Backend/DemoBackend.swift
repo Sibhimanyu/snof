@@ -88,7 +88,36 @@ final class DemoBackend: FarmBackend {
         bridge["irrigationControlStatus"] = ["maxMinutes": 60]
         meta["bridge"] = bridge
         if flag("reportsoff") { meta["reports"] = ["enabled": false] }
+        // The water chain, as the water functions write it. -demo-wateroff is
+        // the kill switch off; -demo-liveskyexpired an ended Livesky session.
+        let iso = { (ms: Double) in ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: ms / 1000)) }
+        meta["water"] = [
+            "enabled": !flag("wateroff"), "lastPull": now - 20_000,
+            "livesky": flag("liveskyexpired")
+                ? ["ok": false, "error": "The Livesky session has expired.", "expires": now - 3_600_000,
+                   "signedInAt": now - 90_000_000, "mobileLast4": "3210"] as [String: Any]
+                : ["ok": true, "error": "", "at": now - 20_000, "expires": now + 20 * 3_600_000,
+                   "signedInAt": now - 4 * 3_600_000, "mobileLast4": "3210"],
+            "niagara": ["ok": true, "error": "", "at": now - 20_000],
+        ] as [String: Any]
         tree["meta"] = meta
+        tree["water"] = [
+            "pulledAt": now - 20_000,
+            "river": ["name": "River Motor", "vendor": "livesky", "running": true, "pending": false,
+                      "connected": true, "power": true, "volts": [467, 457, 453], "amps": [10.1, 10.1],
+                      "runMinutes": 196, "stopMinutes": 1, "autoStart": true, "reportedAt": iso(now - 45_000)],
+            "motors": [
+                "wellmotor75hp": ["name": "Wellmotor75HP", "vendor": "niagara", "role": "main-farm",
+                                  "group": "Water 7.5hp", "running": false, "requested": false, "power": true,
+                                  "supply": "3 PHASE", "event": "MOTOR OFF III PHASE", "eventCode": "020",
+                                  "reportedAt": iso(now - 3 * 3_600_000)],
+                "well-motor": ["name": "Well motor", "vendor": "niagara", "role": "drip", "group": "GROUP ONE",
+                               "running": true, "requested": true, "power": true, "supply": "3 PHASE",
+                               "event": "Zone changed", "eventCode": "044", "program": "P1", "zone": 3,
+                               "zoneLeft": "00:32:31", "volts": [232, 232, 234], "amps": [8.7, 8.7],
+                               "pressureOut": 21.9, "reportedAt": iso(now - 70_000), "liveAt": iso(now - 30_000)],
+            ],
+        ] as [String: Any]
     }
 
     /// The clean fixture's controller logs are from 2026-02-22; say they are
@@ -173,6 +202,7 @@ final class DemoBackend: FarmBackend {
         handler?(.entities(tree["entities"]))
         handler?(.irrigation(tree["irrigation"]))
         handler?(.reports(tree["irrigation_reports"]))
+        handler?(.water(tree["water"]))
     }
 
     private func heartbeat() {
@@ -318,6 +348,20 @@ final class DemoBackend: FarmBackend {
             self.handler?(.irrigationLock(nil))
         }
         return key
+    }
+
+    func requestWaterRefresh(uid: String) async throws {
+        if flag("wateroff") { return }
+        var w = tree["water"] as? [String: Any] ?? [:]
+        w["pulledAt"] = Date().timeIntervalSince1970 * 1000
+        tree["water"] = w
+        handler?(.water(w))
+    }
+
+    func waterSession(_ body: [String: Any]) async throws -> [String: Any] {
+        if !flag("admin") { throw BackendError.other("Only farm admins can sign in to Livesky.") }
+        try? await Task.sleep(for: .milliseconds(600))
+        return ["ok": true, "expires": Date().timeIntervalSince1970 * 1000 + 86_400_000, "device": "River Motor"]
     }
 
     func cancelUnsentWrites() {}

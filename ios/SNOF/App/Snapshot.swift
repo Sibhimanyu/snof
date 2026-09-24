@@ -26,6 +26,7 @@ enum Snapshot {
         case "areas": store.selectedTab = .areas
         case "devices": store.selectedTab = .devices
         case "irrigation": store.selectedTab = .irrigation
+        case "water": store.selectedTab = .water
         default: break
         }
         if value("-status") == "offline" { store.deviceStatus = .offline }

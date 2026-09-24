@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 const OUT = new URL('./shots/', import.meta.url).pathname;
-const base='http://localhost:8765/index.html';
+const base=(process.env.PREVIEW_BASE||'http://localhost:8765/index.html');
 const browser=await chromium.launch();
 let bad=0;
 async function shot(name,{url='',scheme='dark',vp={width:1440,height:940},motion='reduce',wait='.page-title',act}={}){
@@ -36,6 +36,12 @@ await shot('15-mobile-nav',{vp:{width:390,height:844},act:async p=>{await p.clic
 // Search lives on the pages it filters (Areas, one area, All devices), not the Overview.
 await shot('16-search',{url:'#/areas',act:async p=>{await p.fill('#search','pump');await p.waitForTimeout(200);}});
 await shot('18-irrigation',{url:'#/irrigation'});
+await shot('40-water',{url:'#/water'});
+await shot('41-water-light',{url:'#/water',scheme:'light'});
+await shot('42-water-mobile',{url:'#/water',vp:{width:375,height:812}});
+await shot('43-water-off',{url:'?water=off#/water',scheme:'light'});
+await shot('44-water-expired',{url:'?livesky=expired&admin=1#/water',scheme:'light'});
+await shot('45-water-empty',{url:'?nowater=1#/water'});
 // Exercise a control end to end and confirm the command payload is well formed.
 {
   const ctx=await browser.newContext({viewport:{width:1440,height:940},colorScheme:'dark',deviceScaleFactor:2});

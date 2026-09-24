@@ -18,12 +18,25 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | `ios/` (native app) | [docs/ios-app.md](docs/ios-app.md) |
 | Anything that calls Mobitech DCON | [docs/dcon-off-the-nuc.md](docs/dcon-off-the-nuc.md) |
 | How the Mobitech app signs in and sends commands | [docs/mobitech-app.md](docs/mobitech-app.md) |
-| The Livesky river-motor app (not wired into SNOF) | [docs/livesky-app.md](docs/livesky-app.md) |
-| The Niagara app for the other farm's two motors (not wired in) | [docs/niagara-app.md](docs/niagara-app.md) |
+| The water chain (river motor + other farm, read-only) | [docs/water.md](docs/water.md) |
+| How the Livesky river-motor app talks to its server | [docs/livesky-app.md](docs/livesky-app.md) |
+| How the Niagara app runs the other farm's two motors | [docs/niagara-app.md](docs/niagara-app.md) |
 
 Architecture and data shape are in README.md.
 
 ## Hard rules
+
+- **The water chain is read-only** (2026-09-24). The Livesky river motor
+  and the other farm's two Niagara motors are read by Cloud Functions
+  (`water_poll`, `water_refresh`, `water_session`) into `farms/<farm>/water`,
+  behind `meta/water/enabled` (service account only). The one new client
+  write is `water_requests` (viewers, `{uid, at}`, append-only). Niagara has
+  **no authentication**: its user id (`NIAGARA_USER_ID`) and host
+  (`NIAGARA_BASE`) are secrets, and controller ids never leave the
+  function. The Livesky 24-hour JWT lives in `/private/livesky` (no client
+  access), renewed by an admin's SMS sign-in. **No motor control exists.**
+  Building it needs the owner's answers first (docs/water.md, "Control").
+  It must copy the irrigation_lock model, and `AUTOON` counts as a start.
 
 - **SNOF has its own Mobitech session** (owner's decision (c), 2026-09-24;
   rebuilt on docs/mobitech-app.md): sign-in is proved with a dashboard read
@@ -197,6 +210,8 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   OpenWeather were removed at the owner's request — parsers, add-on options,
   report types and RTDB allow-list entries all deleted, not left dormant. Ten
   report types remain, three of them combining two controller calls.
+  (Livesky and Niagara came back on 2026-09-24 as the separate, read-only
+  water chain in Cloud Functions, docs/water.md, not as irrigation reports.)
 - **Reports moved off the NUC on 2026-09-23** into a Python Cloud Function,
   `irrigation_report` in `dashboard/functions/` (codebase `reports`,
   asia-southeast1). It is triggered by a create on `irrigation_requests`, and

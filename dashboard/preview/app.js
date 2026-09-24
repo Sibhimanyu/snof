@@ -25,7 +25,7 @@ const BAD_STATES = new Set(['unavailable', 'unknown']);
 const el = (id) => document.getElementById(id);
 const humanDomain = (d) => String(d).replace(/_/g, ' ');
 
-let state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, irrigation_reports: {}, acl: {} };
+let state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, irrigation_reports: {}, water: {}, acl: {} };
 let canControl = false;
 let isAdmin = false;
 let aclRef = null;
@@ -96,13 +96,15 @@ function detach() {
   refs.forEach(({ ref, ev, cb }) => ref.off(ev, cb));
   refs = [];
   if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+  syncWaterPolling(false);
 }
 
 function leave() {
   detach();
   irrWaiters.forEach(({ ref, cb, timer }) => { clearTimeout(timer); ref.off('value', cb); });
   irrWaiters.clear();
-  state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, acl: {} };
+  state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, water: {}, acl: {} };
+  lsStep = 'idle'; lsMobile = ''; lsCode = ''; lsError = ''; lsInfo = '';
   canControl = false; isAdmin = false; aclRef = null; currentUser = null; firstSnapshot = false;
   statusFilter = 'all'; domainFilter = null;
   interacting = false; viewDirty = false;
@@ -238,6 +240,7 @@ function enter(user) {
   // The irrigation cache is whatever the last report left behind; the
   // reports list is the last 20 results, newest last from RTDB.
   watch('irrigation', 'irrigation');
+  watch('water', 'water');
   {
     const repRef = db.ref(`farms/${FARM}/irrigation_reports`).limitToLast(20);
     const repCb = repRef.on('value',
@@ -463,6 +466,7 @@ function render() {
     n.classList.toggle('on', n.dataset.nav === (r.name === 'area' ? 'areas' : r.name)));
 
   reconcilePending(all);
+  syncWaterPolling(r.name === 'water');
 
   // Chrome above stays live regardless; only the view body is held back.
   if (interacting) {
@@ -475,6 +479,7 @@ function render() {
     else if (r.name === 'area') view.innerHTML = areaView(all, r.arg);
     else if (r.name === 'devices') view.innerHTML = devicesView(all);
     else if (r.name === 'irrigation') view.innerHTML = irrigationView();
+    else if (r.name === 'water') view.innerHTML = waterView();
     else if (r.name === 'admin') view.innerHTML = isAdmin ? adminView()
       : head('Admin', 'Grant or revoke dashboard access.', '', 'Access') +
         emptyBlock('Admins only', 'Your account does not have admin access.');
@@ -1459,6 +1464,291 @@ function irrigationView() {
     `<p class="more-note">Read-only pulls — this page cannot operate pumps or valves.</p>`;
 }
 
+/* ---- water: river -> other farm -> main farm ----
+ *
+ * One chain, three vendors (docs/water.md). The river motor (Livesky) pumps
+ * to the other farm, where two Niagara controllers run a 7.5 HP motor that
+ * sends water on to the main farm and a zoned motor for that farm's own
+ * drip lines; the main farm's valves are Mobitech DCON (the Irrigation page).
+ * Read-only. The water functions read both vendors into farms/<farm>/water
+ * every 10 minutes, and at most every 15 s while this page is open: it asks
+ * by appending to water_requests (the function deletes each one). Nothing
+ * here can switch a motor. */
+const WATER_ASK_MS = 30000;
+let waterTimer = null;
+let waterAsked = 0;
+
+/* Off unless the service account has set meta/water.enabled: a new
+ * capability starts switched off, unlike reports (undefined = open). */
+function waterGate() {
+  if (state.meta?.water?.enabled !== true) {
+    return { ok: false, why: 'Water readings are switched off for now.' };
+  }
+  return { ok: true, why: '' };
+}
+
+function requestWater(force = false) {
+  if (!currentUser || document.hidden || !waterGate().ok) return;
+  const now = Date.now();
+  if (!force && now - waterAsked < WATER_ASK_MS - 2000) return;
+  if (force && now - waterAsked < 5000) return;
+  waterAsked = now;
+  firebase.database().ref(`farms/${FARM}/water_requests`).push({
+    uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP,
+  }).catch(() => {});
+}
+
+/* Poll only while the Water page is on screen and the tab is visible. */
+function syncWaterPolling(active) {
+  if (active && !waterTimer) {
+    requestWater();
+    waterTimer = setInterval(() => requestWater(), WATER_ASK_MS);
+  } else if (!active && waterTimer) {
+    clearInterval(waterTimer);
+    waterTimer = null;
+  }
+}
+document.addEventListener('visibilitychange', () => { if (waterTimer && !document.hidden) requestWater(); });
+
+const serverNow = () => Date.now() + clockSkewMs;
+/** "3 min ago" from an ISO stamp or epoch ms; '' when unknown. */
+function agoText(when) {
+  const t = typeof when === 'number' ? when : Date.parse(when || '');
+  if (!Number.isFinite(t)) return '';
+  const sec = Math.max(0, (serverNow() - t) / 1000);
+  return sec < 45 ? 'just now' : `${humanAge(sec)} ago`;
+}
+const hm = (min) => (min == null ? '' : min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${pad2(min % 60)} min`);
+const hms = (v) => String(v || '').replace(/^00:/, '').replace(/^0(\d:)/, '$1');
+const joinNums = (list, unit) => (Array.isArray(list) && list.length ? `${list.join(' · ')} ${unit}` : '');
+
+const WATER_ROLE = {
+  'main-farm': 'Sends water to the main farm',
+  drip: "Runs this farm's own drip zones",
+};
+
+function motorStateTag(m) {
+  if (m.running === true) return `<span class="tag tag-on">Running</span>`;
+  if (m.running === false) return `<span class="tag">Off</span>`;
+  return `<span class="tag">Unknown</span>`;
+}
+
+/* What is on its way: Livesky marks an unacknowledged change "-inprogress";
+ * Niagara's `requested` is what its app last asked for, which differs from
+ * the controller's own report until the motor follows (20-40 s). */
+function motorPending(m) {
+  if (m.vendor === 'livesky') return m.pending ? 'A change is on its way to the starter.' : '';
+  if (m.requested == null || m.running == null || m.requested === m.running) return '';
+  return m.requested ? 'Asked to start; the controller has not reported it running yet.'
+    : 'Asked to stop; the controller has not reported it off yet.';
+}
+
+function waterMotorCard(m, vendorErr) {
+  if (!m) return '';
+  const facts = [];
+  if (m.vendor === 'livesky') {
+    if (m.running === true && m.runMinutes != null) facts.push(['Running for', hm(m.runMinutes)]);
+    if (m.running === false && m.stopMinutes != null) facts.push(['Off for', hm(m.stopMinutes)]);
+  }
+  if (m.program) {
+    facts.push(['Program', `${m.program}${m.zone != null ? ` · zone ${m.zone}` : ''}`]);
+    if (m.zoneLeft) facts.push(['Zone time left', hms(m.zoneLeft)]);
+  }
+  const volts = joinNums(m.volts, 'V');
+  if (volts) facts.push(['Voltage', volts]);
+  const amps = joinNums(m.amps, 'A');
+  if (amps && (m.running || (m.amps || []).some((a) => a > 0))) facts.push(['Current', amps]);
+  if (m.pressureOut != null && m.running) facts.push(['Outlet pressure', String(m.pressureOut)]);
+  facts.push(['Power', m.power ? (m.supply ? m.supply.toLowerCase().replace('phase', 'phase present') : 'present') : 'none reported']);
+  if (m.autoStart != null) facts.push(['Auto-start on power return', m.autoStart ? 'on' : 'off']);
+  if (m.vendor === 'livesky' && m.connected === false) facts.push(['Starter link', 'not connected']);
+
+  const when = m.liveAt || m.reportedAt;
+  const notes = [];
+  const pend = motorPending(m);
+  if (pend) notes.push(`<p class="more-note note-off">${escapeHtml(pend)}</p>`);
+  if ((m.trips || []).length) notes.push(`<p class="more-note note-bad">Tripped: ${escapeHtml(m.trips.join(', '))}.</p>`);
+  if (m.skippedZone != null) notes.push(`<p class="more-note note-bad">Zone ${m.skippedZone} was skipped: no valve feedback.</p>`);
+  if (m.event && m.eventCode && !['001', '020'].includes(m.eventCode) && m.skippedZone == null) {
+    notes.push(`<p class="more-note">Last event: ${escapeHtml(cap(m.event.toLowerCase()))}.</p>`);
+  }
+  if (vendorErr) notes.push(`<p class="more-note note-off">${escapeHtml(vendorErr)}</p>`);
+  const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
+  return `<article class="panel wmotor${m.running ? ' is-on' : ''}">
+    <div class="wmotor-head">
+      <img class="wmotor-art" src="/art/${m.running ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
+      <div class="wmotor-title"><h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p></div>
+      ${motorStateTag(m)}
+    </div>
+    <div class="mb-facts">${facts.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div>
+    ${notes.join('')}
+    <p class="wmotor-when">${when ? `Controller report ${escapeHtml(agoText(when))}` : 'No report time'}</p>
+  </article>`;
+}
+
+const waterStage = (n, title, lead, body) =>
+  `<section class="wstage"><div class="wstage-head"><span class="wstage-n">${n}</span>` +
+  `<div><h2 class="wstage-title">${escapeHtml(title)}</h2><p class="wstage-lead">${escapeHtml(lead)}</p></div></div>` +
+  `<div class="wstage-body">${body}</div></section>`;
+const waterFlow = (text) => `<div class="wflow" aria-hidden="true"><span></span><em>${escapeHtml(text)}</em></div>`;
+
+function waterView() {
+  const gate = waterGate();
+  const w = state.water || {};
+  const st = state.meta?.water || {};
+  const motors = Object.values(w.motors || {});
+  const supply = motors.filter((m) => m.role === 'main-farm');
+  const others = motors.filter((m) => m.role !== 'main-farm');
+  const liveskyErr = st.livesky && st.livesky.ok === false ? st.livesky.error : '';
+  const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
+  const refresh = `<button class="btn btn-ghost" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
+  const pulled = w.pulledAt ? `Read from the controllers ${agoText(w.pulledAt)}.` : 'Not read yet.';
+
+  const riverBody = w.river
+    ? waterMotorCard(w.river, liveskyErr ? `${liveskyErr} Showing the last reading.` : '')
+    : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
+  const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
+  const riverNote = livesky.kind === 'ok' ? ''
+    : `<p class="more-note note-off">${escapeHtml(livesky.text)} <a href="#/admin">Sign in to Livesky</a></p>`;
+
+  const otherBody = motors.length
+    ? `<div class="wmotors">${[...supply, ...others].map((m) => waterMotorCard(m)).join('')}</div>` +
+      (niagaraErr ? `<p class="more-note note-off">${escapeHtml(niagaraErr)} Showing the last readings.</p>` : '')
+    : emptyBlock('No reading from the other farm', niagaraErr || 'It appears after the first pull.');
+
+  const dcon = (state.irrigation || {}).dcon || {};
+  const mainBody = `<a class="panel wmain" href="#/irrigation">
+      <img class="wmotor-art" src="/art/kulam.png" alt="" width="44" height="44">
+      <div class="wmotor-title"><h3>${escapeHtml(dcon.device || 'Mobitech DCON')}</h3>
+        <p>Valves, programs and reports are on the Irrigation page.</p></div>${arrow()}</a>`;
+
+  return head('Water', 'From the river to the main farm’s drip lines.', refresh, 'Water chain') +
+    (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
+    `<p class="more-note">${escapeHtml(pulled)} Read-only: this page cannot switch a motor.</p>` +
+    `<div class="wchain">` +
+    waterStage('1', 'River', 'The river motor pumps to the other farm.', riverNote + riverBody) +
+    waterFlow('to the other farm') +
+    waterStage('2', 'Other farm', 'Two motors on Niagara controllers.', otherBody) +
+    waterFlow('7.5 HP motor to the main farm') +
+    waterStage('3', 'Main farm', 'The Mobitech DCON controller runs the valves.', mainBody) +
+    `</div>`;
+}
+
+/* ---- Livesky sign-in (admins) ----
+ * The river motor's API takes a 24-hour token from an SMS code
+ * (docs/livesky-app.md) and no refresh call was seen, so an admin signs in
+ * again when it runs out. The water_session function makes the calls and
+ * keeps the token in /private/livesky; this page only sends the number, the
+ * code and the caller's Firebase ID token, and never sees the Livesky token. */
+let lsStep = 'idle';     // idle | mobile | code
+let lsMobile = '', lsCode = '', lsBusy = false, lsError = '', lsInfo = '';
+
+async function waterSession(body) {
+  const projectId = firebase.app().options.projectId;
+  const idToken = await currentUser.getIdToken();
+  const r = await fetch(`https://asia-southeast1-${projectId}.cloudfunctions.net/water_session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || `the function answered ${r.status}`);
+  return j;
+}
+
+async function liveskySendCode() {
+  const mobile = mobitechDigits(lsMobile);
+  if (!/^\d{10}$/.test(mobile)) { lsError = 'Enter the 10-digit mobile number on the Livesky account.'; render(); return; }
+  lsBusy = true; lsError = ''; lsInfo = ''; render();
+  try {
+    await waterSession({ action: 'send_code', mobile });
+    lsStep = 'code'; lsCode = '';
+    lsInfo = `Livesky sent a code to the number ending ${mobile.slice(-4)}.`;
+  } catch (err) {
+    lsError = `No code sent: ${err.message}`;
+  }
+  lsBusy = false; render();
+}
+
+async function liveskySignIn() {
+  const code = String(lsCode || '').replace(/\D/g, '');
+  if (!/^\d{4,8}$/.test(code)) { lsError = 'Enter the code from the SMS.'; render(); return; }
+  lsBusy = true; lsError = ''; render();
+  try {
+    const j = await waterSession({ action: 'verify', mobile: mobitechDigits(lsMobile), code });
+    lsStep = 'idle'; lsMobile = ''; lsCode = ''; lsInfo = '';
+    toast('ok', `Signed in to Livesky${j.device ? ` (${j.device})` : ''} until ${mbWhen(j.expires)}.`);
+  } catch (err) {
+    lsError = `Not signed in: ${err.message}`;
+  }
+  lsBusy = false; render();
+}
+
+async function liveskySignOut() {
+  lsBusy = true; render();
+  try {
+    await waterSession({ action: 'sign_out' });
+    toast('ok', 'Signed SNOF out of Livesky. The river motor will not be read until someone signs in again.');
+  } catch (err) {
+    toast('err', `Could not sign out: ${err.message}`);
+  }
+  lsBusy = false; render();
+}
+
+/** SNOF's Livesky session in one line, for any page. */
+function liveskyState() {
+  const st = state.meta?.water?.livesky || {};
+  if (!st.signedInAt && !st.expires) return { kind: 'none', text: 'SNOF is not signed in to Livesky, so the river motor cannot be read.' };
+  if (st.expires && st.expires <= serverNow()) {
+    return { kind: 'expired', text: `The Livesky session ended ${mbWhen(st.expires)}. Sign in again to read the river motor.` };
+  }
+  if (st.ok === false && st.error) return { kind: 'error', text: st.error };
+  return { kind: 'ok', text: '' };
+}
+
+function liveskyPanel() {
+  const st = state.meta?.water?.livesky || {};
+  const s = liveskyState();
+  const facts = st.signedInAt || st.expires ? `<div class="mb-facts">
+      ${st.mobileLast4 ? `<div><span>Number</span><strong>ending ${escapeHtml(st.mobileLast4)}</strong></div>` : ''}
+      ${st.signedInAt ? `<div><span>Since</span><strong>${escapeHtml(mbWhen(st.signedInAt))}</strong></div>` : ''}
+      ${st.expires ? `<div><span>Session ends</span><strong>${escapeHtml(mbWhen(st.expires))}</strong></div>` : ''}
+      <div><span>Last reading</span><strong>${st.at ? escapeHtml(mbWhen(st.at)) : 'none yet'}</strong></div>
+    </div>` : '';
+  const status = s.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(s.text)}</p>`;
+  let form;
+  if (lsStep === 'mobile') {
+    form = `<div class="rep-builder" data-key="livesky">
+        <label class="rep-field"><span>Livesky mobile number</span>
+          <input id="ls-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
+                 value="${escapeHtml(lsMobile)}" data-act="ls-mobile"></label>
+        <button class="btn btn-primary" data-act="ls-send"${lsBusy ? ' disabled' : ''}>${lsBusy ? 'Sending…' : 'Send code'}</button>
+        <button class="btn btn-ghost" data-act="ls-cancel"${lsBusy ? ' disabled' : ''}>Cancel</button>
+      </div>`;
+  } else if (lsStep === 'code') {
+    form = `<div class="rep-builder" data-key="livesky">
+        <label class="rep-field"><span>Code from the SMS</span>
+          <input id="ls-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
+                 value="${escapeHtml(lsCode)}" data-act="ls-code"></label>
+        <button class="btn btn-primary" data-act="ls-signin"${lsBusy ? ' disabled' : ''}>${lsBusy ? 'Signing in…' : 'Sign in'}</button>
+        <button class="btn btn-ghost" data-act="ls-back"${lsBusy ? ' disabled' : ''}>Use another number</button>
+      </div>`;
+  } else {
+    const signedIn = st.signedInAt || st.expires;
+    form = `<div class="mb-actions">
+        <button class="btn btn-primary" data-act="ls-start">${signedIn ? 'Sign in again' : 'Sign in to Livesky'}</button>
+        ${signedIn ? `<button class="btn btn-ghost" data-act="ls-signout"${lsBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
+      </div>`;
+  }
+  return sectionHead('n-admin', 'Livesky account (river motor)') +
+    `<section class="panel mb-panel">
+      <p class="mb-lead">The river motor is read with a Livesky session that lasts 24 hours. Signing SNOF in does not sign the phone out. The number and the SMS code are never stored.</p>
+      ${facts}${status}${form}
+      ${lsInfo ? `<p class="more-note">${escapeHtml(lsInfo)}</p>` : ''}
+      ${lsError ? `<p class="more-note note-off">${escapeHtml(lsError)}</p>` : ''}
+    </section>`;
+}
+
 /* ---- admin (add people, grant/revoke view + control) ---- */
 
 /* Two ways for an ordinary account to end up in acl/viewers or
@@ -1793,7 +2083,7 @@ function adminView() {
     : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
 
   return head('Admin', 'Add people and grant or revoke dashboard access.', '', 'Access') +
-    mobitechPanel() +
+    mobitechPanel() + liveskyPanel() +
     sectionHead('n-admin', 'Add a person') + addForm +
     sectionHead('n-admin', 'People') + list +
     `<p class="more-note">Admin status is granted from the command line ` +
@@ -1982,6 +2272,29 @@ function wire(all) {
     btn.onclick = () => { mbStep = 'idle'; mbMobile = ''; mbError = ''; render(); };
   });
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
+
+  view.querySelectorAll('[data-act="water-refresh"]').forEach((btn) => {
+    btn.onclick = () => { requestWater(true); toast('ok', 'Asked the controllers for fresh readings.'); };
+  });
+  // Livesky sign-in: the same held-rebuild handling as Mobitech's.
+  view.querySelectorAll('[data-act="ls-mobile"],[data-act="ls-code"]').forEach((input) => {
+    input.onfocus = beginInteract;
+    input.onblur = () => setTimeout(endInteract, 300);
+    input.oninput = () => { if (input.dataset.act === 'ls-mobile') lsMobile = input.value; else lsCode = input.value; };
+    input.onkeydown = (e) => { if (e.key === 'Enter') { input.blur(); (input.dataset.act === 'ls-mobile' ? liveskySendCode : liveskySignIn)(); } };
+  });
+  view.querySelectorAll('[data-act="ls-send"]').forEach((btn) => { btn.onclick = () => liveskySendCode(); });
+  view.querySelectorAll('[data-act="ls-signin"]').forEach((btn) => { btn.onclick = () => liveskySignIn(); });
+  view.querySelectorAll('[data-act="ls-back"]').forEach((btn) => {
+    btn.onclick = () => { lsStep = 'mobile'; lsCode = ''; lsInfo = ''; lsError = ''; render(); };
+  });
+  view.querySelectorAll('[data-act="ls-start"]').forEach((btn) => {
+    btn.onclick = () => { lsStep = 'mobile'; lsError = ''; lsInfo = ''; render(); };
+  });
+  view.querySelectorAll('[data-act="ls-cancel"]').forEach((btn) => {
+    btn.onclick = () => { lsStep = 'idle'; lsMobile = ''; lsError = ''; render(); };
+  });
+  view.querySelectorAll('[data-act="ls-signout"]').forEach((btn) => { btn.onclick = () => liveskySignOut(); });
 
   view.querySelectorAll('[data-act="admin-invite"]').forEach((btn) => {
     btn.onclick = () => sendInvite();

@@ -10,6 +10,7 @@ Start here. Everything below links to a document that goes deeper.
 | RTDB rules | **Live**, including the `/commands` write path |
 | Add-on 0.3.0 | **Running** on the NUC, verified by image tag and container contents |
 | Device control | **Deployed but asleep.** Two independent switches still off |
+| Water chain | **Live, read-only** (2026-09-24): river motor (Livesky) and the other farm's two motors (Niagara) via Cloud Functions. Web Water tab, iOS 0.6.0. Control is not built and waits on owner answers. See [water.md](water.md). |
 | Irrigation reports | **Moved off the NUC** on 2026-09-23 into a Cloud Function (`dashboard/functions/`). See [irrigation.md](irrigation.md). Add-on 0.8.0 drops the NUC side. |
 | Git | 5 feature commits + 2 doc commits on `dashboard-design-review`, **not pushed** |
 
@@ -76,3 +77,4 @@ has been reliably producing in exactly this layer.
 | [firebase-deploy.md](firebase-deploy.md) | Hosting, rules, and the two-tier allowlist |
 | [testing-and-preview.md](testing-and-preview.md) | Every suite, and the fixture that matters |
 | [irrigation.md](irrigation.md) | The report function, every DCON endpoint, and the real response shapes |
+| [water.md](water.md) | The river → other farm → main farm chain, its functions, secrets, and the open control questions |

@@ -14,8 +14,7 @@ water to the other farm, whose own motors run on Niagara
 ([niagara-app.md](niagara-app.md)). One of those feeds the main farm, where
 Mobitech DCON takes over ([mobitech-app.md](mobitech-app.md)).
 
-Livesky support was removed from SNOF on 2026-09-23 at the owner's request.
-This page is documentation, not a plan to wire it back.
+SNOF reads it (read-only) since 2026-09-24: see [water.md](water.md).
 
 ## Host
 
