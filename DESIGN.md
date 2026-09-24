@@ -61,9 +61,11 @@ communicate state, not decoration.
 - **"Area workspace"** (design option C), chosen by the owner on 2026-09-24
   and shipped on web and iOS. Light: a cool slate canvas `#f5f7f7`, white
   panels on `#dce4e4` hairlines, ink text `#17252a`, numerals `#25393d`, and
-  one tinted surface — the farm pulse, `#eaf0ef` on `#d2e0df`. Dark is its
-  complement: the same slate hue at low chroma (`#0e1314` canvas, `#141b1d`
-  panels, `#192326` pulse). Every token is in `styles.css` and
+  one tinted surface — the farm pulse, `#eaf0ef` on `#d2e0df`. Dark is
+  **Apple's neutral system dark** (owner, 2026-09-24, replacing the
+  charcoal-green slate night): a true black canvas `#000000`, graphite
+  panels `#1c1c1e` / `#2c2c2e`, `#242426` pulse, white text, `#a1a1a6`
+  secondary — no hue in any grey. Cards float on edge, not shadow. Every token is in `styles.css` and
   `ios/SNOF/UI/Theme.swift`, value for value; the reference comp is
   `.context/snof-reviewed-c-desktop.png` / `-mobile.png`.
 - Green means live or on only. It is the **brand green** from the Sibhi

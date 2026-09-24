@@ -7,30 +7,30 @@ import SNOFCore
  * pulse panel, big tabular numerals, uppercase eyebrows, Manrope throughout.
  * Colour only ever means something: brand green on/live, amber stale, muted
  * brick unavailable/error. Green is a fill or text, never a wash behind
- * anything. Dark is the light theme's complement: same slate hue, low
- * chroma, every text pair re-checked for 4.5:1.
+ * anything. Dark is Apple's neutral system dark (owner, 2026-09-24: no
+ * charcoal-green): black, #1c1c1e, #2c2c2e, white text, no hue in the greys.
  *
  * Shape and depth follow iOS (owner, 2026-09-24: "a soft, elegant iPhone
  * feel" instead of sharp corners): cards are 22pt continuous rounds on a
  * whisper of shadow with a near-invisible edge, controls are 12pt, and the
  * bars are the system's frosted material. Mirrors styles.css. */
 enum Theme {
-    static let bg = dyn(light: 0xf5f7f7, dark: 0x0e1314)
-    static let bar = dyn(light: 0xffffff, dark: 0x121819)
-    static let panel = dyn(light: 0xffffff, dark: 0x141b1d)
-    static let panel2 = dyn(light: 0xf0f4f4, dark: 0x1a2325)
-    static let panel3 = dyn(light: 0xe6eced, dark: 0x212c2f)
+    static let bg = dyn(light: 0xf5f7f7, dark: 0x000000)
+    static let bar = dyn(light: 0xffffff, dark: 0x1c1c1e)
+    static let panel = dyn(light: 0xffffff, dark: 0x1c1c1e)
+    static let panel2 = dyn(light: 0xf0f4f4, dark: 0x2c2c2e)
+    static let panel3 = dyn(light: 0xe6eced, dark: 0x3a3a3c)
     /// The farm pulse panel, and nothing else.
-    static let tint = dyn(light: 0xeaf0ef, dark: 0x192326)
-    static let tintLine = dyn(light: 0xd2e0df, dark: 0x2a3a3d)
-    static let line = dyn(light: 0xdce4e4, dark: 0x233033)
-    static let line2 = dyn(light: 0xc9d4d5, dark: 0x314145)
-    static let text = dyn(light: 0x17252a, dark: 0xe3ebec)
+    static let tint = dyn(light: 0xeaf0ef, dark: 0x242426)
+    static let tintLine = dyn(light: 0xd2e0df, dark: 0x38383a)
+    static let line = dyn(light: 0xdce4e4, dark: 0x38383a)
+    static let line2 = dyn(light: 0xc9d4d5, dark: 0x48484a)
+    static let text = dyn(light: 0x17252a, dark: 0xffffff)
     /// Big numerals.
-    static let ink = dyn(light: 0x25393d, dark: 0xd2e0e2)
-    static let muted = dyn(light: 0x56696e, dark: 0x8c9fa4)
-    static let faint = dyn(light: 0x5b6e73, dark: 0x82969b)
-    static let track = dyn(light: 0xdfe6e7, dark: 0x2a3639)
+    static let ink = dyn(light: 0x25393d, dark: 0xf2f2f7)
+    static let muted = dyn(light: 0x56696e, dark: 0xa1a1a6)
+    static let faint = dyn(light: 0x5b6e73, dark: 0x8e8e93)
+    static let track = dyn(light: 0xdfe6e7, dark: 0x39393d)
 
     /// The brand green, from the Sibhi Natural Orchards logo. Fills only:
     /// toggles, sliders, bars, chart lines, the live dot, primary buttons.
@@ -38,8 +38,8 @@ enum Theme {
     /// Green text: the same hue, shaded per theme to clear 4.5:1 on every
     /// surface it sits on.
     static let on = dyn(light: 0x017a3c, dark: 0x01ae56)
-    static let warn = dyn(light: 0x7a5a12, dark: 0xd3b06c)
-    static let bad = dyn(light: 0xa0504a, dark: 0xdd8f87)
+    static let warn = dyn(light: 0x7a5a12, dark: 0xe3b95c)
+    static let bad = dyn(light: 0xa0504a, dark: 0xff8a80)
 
     /// Buttons, fields, inner tiles (web --r).
     static let rSm: CGFloat = 12
@@ -58,7 +58,7 @@ enum Theme {
         ? UIColor(white: 0, alpha: 0.45) : UIColor(red: 23/255, green: 37/255, blue: 42/255, alpha: 0.09) })
     /// Filled neutral fields and capsules (web --seg-track).
     static let fill = Color(UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(red: 140/255, green: 159/255, blue: 164/255, alpha: 0.16)
+        ? UIColor(red: 118/255, green: 118/255, blue: 128/255, alpha: 0.24)
         : UIColor(red: 86/255, green: 105/255, blue: 110/255, alpha: 0.12) })
 
     /* ---- type: Manrope, scaled with Dynamic Type from a base size ---- */
