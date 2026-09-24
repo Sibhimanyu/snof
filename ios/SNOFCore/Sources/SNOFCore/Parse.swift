@@ -64,8 +64,11 @@ public enum Parse {
             bridge?.irrigationMaxMinutes = double((b["irrigationControlStatus"] as? [String: Any])?["maxMinutes"])
                 .map { Int($0) }
         }
+        let cloud = d["irrigationControl"] as? [String: Any]
         return FarmMeta(name: string(d["name"]), bridge: bridge,
-                        reportsEnabled: bool((d["reports"] as? [String: Any])?["enabled"]))
+                        reportsEnabled: bool((d["reports"] as? [String: Any])?["enabled"]),
+                        cloudIrrigationControl: bool(cloud?["enabled"]),
+                        cloudIrrigationMaxMinutes: double(cloud?["maxMinutes"]).map { Int($0) })
     }
 
     public static func areas(_ v: Any?) -> [String: Area] {

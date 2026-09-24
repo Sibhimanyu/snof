@@ -16,10 +16,19 @@ and what is not, and open items. Then the doc for whatever you are touching:
 | Hosting, rules, the allowlist | [docs/firebase-deploy.md](docs/firebase-deploy.md) |
 | Tests or the preview harness | [docs/testing-and-preview.md](docs/testing-and-preview.md) |
 | `ios/` (native app) | [docs/ios-app.md](docs/ios-app.md) |
+| Anything that calls Mobitech DCON | [docs/dcon-off-the-nuc.md](docs/dcon-off-the-nuc.md) |
 
 Architecture and data shape are in README.md.
 
 ## Hard rules
+
+- **The NUC runs the Home Assistant bridge and nothing else** (owner,
+  2026-09-24). Every Mobitech DCON call, report reads and valve commands,
+  belongs in Firebase Cloud Functions. Mobitech 403s every Google Cloud
+  address, so this waits on a static egress IP it allowlists; until then the
+  NUC's relay and irrigation_control keep running, and the dormant
+  `irrigation_command` function takes over at cut-over. Never add new DCON
+  code to the add-on. Plan, state and runbook: docs/dcon-off-the-nuc.md.
 
 - **Never commit `serviceAccount.json`** or any `*-firebase-adminsdk-*.json`.
   It is a full-admin credential. It lives at `~/.config/snof/serviceAccount.json`

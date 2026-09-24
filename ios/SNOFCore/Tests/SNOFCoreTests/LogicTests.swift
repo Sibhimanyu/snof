@@ -140,6 +140,24 @@ final class LogicTests: XCTestCase {
         XCTAssertNil(Format.since("2026-09-25T00:00:00+00:00", now: now), "future stamps say nothing")
     }
 
+    func testCloudIrrigationControlDoesNotNeedTheBridge() {
+        let now = 1_800_000_000_000.0
+        // No bridge at all, but the Cloud Function says it is on: open.
+        XCTAssertTrue(Gate.evaluate(.irrigationControl, bridge: nil, cloudIrrigationControl: true,
+                                    nowMs: now, skewMs: 0).ok)
+        // Cloud switch off or absent: the bridge decides, exactly as before.
+        let live = BridgeMeta(status: "online", lastSeen: now, heartbeatSeconds: 30)
+        var on = live; on.irrigationControl = true
+        XCTAssertTrue(Gate.evaluate(.irrigationControl, bridge: on, cloudIrrigationControl: false, nowMs: now, skewMs: 0).ok)
+        XCTAssertFalse(Gate.evaluate(.irrigationControl, bridge: live, cloudIrrigationControl: nil, nowMs: now, skewMs: 0).ok)
+        XCTAssertFalse(Gate.evaluate(.irrigationControl, bridge: nil, cloudIrrigationControl: false, nowMs: now, skewMs: 0).ok)
+        // It never opens device control, which still needs the bridge.
+        XCTAssertFalse(Gate.evaluate(.control, bridge: nil, cloudIrrigationControl: true, nowMs: now, skewMs: 0).ok)
+        let meta = Parse.meta(["irrigationControl": ["enabled": true, "maxMinutes": 45]])
+        XCTAssertEqual(meta.cloudIrrigationControl, true)
+        XCTAssertEqual(meta.cloudIrrigationMaxMinutes, 45)
+    }
+
     func testAreasInNaturalOrder() {
         let all = [ent("sensor", "b", "1", area: "z10"), ent("sensor", "c", "1", area: "z2")]
         let g = Sorting.groupByArea(all) { $0 == "z10" ? "Zone 10" : $0 == "z2" ? "Zone 2" : $0 }
