@@ -25,6 +25,7 @@ plain "switched off" report instead of a vendor call. No redeploy needed.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any
 
@@ -33,6 +34,7 @@ from firebase_functions import db_fn, options
 from firebase_functions.params import SecretParam, StringParam
 
 import dcon
+import irrigation_control
 import reports
 
 DCON_TOKEN_ID = SecretParam("DCON_TOKEN_ID")
@@ -42,8 +44,25 @@ DCON_BASE = StringParam("DCON_BASE", default="https://dcon.mobitechwireless.com"
 # /farms/<slug>, so the slug is checked rather than trusted.
 FARM_SLUG = StringParam("FARM_SLUG", default="snof")
 # "relay": the NUC makes the vendor calls (Mobitech refuses Google Cloud
-# addresses — see dcon.py). "direct": this Function makes them itself.
+# addresses — see dcon.py). "direct": this Function makes them itself, which
+# is the target: the NUC is for the Home Assistant bridge only. Direct works
+# once DCON_VPC_CONNECTOR routes egress through a static IP Mobitech allows.
 DCON_TRANSPORT = StringParam("DCON_TRANSPORT", default="relay")
+# Irrigation control's credentials: the Mobitech app's command authorization
+# ("…@ios") and the controller's device id, both secrets; the user slot the
+# command is sent as (A8 = sibhi) and the longest run allowed.
+DCON_COMMAND_AUTH = SecretParam("DCON_COMMAND_AUTH")
+DCON_DEVICE_ID = SecretParam("DCON_DEVICE_ID")
+DCON_USER_SLOT = StringParam("DCON_USER_SLOT", default="A8")
+IRRIGATION_MAX_MINUTES = StringParam("IRRIGATION_MAX_MINUTES", default="60")
+
+# Static egress for Mobitech, which refuses every Google Cloud address unless
+# allowlisted. A plain string at deploy time (the SDK does not take a param
+# here), read from the per-machine functions/.env; unset, nothing changes.
+_VPC = os.environ.get("DCON_VPC_CONNECTOR", "").strip()
+_EGRESS = ({"vpc_connector": _VPC,
+            "vpc_connector_egress_settings": options.VpcEgressSetting.ALL_TRAFFIC}
+           if _VPC else {})
 
 _LOG = logging.getLogger("irrigation")
 _app = None
@@ -62,6 +81,7 @@ def _db():
     region="asia-southeast1",
     secrets=[DCON_TOKEN_ID, DCON_SERIAL],
     memory=options.MemoryOption.MB_512,
+    **_EGRESS,
     # Up to three relayed reads, each allowed RELAY_WAIT_SECONDS.
     timeout_sec=180,
     # Requests arrive one press at a time. Two instances is headroom for two
@@ -147,3 +167,52 @@ def _status(store, root: str, ok: bool = False, error: str = "", rtype: str = ""
         store.reference(f"{root}/meta/reports").update(patch)
     except Exception:          # noqa: BLE001 — status is best-effort
         _LOG.exception("Could not update meta/reports")
+
+
+@db_fn.on_value_created(
+    reference="/farms/{farm}/irrigation_commands/{cmd}",
+    instance="snof-live-default-rtdb",
+    region="asia-southeast1",
+    secrets=[DCON_TOKEN_ID, DCON_SERIAL, DCON_COMMAND_AUTH, DCON_DEVICE_ID],
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=90,
+    # One at a time, ever: this operates valves. The once-only claim in the
+    # database covers redelivery; a single instance covers ordering.
+    max_instances=1,
+    concurrency=1,
+    **_EGRESS,
+)
+def irrigation_command(event: db_fn.Event[Any]) -> None:
+    """Run or stop a manual irrigation run. Does nothing at all — the NUC
+    still owns the queue — until meta/irrigationControl/enabled is true."""
+    farm, cmd_id = event.params["farm"], event.params["cmd"]
+    if farm != FARM_SLUG.value:
+        return
+    store = _db()
+    root = f"farms/{farm}"
+    try:
+        max_minutes = max(1, min(180, int(IRRIGATION_MAX_MINUTES.value or 60)))
+    except ValueError:
+        max_minutes = 60
+
+    def reads():
+        return dcon.Dcon(dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(),
+                                              DCON_TOKEN_ID.value.strip()))
+
+    class _LazyReads:
+        # Build the read client only if a command gets that far: a switched-off
+        # function must not even touch the secrets' values.
+        def nodes(self):
+            return reads().nodes()
+
+        def dashboard(self):
+            return reads().dashboard()
+
+    result = irrigation_control.handle(
+        store, root, cmd_id, event.data, reads=_LazyReads(),
+        commander_factory=lambda: irrigation_control.Commander(
+            DCON_BASE.value, DCON_DEVICE_ID.value.strip(), DCON_COMMAND_AUTH.value.strip()),
+        slot=DCON_USER_SLOT.value.strip(), max_minutes=max_minutes)
+    if result is not None:
+        _LOG.info("Irrigation command %s: %s %s", cmd_id,
+                  "sent" if result.get("ok") else "not sent", result.get("message", ""))

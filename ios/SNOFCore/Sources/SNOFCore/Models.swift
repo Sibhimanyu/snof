@@ -99,8 +99,17 @@ public struct FarmMeta: Hashable, Sendable {
     /// `meta/reports.enabled`: the kill switch the report Cloud Function reads.
     /// nil (never set) is on; only an explicit false blocks.
     public var reportsEnabled: Bool?
-    public init(name: String? = nil, bridge: BridgeMeta? = nil, reportsEnabled: Bool? = nil) {
+    /// `meta/irrigationControl`: valve control run by the Cloud Function
+    /// (dashboard/functions/irrigation_control.py), which is where it moves
+    /// off the NUC. Only an explicit true opens it; nil or false leaves the
+    /// decision to the bridge's heartbeat as before.
+    public var cloudIrrigationControl: Bool?
+    public var cloudIrrigationMaxMinutes: Int?
+    public init(name: String? = nil, bridge: BridgeMeta? = nil, reportsEnabled: Bool? = nil,
+                cloudIrrigationControl: Bool? = nil, cloudIrrigationMaxMinutes: Int? = nil) {
         self.name = name; self.bridge = bridge; self.reportsEnabled = reportsEnabled
+        self.cloudIrrigationControl = cloudIrrigationControl
+        self.cloudIrrigationMaxMinutes = cloudIrrigationMaxMinutes
     }
 }
 

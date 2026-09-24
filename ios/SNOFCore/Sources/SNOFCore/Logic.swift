@@ -232,7 +232,13 @@ extension Gate {
      * false blocks. */
     public static func evaluate(_ capability: Capability, bridge hb: BridgeMeta?,
                                 reportsEnabled: Bool? = nil,
+                                cloudIrrigationControl: Bool? = nil,
                                 nowMs: Double, skewMs: Double) -> Gate {
+        // Valve control run by the Cloud Function does not go through the
+        // NUC, so it does not need a live bridge: its own switch decides.
+        if capability == .irrigationControl, cloudIrrigationControl == true {
+            return .open
+        }
         if capability == .irrigation {
             return reportsEnabled == false
                 ? Gate(ok: false, why: "Irrigation reports are switched off for now.")
@@ -249,7 +255,7 @@ extension Gate {
         case .control where hb.control == false:
             return Gate(ok: false, why: "Device control is switched off on the bridge. Turn on allow_control in the add-on options to operate anything from here.")
         case .irrigationControl where hb.irrigationControl != true:
-            return Gate(ok: false, why: "Irrigation control is switched off on the bridge. It is turned on in the add-on options (allow_irrigation_control), with someone at the pump house for the first run.")
+            return Gate(ok: false, why: "Irrigation control is switched off. The farm owner turns it on, with someone at the pump house for the first run.")
         default:
             return .open
         }

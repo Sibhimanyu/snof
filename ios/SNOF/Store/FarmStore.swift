@@ -220,7 +220,9 @@ final class FarmStore {
 
     func gate(_ c: Capability) -> Gate {
         // Evaluated against the real clock, not the 5 s tick, at press time.
-        Gate.evaluate(c, bridge: meta.bridge, reportsEnabled: meta.reportsEnabled, nowMs: Date().timeIntervalSince1970 * 1000, skewMs: skewMs)
+        Gate.evaluate(c, bridge: meta.bridge, reportsEnabled: meta.reportsEnabled,
+                      cloudIrrigationControl: meta.cloudIrrigationControl,
+                      nowMs: Date().timeIntervalSince1970 * 1000, skewMs: skewMs)
     }
 
     /// Areas and entities arrive on separate listeners, so either can change
@@ -348,7 +350,7 @@ final class FarmStore {
             }
             settleReports()
             if waitingReports.contains(key) {
-                show(.ok, "Report requested — the bridge is pulling it from the controller now.")
+                show(.ok, "Report requested — pulling it from the irrigation controller now.")
             }
         } catch {
             show(.err, (error as? BackendError) == .refused
@@ -438,7 +440,8 @@ final class FarmStore {
     }
 
     var irrigationMaxMinutes: Int {
-        min(IrrigationCommand.maxMinutes, meta.bridge?.irrigationMaxMinutes ?? IrrigationCommand.maxMinutes)
+        let cap = meta.cloudIrrigationControl == true ? meta.cloudIrrigationMaxMinutes : meta.bridge?.irrigationMaxMinutes
+        return min(IrrigationCommand.maxMinutes, cap ?? IrrigationCommand.maxMinutes)
     }
 
     func runValves(_ valves: [Int], minutes: Int) async {
