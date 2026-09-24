@@ -461,7 +461,10 @@ function render() {
   const r = route();
 
   const farmName = state.meta?.name || 'SNOF';
-  document.title = `${farmName} · Live`;
+  // Each page names itself, so tabs, history and bookmarks tell them apart.
+  const pageName = { overview: 'Home', irrigation: 'Irrigation', water: 'Water', areas: 'Rooms', devices: 'All devices',
+    admin: 'Admin', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title }[r.name] || 'Home';
+  document.title = `${pageName} · SNOF`;
   el('brand-sub').textContent =
     farmName.replace(/^Sibhi\s*/i, '').replace(/\s*and Farms$/i, '') || 'Live farm state';
   // The search bar lives outside #view and shows only where it filters.
