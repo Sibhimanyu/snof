@@ -109,6 +109,7 @@ class StateMapper:
             "name": (attrs.get("friendly_name") or object_id.replace("_", " ").title())[:MAX_STRING_LEN],
             "state": _clean_value(state.get("state")),
             "area": self.registry.area_for(entity_id),
+            "device": self.registry.device_for(entity_id),
             # Deliberately no lastUpdated: Home Assistant bumps it on every
             # update including attribute-only ones, so including it would make
             # every node differ every time and force a redundant write.

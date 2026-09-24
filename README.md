@@ -172,8 +172,9 @@ cd dashboard && firebase deploy --only hosting,database
   meta/    name, slug, entityCount, haVersion, updatedAt
             bridge/ { status, lastSeen, heartbeatSeconds, pending, writes }
   areas/   <area_id>/ { name, icon, floor }
+  devices/ <ha_device_id>/ { name }   roomed devices only (0.9.3)
   entities/<domain>/<object_id>/
-            { entity_id, domain, name, state, area, attrs{}, lastChanged, lastUpdated }
+            { entity_id, domain, name, state, area, device, attrs{}, lastChanged }
   irrigation/  last results cache, refreshed by each fulfilled report:
             { dcon{}, valves[], timerLog[], motorLog[], electricity[],
               pressure[], meta{ lastUpdated, lastType, lastError } }
@@ -191,7 +192,9 @@ always legal — there is a test pinning this.
 
 Rooms are resolved the way HA itself does: the entity's own `area_id` wins,
 otherwise it inherits its device's, otherwise `unassigned`. **Unassigned
-entities are not published at all** (since add-on 0.9.0): users see rooms and
+entities are not published at all** (since add-on 0.9.0; since 0.9.2 an entity
+is published only if its *device* is in a room — a room on the entity alone
+does not count): users see rooms and
 what is in them, and nothing else exists for them. An entity that loses its
 room is deleted from the mirror on the next registry resync; one that gains a
 room appears. `unassigned` is never written to `areas`. The dashboard and the

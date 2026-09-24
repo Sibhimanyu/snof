@@ -51,6 +51,7 @@ class Bridge:
         # changes nothing visible costs no write at all.
         self._fingerprints: dict[str, str] = {}
         self._areas_digest: str | None = None
+        self._devices_digest: str | None = None
         self.skipped = 0
         self.ha_version = "unknown"
         self._registry_reload = asyncio.Event()
@@ -103,6 +104,8 @@ class Bridge:
         root = self.cfg.root
         await self.rtdb.put(f"{root}/areas", self.registry.areas_payload())
         self._areas_digest = self._digest(self.registry.areas_payload())
+        await self.rtdb.put(f"{root}/devices", self.registry.devices_payload())
+        self._devices_digest = self._digest(self.registry.devices_payload())
         await self.rtdb.put(f"{root}/entities", tree)
         count = sum(len(v) for v in tree.values())
         _LOGGER.info("Published snapshot: %d entities across %d domains", count, len(tree))
@@ -135,6 +138,13 @@ class Bridge:
             await self.rtdb.put(f"{self.cfg.root}/areas", areas)
             self._areas_digest = areas_digest
             _LOGGER.info("Areas changed; republished")
+
+        devices = self.registry.devices_payload()
+        devices_digest = self._digest(devices)
+        if devices_digest != self._devices_digest:
+            await self.rtdb.put(f"{self.cfg.root}/devices", devices)
+            self._devices_digest = devices_digest
+            _LOGGER.info("Devices changed; republished")
 
         if changed:
             _LOGGER.info("Registry resync: %d of %d entities changed", changed,

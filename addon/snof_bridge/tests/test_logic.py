@@ -79,6 +79,32 @@ def test_area_pointing_at_a_deleted_room_is_unassigned():
     assert not StateMapper(CFG, reg).should_publish("switch.ghost")
 
 
+def test_only_entities_on_a_roomed_device_exist():
+    """A room on the entity alone is not enough: its device must be in a room."""
+    reg = Registry()
+    reg.load(areas=[{"area_id": "shed", "name": "Shed"}],
+             devices=[{"id": "roomed", "area_id": "shed"}, {"id": "loose"}],
+             entities=[{"entity_id": "switch.on_roomed_device", "device_id": "roomed"},
+                       {"entity_id": "switch.own_room_loose_device", "area_id": "shed", "device_id": "loose"},
+                       {"entity_id": "switch.own_room_no_device", "area_id": "shed"}])
+    assert reg.is_assigned("switch.on_roomed_device")
+    assert not reg.is_assigned("switch.own_room_loose_device")
+    assert not reg.is_assigned("switch.own_room_no_device")
+
+
+def test_devices_are_named_and_carried_on_each_node():
+    reg, m = build()
+    assert reg.devices_payload() == {"dev1": {"name": "dev1"}}
+    _, _, node = m.to_node({"entity_id": "light.pump_main", "state": "on", "attributes": {}})
+    assert node["device"] == "dev1"
+    reg.load(areas=[{"area_id": "shed", "name": "Shed"}],
+             devices=[{"id": "d1", "area_id": "shed", "name": "Bambu P1S", "name_by_user": "Printer"},
+                      {"id": "d2", "name": "Loose plug"},
+                      {"id": "d3", "area_id": "demolished", "name": "Ghost"}],
+             entities=[])
+    assert reg.devices_payload() == {"d1": {"name": "Printer"}}, "no-room devices must not be named"
+
+
 def test_consumer_with_no_visibility_check_refuses_everything():
     c = CommandConsumer(CTL_CFG, None, lambda: None, None)
     assert c.validate("x", cmd()) is None
