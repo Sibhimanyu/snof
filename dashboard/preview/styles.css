@@ -36,6 +36,7 @@
   --warn:#7a5a12; --warn-soft:rgba(122,90,18,.09); --warn-line:rgba(122,90,18,.3);
   --bad:#a0504a;  --bad-soft:rgba(160,80,74,.08);  --bad-line:rgba(160,80,74,.32);
   --off-soft:rgba(86,105,110,.08); --track:#dfe6e7; --knob:#ffffff;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%2356696e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   --shadow:none; --shadow-lg:0 18px 40px -24px rgba(23,37,42,.35);
   --r:3px; --r-sm:3px; --r-md:3px; --r-lg:4px; --r-xl:6px;
@@ -59,6 +60,7 @@
   --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
   --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
   --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%238c9fa4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --shadow-lg:0 20px 44px -22px rgba(0,0,0,.7);
   color-scheme:dark;
 }}
@@ -74,6 +76,7 @@
   --warn:#d3b06c; --warn-soft:rgba(211,176,108,.1); --warn-line:rgba(211,176,108,.32);
   --bad:#dd8f87;  --bad-soft:rgba(221,143,135,.09); --bad-line:rgba(221,143,135,.32);
   --off-soft:rgba(140,159,164,.09); --track:#2a3639; --knob:#f3f6f6;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%238c9fa4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --shadow-lg:0 20px 44px -22px rgba(0,0,0,.7);
   color-scheme:dark;
 }
@@ -474,15 +477,29 @@ input[type=range][disabled]{opacity:.42}
 .qc-more:hover{background:var(--panel-2)}
 
 /* ---------- irrigation report builder ---------- */
-.rep-builder{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px}
-.rep-field{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;
-  letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
-.rep-field select,.rep-field input[type=date]{min-height:42px;padding:0 12px;border-radius:var(--r);
-  border:1px solid var(--line-2);background:var(--panel);color:var(--text);
-  font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;}
-.rep-field select:hover,.rep-field input[type=date]:hover{border-color:var(--muted)}
-.rep-field select:focus,.rep-field input[type=date]:focus{border-color:var(--accent);
-  box-shadow:0 0 0 3px var(--accent-soft);outline:none}
+/* ---------- forms (report builder, add a person) ----------
+   One field system: every control is 44px tall with the same border, radius,
+   fill and type, the label sits above it at a fixed height, and the button is
+   the same 44px, so a row of them shares one top line and one bottom line.
+   Before this, only <select> and date inputs were styled: the email box fell
+   back to the browser's own, and the button stood taller than both. */
+.rep-builder{display:flex;gap:14px 12px;flex-wrap:wrap;align-items:flex-end;padding:18px 20px 20px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.rep-field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.rep-field > span{display:block;height:16px;line-height:16px;font-size:12px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--faint)}
+.rep-field :is(input,select){display:block;box-sizing:border-box;height:44px;margin:0;padding:0 14px;
+  border:1px solid var(--line-2);border-radius:var(--r);background-color:var(--panel);color:var(--text);
+  font:500 14.5px/1 var(--font);letter-spacing:0;text-transform:none;min-width:0}
+.rep-field input[type=email]{width:min(320px,100%)}
+.rep-field select{-webkit-appearance:none;appearance:none;padding-right:40px;min-width:220px;cursor:pointer;
+  background-image:var(--chev);background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px}
+.rep-field input[type=date]{min-width:170px}
+.rep-field :is(input,select)::placeholder{color:var(--faint)}
+.rep-field :is(input,select):hover{border-color:var(--muted)}
+.rep-field :is(input,select):focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--off-soft);outline:none}
+.rep-builder .btn{height:44px;min-height:44px;padding:0 22px;font-size:14.5px}
+.rep-builder + .more-note{margin-top:10px}
 .btn-primary{background:var(--brand);color:var(--on-brand);box-shadow:var(--shadow)}
 .btn-primary:hover{filter:brightness(1.07)}
 .btn-primary[disabled]{opacity:.55;cursor:progress}
@@ -755,6 +772,9 @@ input[type=range][disabled]{opacity:.42}
   .dgroup-head{padding:10px 18px;gap:12px}
   .dgroup-body .row{padding-left:18px}
   .gate-card{padding:28px 22px 22px}
+  .rep-builder{padding:16px}
+  .rep-field,.rep-field :is(input,select),.rep-builder .btn{width:100%;min-width:0}
+  .rep-field input[type=email]{width:100%}
 }
 @media (max-width:360px){
   .grid{grid-template-columns:1fr}
