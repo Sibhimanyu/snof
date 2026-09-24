@@ -299,10 +299,26 @@ def report_controller(src, params: dict) -> tuple[list, str, list, dict]:
     dash = src.dashboard()
     nodes, nodes_err = leg(lambda: V.normalize_dcon_nodes(src.nodes()))
     sections, info, summary = controller_sections(dash, nodes, nodes_err)
-    patch = {"dcon": info}
+    patch = {"dcon": info, "program": program_cache(V.dcon_timers(dash or {})["current"],
+                                                    _names(nodes))}
     if nodes is not None:
         patch["valveNames"] = nodes
     return sections, summary, list(nodes or []), patch
+
+
+def program_cache(prog: dict | None, names: dict[str, str]) -> dict:
+    """The controller's current (or last) program, for the app's Overview:
+    "watering now" is the first thing anyone asks. An allow-list of fields,
+    like every other patch — nothing else from the dashboard payload."""
+    if not prog:
+        return {"running": False, "at": SERVER_TIMESTAMP}
+    return {
+        "at": SERVER_TIMESTAMP, "name": prog["name"], "kind": prog["kind"],
+        "running": not prog["completed"],
+        "valves": _valve_list(prog["valves"], names) if prog["valves"] else "",
+        "start": prog["start"], "lastSeen": prog["lastSeen"],
+        "plannedMin": prog["plannedMin"], "remainingMin": prog["remainingMin"],
+    }
 
 
 # ---- electricity and pressure, now -------------------------------------------------

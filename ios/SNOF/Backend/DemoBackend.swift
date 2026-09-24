@@ -53,7 +53,7 @@ final class DemoBackend: FarmBackend {
         if flag("live"), let url = Bundle.main.url(forResource: "mock-farm-live", withExtension: "json"),
            let data = try? Data(contentsOf: url),
            let live = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            for key in ["areas", "devices", "entities"] { tree[key] = live[key] }
+            for key in ["areas", "devices", "entities", "irrigation"] { tree[key] = live[key] }
         }
         // Review hook: SNOF_DEMO_REPORTS=<json> swaps in report cards the Cloud
         // Function built from real controller payloads (dashboard/preview's
@@ -76,6 +76,7 @@ final class DemoBackend: FarmBackend {
             reports[k] = r
         }
         tree["irrigation_reports"] = reports
+        if !flag("live") { tree["irrigation"] = Self.moveToToday(tree["irrigation"], now: now) }
 
         var meta = tree["meta"] as? [String: Any] ?? [:]
         var bridge = meta["bridge"] as? [String: Any] ?? [:]
@@ -84,6 +85,27 @@ final class DemoBackend: FarmBackend {
         meta["bridge"] = bridge
         if flag("reportsoff") { meta["reports"] = ["enabled": false] }
         tree["meta"] = meta
+    }
+
+    /// The clean fixture's controller logs are from 2026-02-22; say they are
+    /// from today (farm time), and that the controller was asked 12 minutes ago.
+    private static func moveToToday(_ v: Any?, now: Double) -> Any? {
+        guard let data = try? JSONSerialization.data(withJSONObject: v ?? [:]),
+              var text = String(data: data, encoding: .utf8) else { return v }
+        let zone = FarmTime.zone("+05:30"), date = Date(timeIntervalSince1970: now / 1000)
+        text = text.replacingOccurrences(of: "2026-02-22", with: FarmTime.today(date, zone: zone))
+            .replacingOccurrences(of: "2026-02-21", with: FarmTime.yesterday(date, zone: zone))
+        guard var tree = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { return v }
+        if var p = tree["program"] as? [String: Any] {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = zone; f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            p["at"] = now - 12 * 60_000
+            p["lastSeen"] = f.string(from: date.addingTimeInterval(-12 * 60))
+            p["start"] = f.string(from: date.addingTimeInterval(-24 * 60))
+            tree["program"] = p
+        }
+        tree["meta"] = ["lastUpdated": now - 12 * 60_000, "lastType": "controller", "lastError": ""]
+        return tree
     }
 
     /* ---- auth ---- */
@@ -216,7 +238,7 @@ final class DemoBackend: FarmBackend {
 
     func requestReport(type: String, from: String?, to: String?, uid: String) async throws -> String {
         if flag("viewer") { throw BackendError.refused }
-        let key = "demo_\(Int(Date().timeIntervalSince1970 * 1000))"
+        let key = "demo_\(Int(Date().timeIntervalSince1970 * 1000))_\(UUID().uuidString.prefix(6))"
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1200))
             guard let self, !self.flag("reportsoff") else { return }
@@ -224,6 +246,14 @@ final class DemoBackend: FarmBackend {
             reports[key] = Self.canned(type: type, from: from, to: to)
             self.tree["irrigation_reports"] = reports
             self.handler?(.reports(reports))
+            // As the function does: the cache says when it was last asked.
+            if var irr = self.tree["irrigation"] as? [String: Any] {
+                let at = Date().timeIntervalSince1970 * 1000
+                irr["meta"] = ["lastUpdated": at, "lastType": type, "lastError": ""]
+                if type == "controller", var p = irr["program"] as? [String: Any] { p["at"] = at; irr["program"] = p }
+                self.tree["irrigation"] = irr
+                self.handler?(.irrigation(irr))
+            }
         }
         return key
     }

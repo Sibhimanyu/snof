@@ -7,7 +7,7 @@ add-on changed to support it.
 
 | Screen | Mirrors |
 |---|---|
-| Overview | `#/` — bridge band, totals, quick controls, not-reporting breakdown, areas |
+| Overview | **iOS-only since 0.2.0** (the web `#/` still has the old one): irrigation, on right now, solar, security, not reporting |
 | Areas / area detail | `#/areas`, `#/area/<id>` |
 | Devices | `#/devices` — status segment, domain chips, search |
 | Irrigation | `#/irrigation` — report builder, section-kind renderer, last results |
@@ -131,6 +131,26 @@ IDs a week, and a 7-day signature that SideStore refreshes in the background.
 Refreshing needs LocalDevVPN on and Wi-Fi.
 
 ## Decisions worth keeping
+
+- **The Overview is about the farm, not the bridge** (0.2.0). The owner
+  found nothing useful on the old one (pulse sentence, counts, a sample of
+  switches, area cards), so it now shows, in order: **Irrigation** (watering
+  now or the last run, the newest logged day's runs / water / pump / kWh,
+  three-phase supply with a missing-phase warning, pressure, the last four
+  runs), **On right now** (only things switched on, with their toggles),
+  **Solar** (found by name — "PV Power", "Today's PV Generation" — not by
+  brand), **Security** (alarm state, cameras up, last motion or person) and
+  one line for devices not reporting. The parsing is in
+  `SNOFCore/Overview.swift`, unit tested against production strings; it
+  reads the `/irrigation` cache the report function leaves behind, so
+  opening the app calls nothing. **Refresh** (controllers) sends three
+  ordinary report requests — `controller`, `live_readings`, and
+  `session_log` for yesterday and today — which is the whole cost of the
+  screen: three Function runs and a handful of relayed controller reads per
+  press, never on a timer. "Watering now" needs `irrigation/program`, which
+  the controller report writes from 2026-09-24 (`program_cache` in
+  `dashboard/functions/reports.py`); it counts the controller's remaining
+  minutes down from when it was asked, and past zero it says the last run.
 
 - **The look is the web's "Area workspace", value for value** (0.1.8).
   `Theme.swift` carries the same two palettes as `styles.css`; Manrope is

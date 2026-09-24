@@ -118,6 +118,18 @@ public enum Parse {
             c.serial = string(dcon["serial"])
             c.lastPacket = string(dcon["lastPacket"])
             c.serverTime = string(dcon["serverTime"])
+            c.timeZone = string(dcon["timeZone"]).flatMap { $0.isEmpty ? nil : $0 }
+        }
+        c.timerLog = rows(d["timerLog"])
+        c.motorLog = rows(d["motorLog"])
+        if let p = d["program"] as? [String: Any] {
+            c.program = CurrentProgram(name: string(p["name"]) ?? "", kind: string(p["kind"]) ?? "",
+                                       running: bool(p["running"]) ?? false, valves: string(p["valves"]) ?? "",
+                                       start: string(p["start"]) ?? "",
+                                       plannedMin: double(p["plannedMin"]).map { Int($0) },
+                                       remainingMin: double(p["remainingMin"]).map { Int($0) },
+                                       at: double(p["at"]))
+            c.program?.lastSeen = string(p["lastSeen"]) ?? ""
         }
         c.valveNames = rows(d["valveNames"])
         c.valves = rows(d["valves"])

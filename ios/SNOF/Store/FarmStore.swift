@@ -158,7 +158,7 @@ final class FarmStore {
         pendingTasks.values.forEach { $0.cancel() }
         reportTasks.values.forEach { $0.cancel() }
         pendingTasks = [:]; reportTasks = [:]
-        pending = [:]; waitingReports = []
+        pending = [:]; waitingReports = []; refreshKeys = []
         meta = FarmMeta(); areas = [:]; deviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         firstSnapshot = false; canControl = false; isAdmin = false
@@ -354,8 +354,57 @@ final class FarmStore {
         }
     }
 
+    /// irrigation_requests keys sent by the Overview's Refresh; they settle
+    /// quietly, with one toast for the lot.
+    private var refreshKeys: Set<String> = []
+    var refreshingIrrigation: Bool { !refreshKeys.isDisjoint(with: waitingReports) }
+
+    /// Overview → Refresh: what the controller is doing now, power and
+    /// pressure now, and yesterday-and-today's runs. Three ordinary report
+    /// requests — each a press, never a poll — so the rules, the kill switch
+    /// and the function's own checks all apply unchanged.
+    func refreshIrrigation() async {
+        if !canControl { show(.err, "Your account can view, but not run reports."); return }
+        let g = gate(.irrigation)
+        if !g.ok { show(.err, g.why); return }
+        if !connected { show(.err, BackendError.notConnected.localizedDescription); return }
+        guard let uid = user?.uid, !refreshingIrrigation else { return }
+        let zone = FarmTime.zone(irrigation.timeZone)
+        let today = FarmTime.today(Date(), zone: zone), yesterday = FarmTime.yesterday(Date(), zone: zone)
+        var sent = 0
+        for (type, from, to) in [("controller", nil, nil), ("live_readings", nil, nil),
+                                 ("session_log", yesterday, today)] as [(String, String?, String?)] {
+            do {
+                let key = try await backend.requestReport(type: type, from: from, to: to, uid: uid)
+                refreshKeys.insert(key)
+                waitingReports.insert(key)
+                sent += 1
+                reportTasks[key] = Task { [weak self] in
+                    try? await Task.sleep(for: Farm.reportTimeout)
+                    guard let self, !Task.isCancelled, self.waitingReports.remove(key) != nil else { return }
+                    self.reportTasks[key] = nil
+                    self.refreshKeys.remove(key)
+                }
+            } catch {
+                show(.err, (error as? BackendError) == .refused
+                     ? "The database refused that request." : "Could not send: \(error.localizedDescription)")
+                break
+            }
+        }
+        if sent > 0 { settleReports() }
+    }
+
     private func settleReports() {
-        for key in waitingReports {
+        for key in waitingReports where refreshKeys.contains(key) {
+            guard let rep = reports.first(where: { $0.key == key }) else { continue }
+            waitingReports.remove(key)
+            reportTasks[key]?.cancel()
+            reportTasks[key] = nil
+            refreshKeys.remove(key)
+            if rep.status == "error" { show(.err, "\(rep.label) failed: \(rep.error.isEmpty ? "controller error" : rep.error)") }
+            else if !refreshingIrrigation { show(.ok, "Irrigation updated.") }
+        }
+        for key in waitingReports where !refreshKeys.contains(key) {
             guard let rep = reports.first(where: { $0.key == key }) else { continue }
             waitingReports.remove(key)
             reportTasks[key]?.cancel()

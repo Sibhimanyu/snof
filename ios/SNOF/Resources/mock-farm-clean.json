@@ -72,7 +72,7 @@
     "state": "31.4",
     "area": "farmhouse",
     "attrs": {
-     "unit_of_measurement": "\u00b0C",
+     "unit_of_measurement": "°C",
      "device_class": "temperature"
     }
    },
@@ -101,7 +101,7 @@
     "state": "3.8",
     "area": "cold_store",
     "attrs": {
-     "unit_of_measurement": "\u00b0C",
+     "unit_of_measurement": "°C",
      "device_class": "temperature"
     }
    },
@@ -339,29 +339,62 @@
   ],
   "timerLog": [
    {
-    "at": "2026-02-22 06:00",
-    "event": "timer",
-    "detail": "Timer 12 completed"
+    "at": "2026-02-22 07:10:00",
+    "event": "Program · Mango",
+    "source": "timer",
+    "detail": "1h, finished · 16 Mango 1, 17 Mango 2 · 3 backwash pauses · started by timer"
+   },
+   {
+    "at": "2026-02-22 06:02:00",
+    "event": "Program · Vegetables",
+    "source": "timer",
+    "detail": "20m of 30m, stopped · 4 Veg, 6 Kulam · 1 backwash pause · started by timer · ended by U1"
+   },
+   {
+    "at": "2026-02-22 05:00:00",
+    "event": "Program · Coconut",
+    "source": "timer",
+    "detail": "1h, finished · 12 Coco 1, 15 Coco 2 · 6 backwash pauses · started by timer"
+   },
+   {
+    "at": "2026-02-21 18:30:00",
+    "event": "Program · Guava",
+    "source": "timer",
+    "detail": "30m, finished · 13 Gova 1, 14 Gova 2 · 2 backwash pauses · started by timer"
    }
   ],
   "motorLog": [
    {
-    "at": "2026-02-22 06:05",
-    "event": "motor",
-    "detail": "Well motor stopped"
+    "at": "2026-02-22 09:00:00",
+    "event": "Pump day",
+    "source": "motor",
+    "detail": "pump 3h 5m of 6h 40m with power · 14.2 kWh"
+   },
+   {
+    "at": "2026-02-21 23:59:00",
+    "event": "Pump day",
+    "source": "motor",
+    "detail": "pump 11h 20m of 18h 5m with power · 52.6 kWh"
    }
   ],
   "electricity": [
    {
-    "at": "2026-02-22 06:00",
-    "value": "4.2",
-    "unit": "kWh"
+    "label": "Current",
+    "value": "9.8 / 9.5 / 9.7",
+    "unit": "A",
+    "note": "per phase"
+   },
+   {
+    "label": "Phase voltage",
+    "value": "236 / 231 / 240",
+    "unit": "V",
+    "note": "2% imbalance · at 09:00"
    }
   ],
   "pressure": [
    {
-    "at": "2026-02-22 06:00",
-    "value": "2.1",
+    "at": "2026-02-22 09:00:12",
+    "value": "2.4",
     "unit": "bar"
    }
   ],
@@ -370,6 +403,17 @@
     "dcon": "ok"
    },
    "error": ""
+  },
+  "program": {
+   "name": "Guava",
+   "kind": "Program",
+   "running": true,
+   "valves": "13 Gova 1, 14 Gova 2",
+   "start": "2026-02-22 08:50:00",
+   "plannedMin": 30,
+   "remainingMin": 18,
+   "at": 0,
+   "lastSeen": "2026-02-22 09:05:00"
   }
  },
  "irrigation_reports": {
@@ -381,7 +425,7 @@
     "to": "2026-02-22"
    },
    "status": "ok",
-   "summary": "1 entries \u00b7 2026-02-20 \u2192 2026-02-22",
+   "summary": "1 entries · 2026-02-20 → 2026-02-22",
    "rows": [
     {
      "at": "2026-02-22 06:00",
@@ -399,7 +443,7 @@
     "to": "2026-02-22"
    },
    "status": "ok",
-   "summary": "4h 5m of valve runtime \u00b7 pressure 1.6\u20132.6 bar \u00b7 2026-02-20 \u2192 2026-02-22",
+   "summary": "4h 5m of valve runtime · pressure 1.6–2.6 bar · 2026-02-20 → 2026-02-22",
    "sections": [
     {
      "kind": "metrics",
@@ -413,7 +457,7 @@
        "label": "Valves run",
        "value": 3,
        "unit": "",
-       "note": "of 3 in 2026-02-20 \u2192 2026-02-22"
+       "note": "of 3 in 2026-02-20 → 2026-02-22"
       },
       {
        "label": "Total runtime",
@@ -493,13 +537,13 @@
        "label": "Low",
        "value": 1.6,
        "unit": "bar",
-       "note": "2026-02-20 \u2192 2026-02-22"
+       "note": "2026-02-20 → 2026-02-22"
       },
       {
        "label": "High",
        "value": 2.6,
        "unit": "bar",
-       "note": "2026-02-20 \u2192 2026-02-22"
+       "note": "2026-02-20 → 2026-02-22"
       }
      ]
     },
@@ -555,7 +599,7 @@
     "to": "2026-02-22"
    },
    "status": "partial",
-   "summary": "1 entries \u00b7 2026-02-20 \u2192 2026-02-22",
+   "summary": "1 entries · 2026-02-20 → 2026-02-22",
    "error": "DCON logs: POST -> 500",
    "sections": [
     {
@@ -570,7 +614,7 @@
        "label": "Timer entries",
        "value": 1,
        "unit": "",
-       "note": "2026-02-20 \u2192 2026-02-22"
+       "note": "2026-02-20 → 2026-02-22"
       },
       {
        "label": "Motor entries",
