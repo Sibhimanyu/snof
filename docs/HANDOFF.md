@@ -1,4 +1,4 @@
-# Where this was left — 2026-09-22
+# Where this was left — 2026-09-25 (overnight)
 
 Start here. Everything below links to a document that goes deeper.
 
@@ -6,47 +6,35 @@ Start here. Everything below links to a document that goes deeper.
 
 | Piece | Status |
 |---|---|
-| Dashboard | **Live** at https://snof-live.web.app. Since 2026-09-25: four tabs (Home · Irrigation · Water · Rooms); Home leads with *Needs a look* and the farm's systems (Solar, Security, switches, Climate, TVs, 3D printer) with their own pages; Irrigation shows what each crop got. iOS 0.9.0 matches. |
-| RTDB rules | **Live**, including the `/commands` write path |
-| Add-on 0.3.0 | **Running** on the NUC, verified by image tag and container contents |
-| Device control | **Deployed but asleep.** Two independent switches still off |
-| Water chain | **Live, read-only** (2026-09-24): river motor (Livesky) and the other farm's two motors (Niagara) via Cloud Functions. Web Water tab, iOS 0.6.0. Control is not built and waits on owner answers. See [water.md](water.md). |
-| Irrigation reports | **Moved off the NUC** on 2026-09-23 into a Cloud Function (`dashboard/functions/`). See [irrigation.md](irrigation.md). Add-on 0.8.0 drops the NUC side. |
-| Git | 5 feature commits + 2 doc commits on `dashboard-design-review`, **not pushed** |
+| Dashboard | **Live** at https://snof-live.web.app. Four tabs: Home (Needs a look, the water chain drawn from current readings only, the irrigation ring, Solar, Security, switches, the farm's systems with their own pages), Irrigation (Now with Run/Stop for admins, Pump & power, Watered by crop, reports), Water (read-only), Rooms. |
+| iOS app | **0.10.0** on SideStore (https://snof-ios.web.app), the same screens and rules as the web (SNOFCore holds the shared logic and its tests). |
+| RTDB rules | **Live**, with the two write paths `/commands` and `/irrigation_commands`. |
+| Add-on | **0.10.5** on the NUC (image tag checked 2026-09-25 02:30, up since the 23:41 reboot): Home Assistant bridge, switch control, valve control, and the DCON read relay (`dcon_relay`). |
+| Device control | **Armed** since 2026-09-23 (`allow_control: true`). `commandsRun` was 1 at 02:27 on 2026-09-25 (counted since the bridge's last start, after the 23:41 reboot). Disarm: merge `allow_control: false` into the Supervisor options and restart. |
+| Irrigation control | **Armed** since 2026-09-24 (`allow_irrigation_control: true`), one change at a time under `irrigation_lock`. Run proven twice on 2026-09-24 ("started by A8" in the log); a Stop was refused mid-run — see [irrigation-control.md](irrigation-control.md). |
+| Irrigation reads | Cloud Function `irrigation_report`; reads go through the NUC's relay until the function has a static egress IP Mobitech allowlists ([dcon-off-the-nuc.md](dcon-off-the-nuc.md)). The apps close Refresh with the reason while the bridge is quiet. |
+| Water chain | **Live, read-only**: river motor (Livesky) and the other farm's two motors (Niagara) via Cloud Functions. Control is not built and waits on owner answers ([water.md](water.md)). |
+| Git | `main` is the truth; work lands by PR and squash merge. After each merge reset the work branch, local and remote, to `origin/main`. |
 
-The branch has never been pushed and no PR exists. `origin/main` was merged in
-(commit `a6157fa`) so the branch contains everything on main.
+## What changed overnight (2026-09-24 → 25)
 
-## What "asleep" means, precisely
+Owner's brief: a best-in-class daily app, no bugs, every element earning its
+place. Shipped in PRs #24–#31; iOS 0.9.0 → 0.10.0. The rules that came out of
+it, each written down where it lives:
 
-Control is fully built and deployed, and cannot do anything. Three reasons, any
-one of which is sufficient:
-
-1. `allow_control: false` in the add-on options — the bridge logs
-   `Device control is disabled; not watching the command queue` at startup and
-   never opens the command stream.
-2. `acl/controllers` in RTDB is empty, so no client can write a command.
-3. RTDB rules reject any write that is not a valid command from a controller.
-
-Arming it is two deliberate steps, described in [device-control.md](device-control.md).
-
-## The honest risk
-
-**The command path has never executed against real hardware.** Unit tests cover
-the validator's refusal cases; the websocket `call_service`, the RTDB stream
-parsing, and the delete-after-handling path have run zero times outside the
-author's head. CLAUDE.md's own note — that every real bug in this project has
-lived in the async orchestration, not the pure logic — applies squarely here.
-
-When it is armed, watch the bridge log while the first switch is flipped:
-
-```bash
-ssh $SSH_OPTS sibhiorchards@192.168.68.200 \
-  'sudo docker logs -f app_local_snof_bridge 2>&1 | tail -30'
-```
-
-Expect `Ran switch.turn_on on switch.x`. Anything else is the bug this project
-has been reliably producing in exactly this layer.
+- Home answers "does anything need me?" first (*Needs a look*), then the
+  systems as pictures, then controls as tiles ([dashboard.md](dashboard.md)).
+- Appliances off at the wall (ACs, TVs, the printer, a fan) are "Off", never
+  red; offline vs off is decided per device, everywhere.
+- Nothing stale looks live: ages everywhere from one formatter; water is
+  drawn as flowing only on a current reading ([water.md](water.md)); a run the
+  log caught part-way is "so far", not "cut short"
+  ([irrigation.md](irrigation.md)).
+- Devices Home Assistant names by serial number are tidied for display
+  ("P1S printer", "Goats") — rename them in HA to fix it at the source.
+- Every screen was reviewed against a replay of the real farm, on web and on
+  iOS (Catalyst snapshots), and by independent review/QA agents
+  ([testing-and-preview.md](testing-and-preview.md)). Web QA: 69 checks.
 
 ## Open items
 
@@ -62,10 +50,18 @@ has been reliably producing in exactly this layer.
   (bridge, rules, web and iOS all enforce it). With 19 of 1366 registry
   entities in an area, the app shows only a small fraction of the farm until
   rooms are assigned in Home Assistant. Assigning one flows through live.
-- **373 of 698 published entities are unavailable.** The dashboard now groups
-  these by domain rather than listing them, but the underlying integrations are
-  presumably genuinely broken and worth a look.
-- The dashboard is not pushed to `origin`; decide whether to PR or merge.
+- **Rename the serial-named devices in Home Assistant**: `P1S_01P09C510500118`
+  (and its `_AMS_1`, `_ExternalSpool`) and `T8400P202040124D` (the Goats
+  camera station). The apps tidy them for display; the source still says it.
+- **Livesky / Niagara motor control is not built.** It needs the owner's
+  answers to the questions in [water.md](water.md).
+- **Static egress IP for DCON**, so reads and valve commands can leave the NUC
+  ([dcon-off-the-nuc.md](dcon-off-the-nuc.md)).
+- **A Stop was refused mid-run** on 2026-09-24 (the controller's clock ran
+  ~4 min behind the NUC's check). Documented, not changed.
+- **Do not deploy from the main `brasilia` checkout**: it sits on an old
+  branch (`irrigation-pull-to-refresh`) with uncommitted dashboard edits from
+  2026-09-24 20:23 that predate every change since. Deploy from `main`.
 
 ## Map
 
