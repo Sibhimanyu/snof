@@ -196,7 +196,7 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   every `irrigation_requests` node it is handed.
 - The SSH add-on had a plaintext `password:` in its options; it was still there
   on 2026-09-22 and should be removed and rotated now that key auth is proven.
-- **iOS app released** on 2026-09-23: `0.1.2 (202609231646)` (first: 0.1.0) at
+- **iOS app released** on 2026-09-24: `0.1.6 (202609240428)`, with the report charts (lines, stack, grid, matrix) and the reports gate; earlier `0.1.2 (202609231646)` (first: 0.1.0) at
   https://snof-ios.web.app (its own Hosting site, separate from the
   dashboard), installed through SideStore from `source.json`. `snof-live` is
   on **Blaze**, because Spark refuses `.ipa` files on Hosting. Release with
