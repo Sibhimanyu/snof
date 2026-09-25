@@ -168,7 +168,7 @@ final class FarmStore {
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []; refreshKeys = []
         irrigationTask?.cancel(); irrigationPending = nil
-        motorTask?.cancel(); motorPending = nil; motorPendingKey = nil; motorConfirming = false; motorLockUntil = nil
+        motorTask?.cancel(); motorPending = nil; motorPendingKey = nil; motorConfirming = false
         meta = FarmMeta(); metaLoaded = false; mobitechStatus = nil; mobitechPendingToken = nil; areas = [:]; deviceNames = [:]; rawDeviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         water = WaterState(); rawWater = nil; rawMeta = nil; waterAsked = .distantPast
@@ -212,8 +212,6 @@ final class FarmStore {
         case .irrigationLock(let v):
             irrigationLockUntil = Parse.double((v as? [String: Any])?["until"])
         case .motorResults(let v): settleMotor(v)
-        case .motorLock(let v):
-            motorLockUntil = Parse.double((v as? [String: Any])?["until"])
         case .controller(let b): canControl = b
         case .admin(let b): isAdmin = b
         case .serverTimeOffset(let s): skewMs = s
@@ -704,14 +702,13 @@ final class FarmStore {
     private(set) var motorPending: String?
     private(set) var motorPendingKey: String?
     private(set) var motorConfirming = false
-    private(set) var motorLockUntil: Double?
     private var motorTask: Task<Void, Never>?
 
     func motorRefusal(_ key: String, motor: WaterMotor?) -> String? {
         let nowMs = Date().timeIntervalSince1970 * 1000 + skewMs
         return meta.motorControl.refusal(key, motor: motor, current: water.isCurrent(motor, now: Date()),
                                          isAdmin: isAdmin, pending: motorPending != nil, confirming: motorConfirming,
-                                         lockLive: (motorLockUntil ?? 0) > nowMs, nowMs: nowMs)
+                                         online: connected, nowMs: nowMs)
     }
 
     func switchMotor(_ key: String, action: String) async {
@@ -721,11 +718,14 @@ final class FarmStore {
             show(.err, "The motor is not in the state that button was for."); return
         }
         guard let uid = user?.uid else { return }
+        // Closed before the send, so a second tap cannot queue a second write.
+        motorPending = "sending"
+        motorPendingKey = key
+        motorConfirming = false
         do {
-            let pushed = try await backend.sendMotor(motor: key, action: action, uid: uid)
+            let pushed = try await backend.sendMotor(motor: key, action: action, uid: uid,
+                                                     clientAt: Date().timeIntervalSince1970 * 1000 + skewMs)
             motorPending = pushed
-            motorPendingKey = key
-            motorConfirming = false
             // Sending plus the function's 150 s of confirmation reads.
             motorTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(240))
@@ -735,6 +735,8 @@ final class FarmStore {
                 self.show(.err, "No answer about the motor. Check it before trying again.")
             }
         } catch {
+            motorPending = nil
+            motorPendingKey = nil
             show(.err, (error as? BackendError) == .refused
                  ? "The database refused that (switched off, or a change is in flight)."
                  : "Could not send: \(error.localizedDescription)")

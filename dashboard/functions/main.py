@@ -329,8 +329,9 @@ def water_poll(event: scheduler_fn.ScheduledEvent) -> None:
     region="asia-southeast1",
     secrets=[NIAGARA_BASE, NIAGARA_USER_ID],
     memory=options.MemoryOption.MB_256,
-    # Reads, one send, then up to 150 s of confirmation reads.
-    timeout_sec=240,
+    # Reads, one send, then up to 150 s of confirmation reads; the lock
+    # (motor_control.LOCK_SECONDS) outlives this.
+    timeout_sec=320,
     # One at a time, ever: this starts and stops pumps.
     max_instances=1,
     concurrency=1,

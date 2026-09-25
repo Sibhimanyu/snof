@@ -294,9 +294,10 @@ class LiveskyClient:
 
     def __init__(self, base: str, token: str = ""):
         self.base, self.token = base.rstrip("/"), token
+        self.timeout = TIMEOUT
 
     def _get(self, path: str, **params) -> Any:
-        r = _http().get(f"{self.base}{path}", params=params, timeout=TIMEOUT,
+        r = _http().get(f"{self.base}{path}", params=params, timeout=self.timeout,
                         headers={"Authorization": f"Bearer {self.token}"} if self.token else {})
         if r.status_code == 401:
             raise VendorError("Livesky refused the session (signed out or expired).")
@@ -339,9 +340,10 @@ class NiagaraClient:
 
     def __init__(self, base: str, user_id: str):
         self.base, self.user = base.rstrip("/"), user_id.strip()
+        self.timeout = TIMEOUT
 
     def _get(self, path: str) -> Any:
-        r = _http().get(f"{self.base}/{path}", timeout=TIMEOUT, headers={"deviceType": "web"})
+        r = _http().get(f"{self.base}/{path}", timeout=self.timeout, headers={"deviceType": "web"})
         if r.status_code not in (200, 304):
             raise VendorError(f"Niagara: HTTP {r.status_code}")
         try:

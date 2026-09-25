@@ -533,11 +533,15 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     state.meta.motorControl.lastByMotor={river:serverNow()-30000}; render();
     return {t,cool:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,
       why:document.querySelector('#view .wmotor-actions + .more-note')?.textContent||''};});
-  check('one press writes one command: motor, action, uid, at and nothing else',
+  check('one press writes one command: motor, action, uid, at, clientAt and nothing else',
     writes.length===1&&/"motor":"river","action":"off","uid":"[^"]+","at":/.test(writes[0])&&!/valves|keyword|sentSms|status/.test(writes[0]), writes.join(' | '));
   check('the button closes while the motor confirms', busy===true);
   check('the result says the motor confirmed it', /Confirmed: River Motor is off/.test(after.t), after.t);
   check('the per-motor cooldown closes the button, with the wait', after.cool===true&&/Wait \d+s/.test(after.why), after.why);
+  check('a press carries its own time (clientAt), so a queued-offline write is refused', /"clientAt":\d{12,}/.test(writes[0]||''), writes[0]||'');
+  const off=await p.evaluate(()=>{dbConnected=false;state.meta.motorControl.lastByMotor={};render();
+    return {d:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,why:document.querySelector('#view .wmotor-actions + .more-note')?.textContent||''};});
+  check('no motor press while offline', off.d===true&&/Offline/.test(off.why), off.why);
   await c.close();
 }
 {

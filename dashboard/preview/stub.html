@@ -189,7 +189,7 @@
     if(params.get('fresh')&&data.meta&&data.meta.bridge) data.meta.bridge.lastSeen=Date.now()-5000;
   }
   const isAdmin=params.get('admin')==='0'?false:!params.get('viewer');
-  const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0};
+  const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0,'.info/connected':!params.get('offline')};
   // A couple of other accounts, so the Admin page has something to list.
   data.acl={
     admins:{u1:true},

@@ -122,12 +122,21 @@ def armed_store(**extra):
     return Store(data)
 
 
-def cmd(action="on", motor="river", at=None):
-    return {"motor": motor, "action": action, "uid": "u1", "at": (NOW if at is None else at) * 1000}
+def cmd(action="on", motor="river", at=None, client=None):
+    at = NOW if at is None else at
+    return {"motor": motor, "action": action, "uid": "u1", "at": at * 1000,
+            "clientAt": (at if client is None else client) * 1000}
 
 
 def run(store, c, motor, clock, cmd_id="c1"):
+    # The trigger fires for a node that exists; its result does not yet.
+    if store.reference(f"{ROOT}/{MC.RESULTS}/{cmd_id}").get() is None:
+        store.reference(f"{ROOT}/{MC.QUEUE}/{cmd_id}").set(c if isinstance(c, dict) else {"x": 1})
     return MC.handle(store, ROOT, cmd_id, c, motor_factory=lambda _m: motor, now=clock.now, sleep=clock.sleep)
+
+
+def lock(store):
+    return (meta(store) or {}).get("lock")
 
 
 def meta(store):
@@ -142,7 +151,7 @@ def test_on_is_sent_once_and_confirmed_by_the_motor():
     r = run(store, cmd("on"), m, clock)
     assert r["ok"] and r["verified"] and not r["confirming"], r
     assert m.sends == ["on"], "exactly one send"
-    assert store.reference(f"{ROOT}/{MC.LOCK}").get() is None, "confirmed: lock released"
+    assert lock(store) is None, "confirmed: lock released"
     assert f"{ROOT}/motor_commands/c1" in store.deletes, "the command node always goes"
     assert store.reference(f"{ROOT}/water/river").get()["running"] is True, "confirmed state mirrored"
     assert meta(store)["sent"] == 1
@@ -156,8 +165,8 @@ def test_unconfirmed_is_never_resent_and_keeps_the_lock():
     assert "not confirmed" in r["message"]
     assert m.sends == ["off"], "never retried, whatever the motor says"
     assert m.reads <= 1 + MC.VERIFY_WINDOW_SECONDS / MC.VERIFY_EVERY_SECONDS, "reads are bounded"
-    lock = store.reference(f"{ROOT}/{MC.LOCK}").get()
-    assert lock and lock["until"] > clock.now() * 1000, "left to expire, so nobody resends blind"
+    held = lock(store)
+    assert held and held["until"] > clock.now() * 1000, "left to expire, so nobody resends blind"
 
 
 # ---- gates before anything is read or sent -----------------------------------
@@ -187,7 +196,8 @@ def test_malformed_or_stale_commands_are_refused():
 
 def test_a_live_lock_refuses():
     clock = Clock()
-    store = armed_store(motor_lock={"until": (NOW + 60) * 1000})
+    store = armed_store()
+    store.data["farms"]["snof"]["meta"]["motorControl"]["lock"] = {"cmd": "other", "until": (NOW + 60) * 1000}
     m = FakeMotor(clock)
     r = run(store, cmd("on"), m, clock)
     assert "still being confirmed" in r["message"] and m.sends == []
@@ -199,7 +209,6 @@ def test_a_redelivered_trigger_does_nothing():
     run(store, cmd("on"), m, clock)
     m2 = FakeMotor(clock, running=False)
     clock.t = NOW + 1                       # same command id, delivered again
-    store.data["farms"]["snof"]["motor_commands"] = {"c1": {}}
     assert run(store, cmd("on", at=NOW), m2, clock) is None
     assert m2.sends == [] and m2.reads == 0
 
@@ -212,6 +221,114 @@ def test_a_redelivery_after_an_unconfirmed_send_keeps_its_result():
     m2 = FakeMotor(clock, running=True)
     assert run(store, cmd("off", at=clock.t), m2, clock) is None, "lock still live, but it is a duplicate"
     assert store.reference(f"{ROOT}/{MC.RESULTS}/c1").get() == first and m2.sends == []
+
+
+def test_a_refused_command_never_runs_on_redelivery():
+    # Review bug 1: refused (lock live), then the same event again once the
+    # lock has cleared — it must not be claimed and sent.
+    clock, store = Clock(), armed_store()
+    store.data["farms"]["snof"]["meta"]["motorControl"]["lock"] = {"cmd": "x", "until": (NOW + 5) * 1000}
+    m = FakeMotor(clock)
+    r = run(store, cmd("on"), m, clock)
+    assert not r["ok"] and m.sends == []
+    store.data["farms"]["snof"]["meta"]["motorControl"].pop("lock")
+    m2 = FakeMotor(clock)
+    assert MC.handle(store, ROOT, "c1", cmd("on"), motor_factory=lambda _m: m2, now=clock.now, sleep=clock.sleep) is None
+    assert m2.sends == [] and m2.reads == 0
+
+
+def test_a_failed_read_while_confirming_is_just_another_try():
+    # Review bug 2: a Refused from read() mid-confirmation must not end it.
+    clock, store = Clock(), armed_store()
+    m = FakeMotor(clock, running=False)
+    real = m.read
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise MC.Refused("no such motor at the other farm")
+        return real()
+    m.read = flaky
+    r = run(store, cmd("on"), m, clock)
+    assert r["verified"] and not r["confirming"] and m.sends == ["on"], r
+    assert meta(store).get("refused") is None
+
+
+def test_a_press_queued_offline_is_refused():
+    # Review bug 3: arrives (server `at`) long after the press (clientAt).
+    clock, store = Clock(), armed_store()
+    m = FakeMotor(clock)
+    r = run(store, cmd("on", client=NOW - 600), m, clock)
+    assert "offline" in r["message"] and m.sends == [] and m.reads == 0, r
+    r = run(store, {k: v for k, v in cmd("on").items() if k != "clientAt"}, FakeMotor(clock), clock, "c2")
+    assert "press time" in r["message"]
+
+
+def test_the_lock_is_taken_with_the_claim_and_released_only_by_its_owner():
+    # Review bug 4.
+    clock, store = Clock(), armed_store()
+    txn_meta = {"enabled": True, "motors": {"river": True}}
+    out = {}
+    after = MC.claim_txn("A", "river", NOW * 1000, out)(txn_meta)
+    assert after["lock"]["cmd"] == "A" and out["claimed"] == "yes"
+    out2 = {}
+    MC.claim_txn("B", "river", (NOW + 60) * 1000, out2)(after)
+    assert "still being confirmed" in out2["why"]
+    store.data["farms"]["snof"]["meta"]["motorControl"]["lock"] = {"cmd": "B", "until": (NOW + 99) * 1000}
+    MC.release(store, ROOT, "A")
+    assert lock(store)["cmd"] == "B", "A cannot release B's lock"
+
+
+def test_refusals_do_not_spend_the_cooldown_or_the_daily_count():
+    clock, store = Clock(), armed_store()
+    r = run(store, cmd("on"), FakeMotor(clock, running=True), clock)          # already running
+    assert "already running" in r["message"]
+    mc = meta(store)
+    assert not (mc.get("lastByMotor") or {}) and not (mc.get("daily") or {}) and lock(store) is None
+    clock.t = NOW + 20
+    r = run(store, cmd("on", at=NOW + 20), FakeMotor(clock), clock, "c2")
+    assert r["verified"], r
+
+
+def test_disarming_during_the_read_stops_the_send():
+    clock, store = Clock(), armed_store()
+    m = FakeMotor(clock)
+    real = m.read
+
+    def read_then_disarm():
+        store.data["farms"]["snof"]["meta"]["motorControl"]["enabled"] = False
+        return real()
+    m.read = read_then_disarm
+    r = run(store, cmd("on"), m, clock)
+    assert "switched off" in r["message"] and m.sends == [] and lock(store) is None
+
+
+def test_a_send_that_fails_mid_flight_says_it_may_have_been_sent_and_keeps_the_lock():
+    clock, store = Clock(), armed_store()
+    m = FakeMotor(clock)
+
+    def boom(_a):
+        raise TimeoutError()
+    m.send = boom
+    r = run(store, cmd("on"), m, clock)
+    assert "may have been sent" in r["message"] and not r["confirming"] and lock(store), r
+
+
+def test_livesky_on_is_confirmed_only_with_current_flowing():
+    assert not MC.confirmed("on", {"vendor": "livesky", "running": True, "amps": [0, 0]})
+    assert MC.confirmed("on", {"vendor": "livesky", "running": True, "amps": [10.1, 10.2]})
+    assert MC.confirmed("off", {"vendor": "livesky", "running": False, "amps": [0, 0]})
+
+
+def test_a_silent_zoned_niagara_controller_is_refused():
+    s = {"vendor": "niagara", "running": False, "requested": False, "power": True, "liveAt": iso(NOW - 3600)}
+    try:
+        MC.check_before("on", s, NOW)
+        assert False
+    except MC.Refused as e:
+        assert "not reported" in str(e)
+
 
 # ---- rate limits -------------------------------------------------------------
 
@@ -263,7 +380,7 @@ def test_refused_by_the_motors_own_state():
             m.running = None
         r = run(store, cmd(action), m, clock)
         assert words in r["message"] and m.sends == [], (action, state, r)
-        assert store.reference(f"{ROOT}/{MC.LOCK}").get() is None, "no lock without a send"
+        assert lock(store) is None, "no lock without a send"
 
 
 def test_niagara_request_echo_is_not_the_state():

@@ -12,6 +12,8 @@ public struct MotorControl: Hashable, Sendable {
     public var motors: [String: Bool] = [:]
     /// meta/motorControl/lastByMotor/<key>: when it last changed (server ms).
     public var lastByMotor: [String: Double] = [:]
+    /// meta/motorControl/lock/until: no motor may change before (server ms).
+    public var lockUntil: Double?
     public init() {}
 
     /// The function's per-motor wait between changes.
@@ -28,11 +30,14 @@ public struct MotorControl: Hashable, Sendable {
     /// Why a switch cannot be pressed now, or nil. `current`: the motor's
     /// reading says what it is doing now (WaterState.isCurrent).
     public func refusal(_ key: String, motor: WaterMotor?, current: Bool, isAdmin: Bool,
-                        pending: Bool, confirming: Bool, lockLive: Bool, nowMs: Double) -> String? {
+                        pending: Bool, confirming: Bool, online: Bool = true, nowMs: Double) -> String? {
         if !isAdmin { return "Only farm admins can switch motors." }
         if !armed(key) { return "Switching this motor is turned off at the farm." }
         if pending { return confirming ? "Sent once. Waiting for the motor to confirm…" : "Sending…" }
-        if lockLive { return "The last motor change is still being confirmed." }
+        if (lockUntil ?? 0) > nowMs { return "The last motor change is still being confirmed." }
+        // A write queued offline would reach the farm late (the rules and the
+        // function refuse it by its press time too).
+        if !online { return "Offline. Motors are switched only over a live connection." }
         if let s = cooldownLeft(key, nowMs: nowMs) { return "This motor changed moments ago. Wait \(s)s." }
         guard let motor else { return "No reading from this motor." }
         if !current { return "The reading is not current. Refresh before switching." }

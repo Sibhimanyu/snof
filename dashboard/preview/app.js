@@ -259,7 +259,14 @@ function enter(user) {
   watch('irrigation', 'irrigation');
   watch('water', 'water');
   watch('irrigation_lock', 'irrigationLock');
-  watch('motor_lock', 'motorLock');
+  // Motor presses go only over a live connection: a write the SDK queues
+  // offline would reach the farm late (the rules and function refuse it
+  // too, by its press time).
+  {
+    const cRef = db.ref('.info/connected');
+    const cCb = cRef.on('value', (snap) => { dbConnected = snap.val() === true; });
+    refs.push({ ref: cRef, ev: 'value', cb: cCb });
+  }
   {
     const mRef = db.ref(`farms/${FARM}/motor_command_results`).limitToLast(10);
     const mCb = mRef.on('value', (snap) => { settleMotor(snap.val() || {}); render(); }, () => {});
@@ -2098,6 +2105,7 @@ function stopIrrigation() {
  * flight (motor_lock), during the per-motor cooldown, and whenever the
  * reading is not current — nobody switches a motor off a stale picture. */
 let motorCmd = null, motorCmdKey = null, motorCmdConfirming = false, motorCmdTimer = null;
+let dbConnected = true;
 const MOTOR_COOLDOWN_MS = 120000;
 const motorArmed = (key) => isAdmin && state.meta?.motorControl?.enabled === true && state.meta.motorControl.motors?.[key] === true;
 function motorRefusal(key) {
@@ -2105,7 +2113,8 @@ function motorRefusal(key) {
   if (!isAdmin) return 'Only farm admins can switch motors.';
   if (!motorArmed(key)) return 'Switching this motor is turned off at the farm.';
   if (motorCmd) return motorCmdConfirming ? 'Sent once. Waiting for the motor to confirm…' : 'Sending…';
-  if ((state.motorLock?.until || 0) > serverNow()) return 'The last motor change is still being confirmed.';
+  if ((mc.lock?.until || 0) > serverNow()) return 'The last motor change is still being confirmed.';
+  if (!dbConnected) return 'Offline. Motors are switched only over a live connection.';
   const last = mc.lastByMotor?.[key];
   if (last && serverNow() - last < MOTOR_COOLDOWN_MS) {
     return `This motor changed moments ago. Wait ${Math.ceil((MOTOR_COOLDOWN_MS - (serverNow() - last)) / 1000)}s.`;
@@ -2143,7 +2152,9 @@ function sendMotor(key, action) {
     toast('err', 'No answer about the motor. Check it before trying again.');
     render();
   }, 240000);
-  ref.set({ motor: key, action, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP }, (err) => {
+  // clientAt: the press, on the server's clock; a write that arrives more
+  // than 30 s later (queued offline) is refused by the rules and the function.
+  ref.set({ motor: key, action, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP, clientAt: serverNow() }, (err) => {
     if (!err) return;
     motorCmd = null; clearTimeout(motorCmdTimer);
     toast('err', err.code === 'PERMISSION_DENIED' ? 'The database refused that (switched off, or a change is in flight).' : `Could not send: ${err.message}`);

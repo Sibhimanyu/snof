@@ -373,13 +373,12 @@ final class DemoBackend: FarmBackend {
     }
 
     /// As the function does it: lock, "confirming", then the motor confirms.
-    func sendMotor(motor: String, action: String, uid: String) async throws -> String {
+    func sendMotor(motor: String, action: String, uid: String, clientAt: Double) async throws -> String {
         if flag("viewer") || !flag("motors") { throw BackendError.refused }
         let key = "demo_motor_\(UUID().uuidString.prefix(8))"
         Task { [weak self] in
             guard let self else { return }
             let at = Date().timeIntervalSince1970 * 1000
-            self.handler?(.motorLock(["cmd": key, "motor": motor, "action": action, "until": at + 200_000]))
             var results = self.tree["motor_command_results"] as? [String: Any] ?? [:]
             results[key] = ["ok": true, "confirming": true, "verified": false, "motor": motor, "action": action]
             self.handler?(.motorResults(results))
@@ -395,7 +394,6 @@ final class DemoBackend: FarmBackend {
                             "message": "confirmed by the motor"]
             self.tree["motor_command_results"] = results
             self.handler?(.motorResults(results))
-            self.handler?(.motorLock(nil))
         }
         return key
     }

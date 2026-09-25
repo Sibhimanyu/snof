@@ -14,8 +14,10 @@ Gates, every one of which must pass:
 
 1. **RTDB rules**: only an admin may append; only while
    meta/motorControl/enabled and meta/motorControl/motors/<motor> are true
-   (service account only); only while no change is in flight (motor_lock);
-   `at` must be the server's now; `motor` and `action` shape-checked.
+   (service account only); only while no change is in flight
+   (meta/motorControl/lock); `at` must be the server's now and the press
+   time `clientAt` within 30 s of it (a write queued offline is refused);
+   `motor` and `action` shape-checked.
 2. **This module re-checks all of it** and adds what only it can know:
    * the command is fresh (≤ 60 s) and has exactly the four fields;
    * once only: claimed in a transaction (triggers are at-least-once);
@@ -54,18 +56,29 @@ import water
 QUEUE = "motor_commands"
 RESULTS = "motor_command_results"
 META = "meta/motorControl"
-LOCK = "motor_lock"
 
 ACTIONS = ("on", "off")
 MAX_AGE_SECONDS = 60.0
+# The press itself (clientAt, the phone's clock corrected to the server's) and
+# its arrival (at, the server's own time) must be this close: a write queued
+# while offline arrives late and is refused, never run hours afterwards.
+MAX_QUEUE_SECONDS = 30.0
 MIN_GAP_SECONDS = 15.0
 MOTOR_COOLDOWN_SECONDS = 120.0
 DAILY_CAP = 12
 VERIFY_EVERY_SECONDS = 10.0
 VERIFY_WINDOW_SECONDS = 150.0
-# Longer than the send plus the whole confirmation window, so the lock always
-# outlives the attempt; left to expire when the motor never confirms.
-LOCK_SECONDS = 200.0
+# Reads made while confirming get a shorter timeout, so the whole attempt fits
+# the function's budget: pre-read (≤ ~60 s for Niagara) + send (≤ 20 s) +
+# window (150 s) + one last read (≤ ~30 s) < FUNCTION_TIMEOUT_SECONDS.
+CONFIRM_READ_TIMEOUT = 10
+FUNCTION_TIMEOUT_SECONDS = 320
+# Longer than the function can live, so the lock always outlives the attempt;
+# left to expire when the motor never confirms.
+LOCK_SECONDS = 340.0
+# The zoned Niagara controller sends a live packet every few seconds while
+# connected; older than this, it is not answering.
+NIAGARA_LIVE_STALE_SECONDS = 15 * 60
 # A Livesky starter reports every few seconds; older than this, it is not
 # answering and a command would not be heard.
 LIVESKY_STALE_SECONDS = 15 * 60
@@ -95,7 +108,7 @@ def validate(cmd: Any, now: float) -> tuple[str, str]:
     """(motor, action) for a command worth considering, else Refused."""
     if not isinstance(cmd, dict):
         raise Refused("not an object")
-    extra = set(cmd) - {"motor", "action", "uid", "at"}
+    extra = set(cmd) - {"motor", "action", "uid", "at", "clientAt"}
     if extra:
         raise Refused(f"unexpected fields {sorted(extra)}")
     motor, action = cmd.get("motor"), cmd.get("action")
@@ -111,6 +124,11 @@ def validate(cmd: Any, now: float) -> tuple[str, str]:
     age = now - at / 1000.0
     if age > MAX_AGE_SECONDS or age < -60:
         raise Refused(f"stale by {age:.0f}s")
+    client = cmd.get("clientAt")
+    if not isinstance(client, (int, float)) or isinstance(client, bool):
+        raise Refused("no press time")
+    if abs(at - client) > MAX_QUEUE_SECONDS * 1000:
+        raise Refused("pressed while offline; it arrived too late to act on")
     return motor, action
 
 
@@ -151,6 +169,10 @@ def check_before(action: str, state: dict, now_s: float) -> None:
         at = _iso_seconds(state.get("reportedAt"))
         if at is None or now_s - at > LIVESKY_STALE_SECONDS:
             raise Refused("the starter has not reported recently")
+    if state.get("vendor") == "niagara" and state.get("liveAt"):
+        at = _iso_seconds(state.get("liveAt"))
+        if at is None or now_s - at > NIAGARA_LIVE_STALE_SECONDS:
+            raise Refused("the controller has not reported recently")
     if action == "on":
         if state.get("trips"):
             raise Refused(f"it tripped ({', '.join(state['trips'])}): check it at the pump")
@@ -162,7 +184,13 @@ def confirmed(action: str, state: dict) -> bool:
     """Does the motor's own report show the change? Never the request echo."""
     if not state or state.get("pending"):
         return False
-    return state.get("running") is (action == "on")
+    if state.get("running") is not (action == "on"):
+        return False
+    # Livesky "on" is the starter's word; current flowing is the pump's. A
+    # dry-run trip seconds later would otherwise read as a confirmed start.
+    if action == "on" and state.get("vendor") == "livesky" and state.get("amps") is not None:
+        return any(a > 0 for a in state.get("amps") or [])
+    return True
 
 
 def _iso_seconds(value: Any) -> float | None:
@@ -172,51 +200,83 @@ def _iso_seconds(value: Any) -> float | None:
         return None
 
 
-def claim_txn(cmd_id: str, motor: str, now_ms: float, day: str, outcome: dict):
-    """The transaction on meta/motorControl: once only, and the rate limits,
-    decided together so two commands cannot both slip through."""
+def claim_txn(cmd_id: str, motor: str, now_ms: float, outcome: dict):
+    """One transaction on meta/motorControl decides everything that could
+    race: still armed, once only, no change in flight (the lock lives here),
+    the 15 s gap, this motor's cooldown and today's cap. It takes the lock.
+    Cooldown and the daily count are *spent* only once a command is sent
+    (record_sent), so a refusal costs nothing."""
     def txn(meta):
+        outcome.clear()                       # retries must not keep an old verdict
         meta = dict(meta or {})
         claimed = dict(meta.get("claimed") or {})
         if cmd_id in claimed:
             outcome["why"] = "duplicate"
             return meta
+        if not armed(meta, motor):
+            outcome["why"] = "motor control is switched off for this motor"
+            return meta
+        if lock_live(meta.get("lock"), now_ms):
+            outcome["why"] = "the last motor change is still being confirmed"
+            return meta
         last = meta.get("lastSent")
         if isinstance(last, (int, float)) and now_ms - last < MIN_GAP_SECONDS * 1000:
             outcome["why"] = "another motor command was sent seconds ago"
             return meta
-        by_motor = dict(meta.get("lastByMotor") or {})
-        prev = by_motor.get(motor)
+        prev = (meta.get("lastByMotor") or {}).get(motor)
         if isinstance(prev, (int, float)) and now_ms - prev < MOTOR_COOLDOWN_SECONDS * 1000:
             wait = int(MOTOR_COOLDOWN_SECONDS - (now_ms - prev) / 1000) + 1
             outcome["why"] = f"this motor changed moments ago; wait {wait}s"
             return meta
-        daily = dict(meta.get("daily") or {})
-        today = dict(daily.get(day) or {})
-        if int(today.get(motor) or 0) >= DAILY_CAP:
+        day = farm_day(now_ms / 1000)
+        if int(((meta.get("daily") or {}).get(day) or {}).get(motor) or 0) >= DAILY_CAP:
             outcome["why"] = f"{DAILY_CAP} changes today already; the limit protects the motor"
             return meta
-        today[motor] = int(today.get(motor) or 0) + 1
-        meta["daily"] = {day: today}            # only today is kept
-        claimed = dict(sorted(claimed.items(), key=lambda kv: kv[1])[-20:])
+        claimed = dict(sorted(claimed.items(), key=lambda kv: kv[1])[-50:])
         claimed[cmd_id] = now_ms
         meta["claimed"] = claimed
         meta["lastSent"] = now_ms
-        by_motor[motor] = now_ms
-        meta["lastByMotor"] = by_motor
+        meta["lock"] = {"cmd": cmd_id, "motor": motor, "until": int(now_ms + LOCK_SECONDS * 1000)}
+        outcome["claimed"] = "yes"
         return meta
     return txn
 
 
 def claim(store, root: str, cmd_id: str, motor: str, now_s: float) -> None:
     outcome: dict[str, str] = {}
-    store.reference(f"{root}/{META}").transaction(
-        claim_txn(cmd_id, motor, now_s * 1000, farm_day(now_s), outcome))
+    store.reference(f"{root}/{META}").transaction(claim_txn(cmd_id, motor, now_s * 1000, outcome))
     why = outcome.get("why")
     if why == "duplicate":
         raise _Duplicate()
-    if why:
-        raise Refused(why)
+    if why or outcome.get("claimed") != "yes":
+        raise Refused(why or "could not claim the command")
+
+
+def record_sent(store, root: str, motor: str, now_s: float) -> None:
+    """Spend the cooldown and today's count: a command went out."""
+    day = farm_day(now_s)
+
+    def txn(meta):
+        meta = dict(meta or {})
+        by_motor = dict(meta.get("lastByMotor") or {})
+        by_motor[motor] = now_s * 1000
+        meta["lastByMotor"] = by_motor
+        today = dict((meta.get("daily") or {}).get(day) or {})
+        today[motor] = int(today.get(motor) or 0) + 1
+        meta["daily"] = {day: today}            # only today is kept
+        return meta
+    store.reference(f"{root}/{META}").transaction(txn)
+
+
+def release(store, root: str, cmd_id: str) -> None:
+    """Drop the lock only if it is this command's."""
+    def txn(meta):
+        meta = dict(meta or {})
+        lock = meta.get("lock")
+        if isinstance(lock, dict) and lock.get("cmd") == cmd_id:
+            meta.pop("lock", None)
+        return meta
+    store.reference(f"{root}/{META}").transaction(txn)
 
 
 def _scrub(text: str) -> str:
@@ -243,6 +303,10 @@ class LiveskyMotor:
         self._name = str(session.get("device") or "River motor")
         self._client = water.LiveskyClient(base, token)
         self._base, self._token, self._http = base.rstrip("/"), token, http
+
+    def quick(self) -> None:
+        """Confirmation reads: a shorter timeout, to fit the function's budget."""
+        self._client.timeout = CONFIRM_READ_TIMEOUT
 
     def read(self) -> dict:
         rows = self._client.motors(self._imei)
@@ -292,6 +356,9 @@ class NiagaraMotor:
                     return int(cid), parsed[1]
         raise Refused("no such motor at the other farm")
 
+    def quick(self) -> None:
+        self._client.timeout = CONFIRM_READ_TIMEOUT
+
     def read(self) -> dict:
         cid, state = self._find()
         if self._id is not None and cid != self._id:
@@ -320,90 +387,97 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, motor_factory,
            now=time.time, sleep=time.sleep) -> dict | None:
     """Run one command end to end and write its result. `motor_factory(motor)`
     builds a LiveskyMotor or NiagaraMotor. Returns the result, or None for a
-    redelivered trigger."""
+    redelivered trigger (which touches nothing)."""
+    queue_ref = store.reference(f"{root}/{QUEUE}/{cmd_id}")
+    result_ref = store.reference(f"{root}/{RESULTS}/{cmd_id}")
+    # A redelivered trigger: the command already has a result, or its node is
+    # gone (every handled command's node is deleted). Before anything else,
+    # so a refused command can never run on a second delivery.
+    if result_ref.get() is not None or queue_ref.get() is None:
+        return None
     result: dict[str, Any] = {"ok": False, "verified": False, "confirming": False}
     if isinstance(cmd, dict):
         result.update(motor=str(cmd.get("motor") or "")[:40], action=str(cmd.get("action") or "")[:4],
                       uid=str(cmd.get("uid") or "")[:128])
-    lock_ref = store.reference(f"{root}/{LOCK}")
-    release = False
+    claimed = sent_attempted = verified = False
     try:
         try:
             motor, action = validate(cmd, now())
-            meta = store.reference(f"{root}/{META}").get()
-            # A redelivery of a command already claimed does nothing — before
-            # the lock check, or it would overwrite that command's result.
-            if isinstance(meta, dict) and cmd_id in (meta.get("claimed") or {}):
-                raise _Duplicate()
-            if not armed(meta, motor):
-                raise Refused("motor control is switched off for this motor")
-            if lock_live(lock_ref.get(), now() * 1000):
-                raise Refused("the last motor change is still being confirmed")
             claim(store, root, cmd_id, motor, now())
+            claimed = True
             m = motor_factory(motor)
             before = m.read()
             check_before(action, before, now())
-            lock_ref.set({"cmd": cmd_id, "motor": motor, "action": action,
-                          "until": int((now() + LOCK_SECONDS) * 1000)})
+            # Disarming during a slow read stops it here, before the send.
+            if not armed(store.reference(f"{root}/{META}").get(), motor):
+                raise Refused("motor control was switched off")
+            sent_attempted = True
             message = m.send(action)
+            record_sent(store, root, motor, now())
             _count(store, root, "sent")
             result.update(ok=True, confirming=True, message=message)
-            store.reference(f"{root}/{RESULTS}/{cmd_id}").set({**result, "at": SERVER_TIMESTAMP})
+            result_ref.set({**result, "at": SERVER_TIMESTAMP})
             verified, last = _confirm(m, action, now, sleep)
-            result.update(confirming=False, verified=verified,
-                          message=("confirmed by the motor" if verified
-                                   else "sent, but the motor has not confirmed it — check before trying again"))
+            result["message"] = ("confirmed by the motor" if verified
+                                 else "sent, but the motor has not confirmed it — check before trying again")
             if last:
                 _mirror(store, root, motor, last)
-            release = verified
         except _Duplicate:
             return None
         except Refused as why:
-            result["message"] = str(why)
-            _count(store, root, "refused")
+            result["message"] = (str(why) if not sent_attempted
+                                 else f"may have been sent ({why}) — check the motor before trying again")
+            _count(store, root, "failed" if sent_attempted else "refused")
         except water.VendorError as err:
-            result["message"] = f"could not reach the motor ({_scrub(str(err))})"
+            result["message"] = (f"could not reach the motor ({_scrub(str(err))})" if not sent_attempted
+                                 else "may have been sent; the answer was lost — check the motor before trying again")
             _count(store, root, "failed")
         except Exception as err:          # noqa: BLE001 — reported, never raised
-            result["message"] = f"could not reach the motor ({type(err).__name__})"
+            result["message"] = (f"could not reach the motor ({type(err).__name__})" if not sent_attempted
+                                 else "may have been sent; the answer was lost — check the motor before trying again")
             _count(store, root, "failed")
-        store.reference(f"{root}/{RESULTS}/{cmd_id}").set({**result, "at": SERVER_TIMESTAMP})
+        result.update(confirming=False, verified=verified)
+        result_ref.set({**result, "at": SERVER_TIMESTAMP})
         return result
     finally:
-        if release:
+        # The lock goes when confirmed, or when nothing was sent. After an
+        # unconfirmed (or uncertain) send it is left to expire.
+        if claimed and (verified or not sent_attempted):
             try:
-                lock_ref.delete()
+                release(store, root, cmd_id)
             except Exception:             # noqa: BLE001 — it expires by itself
                 pass
         # The node always goes, sent or refused, so nothing can loop or be
         # picked up again later.
-        store.reference(f"{root}/{QUEUE}/{cmd_id}").delete()
+        queue_ref.delete()
 
 
 def _confirm(m, action: str, now, sleep) -> tuple[bool, dict]:
     """Read the motor every 10 s until its own report shows the change, for
-    at most 150 s (15 reads: gentle on a weak server, long enough for a GSM
-    controller; the captures settled in 20-40 s). Never resends."""
+    at most 150 s (the captures settled in 20-40 s). A failed or odd read is
+    just another try. Never resends."""
     deadline = now() + VERIFY_WINDOW_SECONDS
     last: dict = {}
-    while now() < deadline:
+    if hasattr(m, "quick"):
+        m.quick()
+    while True:
         sleep(VERIFY_EVERY_SECONDS)
+        if now() > deadline:
+            return False, last
         try:
             last = m.read() or last
-        except Refused:
-            raise
-        except Exception:                 # noqa: BLE001 — one failed read is not a verdict
+        except Exception:                 # noqa: BLE001 — incl. Refused: one read is not a verdict
             continue
         if confirmed(action, last):
             return True, last
-    return False, last
 
 
 def _mirror(store, root: str, motor: str, state: dict) -> None:
-    """Put the motor's confirmed state where the apps read it, at once."""
+    """Put the motor's confirmed state where the apps read it, at once. The
+    whole node, so fields the motor no longer reports do not linger."""
     try:
         path = "water/river" if motor == RIVER else f"water/motors/{motor}"
-        store.reference(f"{root}/{path}").update(state)
+        store.reference(f"{root}/{path}").set(state)
     except Exception:                     # noqa: BLE001 — the next pull writes it anyway
         pass
 

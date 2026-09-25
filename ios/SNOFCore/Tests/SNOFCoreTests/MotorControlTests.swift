@@ -14,14 +14,17 @@ import Foundation
         var c = MotorControl(); c.enabled = true; c.motors = ["river": true]; return c
     }
     func why(_ c: MotorControl, _ m: WaterMotor?, current: Bool = true, admin: Bool = true, pending: Bool = false,
-             lock: Bool = false, now: Double = 1_000_000) -> String? {
-        c.refusal("river", motor: m, current: current, isAdmin: admin, pending: pending, confirming: false,
-                  lockLive: lock, nowMs: now)
+             lock: Bool = false, online: Bool = true, now: Double = 1_000_000) -> String? {
+        var c = c
+        if lock { c.lockUntil = now + 60_000 }
+        return c.refusal("river", motor: m, current: current, isAdmin: admin, pending: pending, confirming: false,
+                         online: online, nowMs: now)
     }
 
     @Test func parsesMetaAndNeedsBothSwitches() {
         let m = Parse.meta(["motorControl": ["enabled": true, "motors": ["river": true, "well-motor": false],
-                                             "lastByMotor": ["river": 5000.0]]])
+                                             "lastByMotor": ["river": 5000.0], "lock": ["cmd": "c", "until": 9000.0]]])
+        #expect(m.motorControl.lockUntil == 9000)
         #expect(m.motorControl.armed("river") && !m.motorControl.armed("well-motor") && !m.motorControl.armed("x"))
         #expect(m.motorControl.lastByMotor["river"] == 5000)
         #expect(!Parse.meta(["motorControl": ["enabled": false, "motors": ["river": true]]]).motorControl.armed("river"))
@@ -34,6 +37,7 @@ import Foundation
         #expect(why(MotorControl(), motor(running: true))?.contains("turned off") == true)
         #expect(why(armed, motor(running: true), pending: true) == "Sending…")
         #expect(why(armed, motor(running: true), lock: true)?.contains("still being confirmed") == true)
+        #expect(why(armed, motor(running: true), online: false)?.contains("Offline") == true)
         #expect(why(armed, motor(running: true), current: false)?.contains("not current") == true)
         #expect(why(armed, motor(running: nil))?.contains("unknown") == true)
         #expect(why(armed, nil)?.contains("No reading") == true)

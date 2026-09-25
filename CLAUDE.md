@@ -99,9 +99,10 @@ Architecture and data shape are in README.md.
   and the other farm's Niagara motors, in the `motor_command` Cloud Function
   only. Admins only; `meta/motorControl/enabled` **and** the motor's
   `meta/motorControl/motors/<key>` must be true (service account, off by
-  default); `motor_lock` held until the motor's own report confirms; rate
-  limits (15 s any, 2 min per motor, 12/motor/day); a live read before
-  sending; **one send, never retried**; only MOTORON/MOTOROFF and
+  default); a press older than 30 s (queued offline) is refused; the lock
+  (`meta/motorControl/lock`, taken with the claim) is held until the motor's
+  own report confirms; rate limits (15 s any, 2 min per motor,
+  12/motor/day); a live read before sending; **one send, never retried**; only MOTORON/MOTOROFF and
   MTRON/MTROF exist in code. Nothing automatic may ever write the queue or
   name the command endpoints (a test enforces it). docs/motor-control.md.
 - **Unassigned entities do not exist to users** (add-on 0.9.0; since 0.9.2
