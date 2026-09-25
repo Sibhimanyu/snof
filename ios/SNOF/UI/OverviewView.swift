@@ -228,7 +228,7 @@ struct IrrigationRingCard: View {
         let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
         let last = Irrigation.runs(c).first
         let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
-        VCard(label: "Irrigation" + (checked.map { " · \($0)" } ?? ""), go: { store.selectedTab = .irrigation }) {
+        VCard(label: "Irrigation" + (checked.map { " · \($0)" } ?? ""), go: { store.openMotor(FarmStore.dconKey) }) {
             if c.isEmpty {
                 Text("No data yet").font(Theme.meta).foregroundStyle(Theme.muted)
             } else {

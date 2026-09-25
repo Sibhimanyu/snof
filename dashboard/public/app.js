@@ -493,10 +493,13 @@ function toast(kind, message) {
 
 /* ================= router ================= */
 
-const ROUTES = new Set(['overview', 'irrigation', 'water', 'motor', 'areas', 'devices', 'area', 'admin', 'sys']);
+const ROUTES = new Set(['overview', 'water', 'motor', 'areas', 'devices', 'area', 'admin', 'sys']);
 const route = () => {
   const h = (location.hash || '#/').slice(1);
   const [, head, arg] = h.match(/^\/([^/]*)\/?(.*)$/) || [, '', ''];
+  // No tab of its own for the main farm (owner, 2026-09-25: "give equal
+  // importance"): its controller is one of the motors, #/motor/dcon.
+  if (head === 'irrigation') return { name: 'motor', arg: 'dcon' };
   const name = head || 'overview';
   return ROUTES.has(name) ? { name, arg: decodeURIComponent(arg || '') } : { name: 'overview', arg: '' };
 };
@@ -563,7 +566,7 @@ function render() {
 
   const farmName = state.meta?.name || 'SNOF';
   // Each page names itself, so tabs, history and bookmarks tell them apart.
-  const pageName = { overview: 'Home', irrigation: 'Irrigation', water: 'Water', areas: 'Rooms', devices: 'All devices',
+  const pageName = { overview: 'Home', water: 'Water', areas: 'Rooms', devices: 'All devices',
     admin: 'Admin', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title,
     motor: r.arg === DCON_KEY ? dconTile().name : (waterMotors().find((m) => m.key === r.arg)?.name || 'Motor') }[r.name] || 'Home';
   document.title = `${pageName} · SNOF`;
@@ -579,7 +582,7 @@ function render() {
 
   reconcilePending(all);
   syncWaterPolling(r.name === 'water' || r.name === 'overview' || r.name === 'motor');
-  if (r.name === 'overview' || r.name === 'irrigation' || (r.name === 'motor' && r.arg === DCON_KEY)) autoRefreshIrrigation();
+  if (r.name === 'overview' || (r.name === 'motor' && r.arg === DCON_KEY)) autoRefreshIrrigation();
 
   // Chrome above stays live regardless; only the view body is held back.
   if (interacting) {
@@ -591,7 +594,6 @@ function render() {
     else if (r.name === 'areas') view.innerHTML = areasView(all);
     else if (r.name === 'area') view.innerHTML = areaView(all, r.arg);
     else if (r.name === 'devices') view.innerHTML = devicesView(all);
-    else if (r.name === 'irrigation') view.innerHTML = irrigationView();
     else if (r.name === 'water') view.innerHTML = waterView();
     else if (r.name === 'motor') view.innerHTML = motorView(r.arg);
     else if (r.name === 'sys') view.innerHTML = systemView(all, r.arg);
@@ -646,7 +648,7 @@ const todayLine = () => new Date().toLocaleDateString('en-GB', { weekday: 'long'
 
 function skeletonView() {
   const r = route();
-  const title = { irrigation: 'Irrigation', water: 'Water', areas: 'Rooms', devices: 'Rooms', admin: 'Admin' }[r.name] || 'Home';
+  const title = { water: 'Water', motor: 'Water', areas: 'Rooms', devices: 'Rooms', admin: 'Admin' }[r.name] || 'Home';
   return head(title, '', '') +
     `<div class="sk-grid">${'<div class="sk-card"></div>'.repeat(6)}</div>`;
 }
@@ -771,7 +773,7 @@ function irrigationCard() {
   }
   const pics = String(valves).split(/,\s*/).filter(Boolean).slice(0, 5)
     .map((v) => { const a = valveArt(v, 'irrigation'); return a ? artImg(a, 'crop') : ''; }).join('');
-  return `<a class="panel vcard" href="#/irrigation">
+  return `<a class="panel vcard" href="#/motor/dcon">
     <span class="vcard-label">Irrigation${irrChecked() ? ` <em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}</span>
     ${empty ? `<p class="vcard-empty">No data yet</p>` : `<div class="vcard-body">${ring(frac, tone, label, sub)}
       <div class="vcard-text"><strong>${escapeHtml(s.running ? s.title : s.title.replace(/^Last: /, ''))}</strong>
@@ -1120,7 +1122,7 @@ function powerPage(systems) {
       if (sp && sp.imbalance != null) list.push(['Imbalance', `${sp.imbalance}%`]);
       if (sp && sp.at) list.push(['Read at', sp.at]);
       body = (sp && sp.v.length ? phaseBars(sp.v) : '') + facts(list) +
-        `<a class="panel-link pw-more" href="#/irrigation">Pump & irrigation${arrow()}</a>`;
+        `<a class="panel-link pw-more" href="#/motor/dcon">Pump & irrigation${arrow()}</a>`;
     }
     return `<section class="panel pw-sec is-${st.state}" aria-label="${escapeHtml(l.title)}">
       <div class="pw-sec-head"><span class="pw-tile">${lineArt(l.id)}</span>
@@ -1148,17 +1150,17 @@ function attentionItems(all, systems) {
   // "no power" must not read as a present problem.
   const checkedAt = p?.at || c.meta?.lastUpdated || 0;
   const recent = serverNow() - checkedAt < 60 * 60000;
-  if (irrNowState().running) for (const f of p.faults || []) add('bad', `Valve ${f}`, 'during the running program', '#/irrigation');
+  if (irrNowState().running) for (const f of p.faults || []) add('bad', `Valve ${f}`, 'during the running program', '#/motor/dcon');
   const sup = recent ? irrSupply() : null;
-  if (sup && sup.v.length && !sup.live) add('warn', 'No power at the pump', sup.at ? `as of ${sup.at}` : '', '#/irrigation');
-  else if (sup && sup.missing) add('bad', 'A power phase is missing', `${sup.live} of 3 phases live${sup.at ? ` · ${sup.at}` : ''}`, '#/irrigation');
+  if (sup && sup.v.length && !sup.live) add('warn', 'No power at the pump', sup.at ? `as of ${sup.at}` : '', '#/motor/dcon');
+  else if (sup && sup.missing) add('bad', 'A power phase is missing', `${sup.live} of 3 phases live${sup.at ? ` · ${sup.at}` : ''}`, '#/motor/dcon');
   const since = serverNow() - 864e5;
   // Programs with no valves assigned end at 0m by design; they are not faults.
   const stopped = irrRuns().filter((r) => !r.finished && r.planned != null && r.valves && !mayStillRun(r) && (farmMs(r.start) ?? 0) >= since);
-  if (stopped.length) add('warn', `${stopped.length} ${plural(stopped.length, 'run', 'runs')} cut short in the last 24 h`, stopped.slice(0, 2).map((r) => `${r.name} ${runAmount(r)}`).join(' · '), '#/irrigation');
+  if (stopped.length) add('warn', `${stopped.length} ${plural(stopped.length, 'run', 'runs')} cut short in the last 24 h`, stopped.slice(0, 2).map((r) => `${r.name} ${runAmount(r)}`).join(' · '), '#/motor/dcon');
   const repErr = c.meta?.lastError;
-  if (repErr) add('warn', 'Could not reach the controller', repErr.replace(/^DCON [a-z_]+: /, '').slice(0, 80), '#/irrigation');
-  if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', 'sign in so valve commands keep working', '#/irrigation');
+  if (repErr) add('warn', 'Could not reach the controller', repErr.replace(/^DCON [a-z_]+: /, '').slice(0, 80), '#/motor/dcon');
+  if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', 'sign in so valve commands keep working', '#/motor/dcon');
   // Water chain.
   const w = state.water || {};
   for (const m of [w.river, ...Object.values(w.motors || {})].filter(Boolean)) {
@@ -2659,17 +2661,6 @@ function irrReportsModule() {
 }
 let irrBuilderOpen = false;
 
-function irrigationView() {
-  // Admins find the Mobitech account where it matters: folded away unless
-  // it needs them, or they are part-way through signing in.
-  const mb = isAdmin ? mobitechState() : { kind: 'ok' };
-  const account = isAdmin
-    ? `<details class="acct-sec"${mb.kind !== 'ok' || mbStep !== 'idle' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
-  return head('Irrigation', '', '') +
-    `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
-    `<div class="irr-col">${irrSupplyModule()}</div></div>` + `<div class="irr-wide">${irrCropsModule()}</div>` +
-    irrReportsModule() + account;
-}
 
 /* ---- water: river -> other farm -> main farm ----
  *

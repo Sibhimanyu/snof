@@ -141,7 +141,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     groups:[...document.querySelectorAll('#irr-type optgroup')].map(o=>o.label),
     seeded:document.querySelectorAll('.rep-card').length,
     scripts:[...document.documentElement.innerHTML].join('').includes('token_id')}));
-  check('report builder offers every collection endpoint', r.title==='Irrigation'&&r.options.length===12,
+  check('report builder offers every collection endpoint', r.options.length===12,
     `${r.options.length} options`);
   check('combined pulls are offered first and labelled as such',
     r.groups[0]==='Combined'&&r.groups[1]==='Single endpoint', r.groups.join('|'));
@@ -516,6 +516,18 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await p.click('#view .mtile[href="#/motor/dcon"]'); await p.waitForTimeout(400);
   const d=await p.evaluate(()=>({hash:location.hash, tab:document.querySelector('.tab-item.on, .topnav-item.on')?.textContent||'', now:!!document.querySelector('#view .now')}));
   check("the controller's page holds its controls, under the Water tab", d.hash==='#/motor/dcon'&&/Water/.test(d.tab)&&d.now, JSON.stringify(d));
+  await c.close();
+}
+{
+  // No tab of its own for the main farm (owner, 2026-09-25): the controller
+  // is one of the motors; old #/irrigation links land on its motor page.
+  const [p,c]=await open('#/irrigation');
+  await p.waitForSelector('#view .page-title');
+  const r=await p.evaluate(()=>({nav:[...document.querySelectorAll('.tab-item, .topnav-item')].map(a=>a.textContent.trim()),
+    on:document.querySelector('.tab-item.on, .topnav-item.on')?.textContent||'', now:!!document.querySelector('#view .now'),
+    links:[...document.querySelectorAll('a[href="#/irrigation"]')].length}));
+  check('no Irrigation tab: every motor alike under Water', !r.nav.includes('Irrigation')&&r.nav.includes('Water'), r.nav.join(' | '));
+  check('an old irrigation link opens the controller as a motor, under Water', r.on.includes('Water')&&r.now&&r.links===0, JSON.stringify(r));
   await c.close();
 }
 {

@@ -43,7 +43,7 @@ Architecture and data shape are in README.md.
   before it is kept, senders record lastOk/lastRejected, admins can sign
   SNOF out. (a) and (b) are still open: commands stay FON/OFF.
 - **The Mobitech command session comes from signing in** (2026-09-24):
-  admins sign in to Mobitech with an SMS code from the Irrigation tab
+  admins sign in to Mobitech with an SMS code from the controller's page (Water → SibhiSump)
   ("Mobitech account", web and iOS); the token goes to `/private/mobitech` (admins write, no client
   reads) and consumers prefer it over the hand-set option. Never show or log
   it. Details: docs/irrigation-control.md.
@@ -364,3 +364,12 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   with the raw names kept for the printer add-on grouping; reports close with
   the reason while `meta/reports.transport` is relay (absent = relay) and the
   bridge is quiet. Details: docs/HANDOFF.md "What changed overnight".
+- **No tab for the main farm** (owner, 2026-09-25, said twice: "give equal
+  importance"). Three tabs: Home · Water · Rooms. Water is an equal grid of
+  every motor — the river motor, Thoppu's two motors and the main farm's
+  Mobitech controller — each opening its own page (web `#/motor/<key>`, iOS
+  `MotorRoute`; `#/irrigation` redirects to `#/motor/dcon`, iOS
+  `store.openMotor(FarmStore.dconKey)`). Valve control, reports and the
+  Mobitech account live on the controller's page. Don't bring back a
+  dedicated tab or give one motor more room than the others.
+
