@@ -61,6 +61,38 @@ motor_command (onCreate only) ── gates, live read, lock, ONE send, confirm
    so nobody fires a second command blind. Livesky has left a command
    unapplied before; its own app then sent it again. SNOF does not.
 
+## Zone change (the zoned Niagara controller)
+
+Added 2026-09-25 at the owner's request. `action: "zone"` with `zone` 1-8
+moves the **Well motor**'s running program to that zone, using the settings
+menu's CHANGE FROM exactly as the Niagara app sends it (`POST
+…/controller/<id>/menu/92/settings`, `sentSms: "CHANGEFROM00N"`, the item's
+`menuSettingId` looked up by name each time). Its meaning ("continue the
+program from zone N") is **inferred from one capture**, so it is fenced in:
+
+- armed separately: `meta/motorControl/zones/<motor>` as well as the motor;
+- only while that motor is **running a program** — it can never start one;
+- only a zoned controller heard from in the **last 90 s**, never the current
+  zone, never while a change is on its way, and only with **5+ minutes left**
+  on the current zone (so a natural advance cannot land in the window);
+- the menu item is looked up (and matched to the capture: template 128,
+  keyword CHANGEFROM) and the state **read again right before the send**, so
+  a program that ended meanwhile never gets it; a failed lookup is a refusal,
+  not a send;
+- the same lock and claim, its own cooldown and daily count (so zone changes
+  never use up a motor's on/off budget), one send, never retried;
+- confirmed only by a controller report **made after the send** carrying a
+  zone event (044/045) for **that zone, the same program, still running**. If
+  it stops, changes program or does not move, the result says exactly that
+  and the lock stays until it expires.
+
+Why these fences: the one capture shows CHANGE FROM sent *after* the program
+had skipped a zone and gone idle, so its effect mid-program is unproven. The
+first press is the proof; watch the controller when you make it.
+
+**Stopping is never held back**: OFF ignores the cooldown and the daily cap
+(only a change in flight blocks it).
+
 ## What can never be sent
 
 Only the two commands per vendor exist in code: Livesky `MOTORON`/`MOTOROFF`
@@ -85,6 +117,7 @@ Off by default. Arm one motor at a time, with someone able to see it:
 ```bash
 firebase database:update /farms/snof/meta/motorControl '{"enabled": true}' --project snof-live
 firebase database:update /farms/snof/meta/motorControl/motors '{"river": true}' --project snof-live
+firebase database:update /farms/snof/meta/motorControl/zones '{"well-motor": true}' --project snof-live   # zone changes
 # disarm everything at once:
 firebase database:update /farms/snof/meta/motorControl '{"enabled": false}' --project snof-live
 ```

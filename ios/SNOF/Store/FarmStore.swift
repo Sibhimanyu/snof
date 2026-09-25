@@ -708,7 +708,21 @@ final class FarmStore {
         let nowMs = Date().timeIntervalSince1970 * 1000 + skewMs
         return meta.motorControl.refusal(key, motor: motor, current: water.isCurrent(motor, now: Date()),
                                          isAdmin: isAdmin, pending: motorPending != nil, confirming: motorConfirming,
-                                         online: connected, nowMs: nowMs)
+                                         online: connected, nowMs: nowMs, action: motor?.running == true ? "off" : "on")
+    }
+
+    func zoneRefusal(_ key: String, motor: WaterMotor?, zone: Int) -> String? {
+        let nowMs = Date().timeIntervalSince1970 * 1000 + skewMs
+        return meta.motorControl.zoneRefusal(key, motor: motor, zone: zone, current: water.isCurrent(motor, now: Date()),
+                                             isAdmin: isAdmin, pending: motorPending != nil, confirming: motorConfirming,
+                                             online: connected, nowMs: nowMs)
+    }
+
+    /// Continue the running program from another zone (zoned Niagara only).
+    func changeZone(_ key: String, to zone: Int) async {
+        let m = water.motors.first { $0.id == key }
+        if let why = zoneRefusal(key, motor: m, zone: zone) { show(.err, why); return }
+        await sendMotorCommand(key, action: "zone", zone: zone)
     }
 
     func switchMotor(_ key: String, action: String) async {
@@ -717,13 +731,17 @@ final class FarmStore {
         guard action == "on" ? m?.running == false : m?.running == true else {
             show(.err, "The motor is not in the state that button was for."); return
         }
+        await sendMotorCommand(key, action: action, zone: nil)
+    }
+
+    private func sendMotorCommand(_ key: String, action: String, zone: Int?) async {
         guard let uid = user?.uid else { return }
         // Closed before the send, so a second tap cannot queue a second write.
         motorPending = "sending"
         motorPendingKey = key
         motorConfirming = false
         do {
-            let pushed = try await backend.sendMotor(motor: key, action: action, uid: uid,
+            let pushed = try await backend.sendMotor(motor: key, action: action, zone: zone, uid: uid,
                                                      clientAt: Date().timeIntervalSince1970 * 1000 + skewMs)
             motorPending = pushed
             // Sending plus the function's 150 s of confirmation reads.
@@ -753,9 +771,13 @@ final class FarmStore {
         let motorKey = Parse.string(node["motor"]) ?? ""
         let name = (motorKey == "river" ? water.river : water.motors.first { $0.id == motorKey })?.name ?? "The motor"
         let on = Parse.string(node["action"]) == "on"
+        let isZone = Parse.string(node["action"]) == "zone"
         if ok, Parse.bool(node["verified"]) == true {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            show(.ok, "Confirmed: \(name) is \(on ? "running" : "off").")
+            show(.ok, isZone ? "Confirmed: \(name) is on zone \(Parse.string(node["zone"]) ?? "?")."
+                 : "Confirmed: \(name) is \(on ? "running" : "off").")
+        } else if ok, isZone {
+            show(.err, "Sent once. " + (Parse.string(node["message"]).map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "The controller has not confirmed it."))
         } else if ok {
             show(.err, "Sent once, but the motor has not confirmed it. Check it before trying again.")
         } else {

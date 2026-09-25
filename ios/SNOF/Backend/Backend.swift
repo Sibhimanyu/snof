@@ -90,7 +90,7 @@ protocol FarmBackend: AnyObject {
     /// motors only): {motor, action, uid, at, clientAt}. clientAt is the press
     /// on the server's clock; the rules refuse it 30 s late. Returns its key,
     /// which the motor_command function reuses for the result.
-    func sendMotor(motor: String, action: String, uid: String, clientAt: Double) async throws -> String
+    func sendMotor(motor: String, action: String, zone: Int?, uid: String, clientAt: Double) async throws -> String
     /// Store a Mobitech session: the token where no client can read it
     /// (/private/mobitech) and a non-secret status line. Admins only.
     func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws

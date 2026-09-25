@@ -530,7 +530,8 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const busy=await p.evaluate(()=>document.querySelector('#view [data-act="motor-cmd"]')?.disabled);
   await p.waitForTimeout(1200);
   const after=await p.evaluate(()=>{const t=[...document.querySelectorAll('.toast')].map(x=>x.textContent).join('|');
-    state.meta.motorControl.lastByMotor={river:serverNow()-30000}; render();
+    // The cooldown holds a start (never a stop).
+    state.water.river.running=false; state.meta.motorControl.lastByMotor={river:serverNow()-30000}; render();
     return {t,cool:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,
       why:document.querySelector('#view .wmotor-actions + .more-note')?.textContent||''};});
   check('one press writes one command: motor, action, uid, at, clientAt and nothing else',
@@ -542,6 +543,37 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const off=await p.evaluate(()=>{dbConnected=false;state.meta.motorControl.lastByMotor={};render();
     return {d:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,why:document.querySelector('#view .wmotor-actions + .more-note')?.textContent||''};});
   check('no motor press while offline', off.d===true&&/Offline/.test(off.why), off.why);
+  await c.close();
+}
+{
+  // Zone change on the zoned Niagara controller: chips only when its zones
+  // are armed and a program is running; the current zone cannot be pressed;
+  // one press, one command with the zone.
+  const [p,c]=await open('?live=1#/water');
+  const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND')&&m.text().includes('"motor"'))writes.push(m.text());});
+  p.on('dialog',d=>d.accept());
+  await p.waitForSelector('#view .wmotor');
+  const r=await p.evaluate(()=>{const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
+    state.meta=Object.assign({},state.meta,{motorControl:{enabled:true,motors:{'well-motor':true}},
+      water:{enabled:true,livesky:{ok:true,at:now-5000,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true,at:now-5000}}});
+    state.water={pulledAt:now-5000,motors:{'well-motor':{name:'Well motor',vendor:'niagara',role:'drip',running:true,requested:true,
+      program:'P1',zone:3,zoneLeft:'00:30:00',liveAt:iso(now-10e3)}}};
+    render(); const unarmed=document.querySelectorAll('#view .zchip').length;
+    state.meta.motorControl.zones={'well-motor':true}; render();
+    const chips=[...document.querySelectorAll('#view .zchip')].map(b=>({z:b.dataset.zone,now:b.classList.contains('is-now'),d:b.disabled}));
+    state.water.motors['well-motor'].running=false; render(); const stopped=document.querySelectorAll('#view .zchip').length;
+    state.water.motors['well-motor'].running=true; render();
+    return {unarmed,chips,stopped};});
+  check('zone chips only once zone changes are armed', r.unarmed===0, `${r.unarmed}`);
+  check('eight zones, the current one marked and not pressable', r.chips.length===8&&r.chips[2].now&&r.chips[2].d&&!r.chips[4].d, JSON.stringify(r.chips.slice(1,5)));
+  check('no zone change while the motor is stopped', r.stopped===0, `${r.stopped}`);
+  const short=await p.evaluate(()=>{state.water.motors['well-motor'].zoneLeft='00:03:00';render();
+    const d=[...document.querySelectorAll('#view .zchip')].every(b=>b.disabled);
+    const why=document.querySelector('#view .wzones .more-note')?.textContent||'';
+    state.water.motors['well-motor'].zoneLeft='00:30:00';render(); return {d,why};});
+  check('no zone change in the last 5 minutes of a zone', short.d&&/under 5 minutes/.test(short.why), short.why);
+  await p.click('#view .zchip[data-zone="5"]'); await p.waitForTimeout(1200);
+  check('one press writes one zone command', writes.length===1&&/"motor":"well-motor","action":"zone".*"zone":5/.test(writes[0]), writes.join(' | '));
   await c.close();
 }
 {

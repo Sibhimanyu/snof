@@ -54,4 +54,31 @@ import Foundation
         var main = WaterMotor(id: "wellmotor75hp", name: "Wellmotor75HP", vendor: "niagara"); main.role = "main-farm"
         #expect(MotorControl.question(main, action: "on") == "Start Wellmotor75HP? It sends water to the main farm.")
     }
+
+    @Test func zoneChangesNeedTheirOwnSwitchAndARunningProgram() {
+        var c = armed; c.motors["well-motor"] = true
+        var m = WaterMotor(id: "well-motor", name: "Well motor", vendor: "niagara")
+        m.running = true; m.program = "P1"; m.zone = 3; m.zoneLeft = "00:30:00"
+        m.liveAt = Date(timeIntervalSince1970: (1_000_000 - 10_000) / 1000)
+        let z = { (c: MotorControl, m: WaterMotor, zone: Int) in
+            c.zoneRefusal("well-motor", motor: m, zone: zone, current: true, isAdmin: true, pending: false,
+                          confirming: false, nowMs: 1_000_000) }
+        #expect(z(c, m, 5)?.contains("turned off") == true, "zones armed separately")
+        c.zones = ["well-motor": true]
+        #expect(z(c, m, 5) == nil)
+        #expect(z(c, m, 3) == "It is already on zone 3.")
+        var off = m; off.running = false
+        #expect(z(c, off, 5)?.contains("No program") == true, "never starts a motor")
+        var ending = m; ending.zoneLeft = "00:04:00"
+        #expect(z(c, ending, 5)?.contains("under 5 minutes") == true)
+        var quiet = m; quiet.liveAt = Date(timeIntervalSince1970: (1_000_000 - 200_000) / 1000)
+        #expect(z(c, quiet, 5)?.contains("90 s") == true)
+        var cool = c; cool.lastByMotor = ["well-motor": 1_000_000 - 10_000]
+        #expect(z(cool, m, 5) == nil, "an on/off does not hold a zone change")
+        cool.lastZoneByMotor = ["well-motor": 1_000_000 - 10_000]
+        #expect(z(cool, m, 5)?.contains("moments ago") == true)
+        #expect(cool.cooldownLeft("well-motor", nowMs: 1_000_000, action: "off") == nil, "stopping is never held")
+        #expect(Parse.meta(["motorControl": ["enabled": true, "motors": ["well-motor": true],
+                                             "zones": ["well-motor": true]]]).motorControl.zonesArmed("well-motor"))
+    }
 }
