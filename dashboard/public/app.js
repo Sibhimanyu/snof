@@ -493,7 +493,7 @@ function toast(kind, message) {
 
 /* ================= router ================= */
 
-const ROUTES = new Set(['overview', 'irrigation', 'water', 'areas', 'devices', 'area', 'admin', 'sys']);
+const ROUTES = new Set(['overview', 'irrigation', 'water', 'motor', 'areas', 'devices', 'area', 'admin', 'sys']);
 const route = () => {
   const h = (location.hash || '#/').slice(1);
   const [, head, arg] = h.match(/^\/([^/]*)\/?(.*)$/) || [, '', ''];
@@ -564,7 +564,8 @@ function render() {
   const farmName = state.meta?.name || 'SNOF';
   // Each page names itself, so tabs, history and bookmarks tell them apart.
   const pageName = { overview: 'Home', irrigation: 'Irrigation', water: 'Water', areas: 'Rooms', devices: 'All devices',
-    admin: 'Admin', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title }[r.name] || 'Home';
+    admin: 'Admin', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title,
+    motor: r.arg === DCON_KEY ? dconTile().name : (waterMotors().find((m) => m.key === r.arg)?.name || 'Motor') }[r.name] || 'Home';
   document.title = `${pageName} · SNOF`;
   el('brand-sub').textContent =
     farmName.replace(/^Sibhi\s*/i, '').replace(/\s*and Farms$/i, '') || 'Live farm state';
@@ -574,11 +575,11 @@ function render() {
   const areas = groupByArea(all);
   document.querySelectorAll('.nav-admin').forEach((n) => { n.hidden = !isAdmin; });
   document.querySelectorAll('[data-nav]').forEach((n) =>
-    n.classList.toggle('on', n.dataset.nav === (['area', 'devices'].includes(r.name) ? 'areas' : r.name === 'sys' ? 'overview' : r.name)));
+    n.classList.toggle('on', n.dataset.nav === (['area', 'devices'].includes(r.name) ? 'areas' : r.name === 'sys' ? 'overview' : r.name === 'motor' ? 'water' : r.name)));
 
   reconcilePending(all);
-  syncWaterPolling(r.name === 'water' || r.name === 'overview');
-  if (r.name === 'overview' || r.name === 'irrigation') autoRefreshIrrigation();
+  syncWaterPolling(r.name === 'water' || r.name === 'overview' || r.name === 'motor');
+  if (r.name === 'overview' || r.name === 'irrigation' || (r.name === 'motor' && r.arg === DCON_KEY)) autoRefreshIrrigation();
 
   // Chrome above stays live regardless; only the view body is held back.
   if (interacting) {
@@ -592,6 +593,7 @@ function render() {
     else if (r.name === 'devices') view.innerHTML = devicesView(all);
     else if (r.name === 'irrigation') view.innerHTML = irrigationView();
     else if (r.name === 'water') view.innerHTML = waterView();
+    else if (r.name === 'motor') view.innerHTML = motorView(r.arg);
     else if (r.name === 'sys') view.innerHTML = systemView(all, r.arg);
     else if (r.name === 'admin') view.innerHTML = isAdmin ? adminView()
       : head('Admin', '', '') +
@@ -2755,7 +2757,8 @@ function motorPending(m) {
     : 'Asked to stop; the controller has not reported it off yet.';
 }
 
-function waterMotorCard(m, vendorErr) {
+/** `onPage`: on the motor's own page, whose title already names it. */
+function waterMotorCard(m, vendorErr, onPage = false) {
   if (!m) return '';
   const facts = [];
   if (m.vendor === 'livesky') {
@@ -2797,7 +2800,7 @@ function waterMotorCard(m, vendorErr) {
   return `<article class="panel wmotor${live ? ' is-on' : ''}">
     <div class="wmotor-head">
       <img class="wmotor-art" src="/art/${live ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
-      <div class="wmotor-title"><h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p></div>
+      <div class="wmotor-title">${onPage ? '' : `<h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p>`}</div>
       ${motorStateTag(m, waterCurrent(m))}
     </div>
     ${headline.length ? `<div class="mb-facts">${headline.map(([k, v]) => {
@@ -2811,58 +2814,83 @@ function waterMotorCard(m, vendorErr) {
   </article>`;
 }
 
-const waterStage = (n, title, _lead, body) =>
-  `<section class="wstage"><div class="wstage-head"><span class="wstage-n">${n}</span>` +
-  `<div><h2 class="wstage-title">${escapeHtml(title)}</h2></div></div>` +
-  `<div class="wstage-body">${body}</div></section>`;
-const waterFlow = (text) => `<div class="wflow" aria-hidden="true"><span></span><em>${escapeHtml(text)}</em></div>`;
+
+/* ---- water: every motor, alike ----
+ * Owner, 2026-09-25: "a plain visual of all the motors, and when we click a
+ * motor the controls and reports and related data of that one motor shows
+ * up … don't be biased." Four equal tiles — the river motor (Livesky), the
+ * other farm's two motors (Niagara) and the main farm's controller (Mobitech
+ * DCON) — each opening its own page at #/motor/<key>. */
+const DCON_KEY = 'dcon';
+function waterMotors() {
+  const w = state.water || {};
+  const out = [];
+  if (w.river) out.push({ ...w.river, key: 'river' });
+  for (const [key, m] of Object.entries(w.motors || {})) out.push({ ...m, key });
+  return out;
+}
+function dconTile() {
+  const d = (state.irrigation || {}).dcon || {};
+  const s = irrNowState();
+  return { key: DCON_KEY, name: d.device || 'Mobitech DCON', vendor: 'mobitech', running: s.running,
+    sub: 'Mobitech · main farm valves', word: s.running ? 'Watering' : 'Not watering', age: irrChecked() };
+}
+function motorTile(m) {
+  const isDcon = m.key === DCON_KEY;
+  const current = isDcon || waterCurrent(m);
+  const on = m.running === true && current;
+  const sub = isDcon ? m.sub : [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
+  const word = isDcon ? m.word : motorWord(m);
+  const age = isDcon ? m.age : current ? '' : waterAge(m);
+  return `<a class="panel mtile${on ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(m.key)}">
+    <img class="mtile-art" src="/art/${on ? 'motor-on' : 'motor-off'}.png" alt="" width="48" height="48">
+    <span class="mtile-name">${escapeHtml(m.name || 'Motor')}</span>
+    <span class="mtile-sub">${escapeHtml(sub)}</span>
+    <span class="mtile-state"><span class="tag${on ? ' tag-on' : ''}">${escapeHtml(word)}</span>${age ? `<em>${escapeHtml(age)}</em>` : ''}</span>
+  </a>`;
+}
 
 function waterView() {
   const gate = waterGate();
   const w = state.water || {};
   const st = state.meta?.water || {};
-  // Each motor with its key (the function's name for it: "river", or the
-  // slug the water pull gives a Niagara controller).
-  const motors = Object.entries(w.motors || {}).map(([key, m]) => ({ ...m, key }));
-  const supply = motors.filter((m) => m.role === 'main-farm');
-  const others = motors.filter((m) => m.role !== 'main-farm');
-  const liveskyErr = st.livesky && st.livesky.ok === false ? st.livesky.error : '';
-  const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
-
   const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
-  // Said once: the account note above the card already carries a session problem.
-  const riverBody = w.river
-    ? waterMotorCard({ ...w.river, key: 'river' }, liveskyErr && livesky.kind === 'ok' ? `${liveskyErr} Showing the last reading.` : '')
-    : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
-  const riverNote = livesky.kind === 'ok' ? ''
-    : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`;
-
-  const otherBody = motors.length
-    ? `<div class="wmotors">${[...supply, ...others].map((m) => waterMotorCard(m)).join('')}</div>` +
-      (niagaraErr ? `<p class="more-note note-off">${escapeHtml(niagaraErr)} Showing the last readings.</p>` : '')
-    : emptyBlock('No reading from the other farm', niagaraErr || 'It appears after the first pull.');
-
-  const dcon = (state.irrigation || {}).dcon || {};
-  const mainBody = `<a class="panel wmain" href="#/irrigation">
-      <img class="wmotor-art" src="/art/kulam.png" alt="" width="44" height="44">
-      <div class="wmotor-title"><h3>${escapeHtml(dcon.device || 'Mobitech DCON')}</h3>
-        <p>Mobitech DCON · valves and reports</p></div>${arrow()}</a>`;
-
-  const account = isAdmin
-    ? `<details class="acct-sec"${livesky.kind !== 'ok' || lsStep !== 'idle' ? ' open' : ''}><summary>Livesky account</summary>${liveskyPanel()}</details>` : '';
-  // When it was read, and that it only reads: the owner asked why these
-  // motors cannot be switched from here (2026-09-24).
-  const canSwitch = isAdmin && state.meta?.motorControl?.enabled === true && Object.values(state.meta.motorControl.motors || {}).includes(true);
-  return head('Water', `${w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet'}${canSwitch ? '' : ' · read-only'}`, refresh) +
+  const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
+  const tiles = [...waterMotors(), dconTile()];
+  return head('Water', w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet', refresh) +
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
-    `<div class="wchain">` +
-    waterStage('1', 'River', 'The river motor pumps to the other farm.', riverNote + riverBody) +
-    waterFlow('to the other farm') +
-    waterStage('2', 'Other farm', 'Two motors on Niagara controllers.', otherBody) +
-    waterFlow('7.5 HP motor to the main farm') +
-    waterStage('3', 'Main farm', '', mainBody) +
-    `</div>` + account;
+    (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
+    (niagaraErr ? `<p class="more-note note-off">${escapeHtml(niagaraErr)} Showing the last readings.</p>` : '') +
+    `<div class="mgrid">${tiles.map(motorTile).join('')}</div>`;
+}
+
+/** One motor's own page: its controls, readings and reports. */
+function motorView(key) {
+  const back = `<a class="back" href="#/water">${arrow('i-back')}Water</a>`;
+  if (key === DCON_KEY) {
+    const t = dconTile();
+    const mb = isAdmin ? mobitechState() : { kind: 'ok' };
+    const account = isAdmin
+      ? `<details class="acct-sec"${mb.kind !== 'ok' || mbStep !== 'idle' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
+    return head(t.name, t.sub, '', back) +
+      `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
+      `<div class="irr-col">${irrSupplyModule()}</div></div>` + `<div class="irr-wide">${irrCropsModule()}</div>` +
+      irrReportsModule() + account;
+  }
+  const m = waterMotors().find((x) => x.key === key);
+  if (!m) return head('Motor', '', '', back) + emptyBlock('No reading from this motor', 'It appears after the next water pull.');
+  const st = state.meta?.water || {};
+  const isRiver = key === 'river';
+  const livesky = isAdmin && isRiver ? liveskyState() : { kind: 'ok' };
+  const vendorErr = isRiver ? (st.livesky?.ok === false && livesky.kind === 'ok' ? `${st.livesky.error} Showing the last reading.` : '')
+    : (st.niagara?.ok === false ? `${st.niagara.error} Showing the last reading.` : '');
+  const account = isAdmin && isRiver
+    ? `<details class="acct-sec"${livesky.kind !== 'ok' || lsStep !== 'idle' ? ' open' : ''}><summary>Livesky account</summary>${liveskyPanel()}</details>` : '';
+  const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
+  return head(m.name || 'Motor', sub, `<button class="btn btn-ghost btn-sm" data-act="water-refresh">Refresh</button>`, back) +
+    (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
+    waterMotorCard(m, vendorErr, true) + account;
 }
 
 /* ---- Livesky sign-in (admins) ----

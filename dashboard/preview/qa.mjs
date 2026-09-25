@@ -503,14 +503,30 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   } else console.log('  skip  room section checks (no replay.local.json)');
 }
 {
+  // Water: every motor alike (owner, 2026-09-25). Equal tiles, the main
+  // farm's controller among them, each opening its own page — no jump to
+  // another tab.
+  const [p,c]=await open('?live=1#/water');
+  await p.waitForSelector('#view .mgrid');
+  const r=await p.evaluate(()=>{const t=[...document.querySelectorAll('#view .mtile')];
+    const sizes=new Set(t.map(x=>Math.round(x.getBoundingClientRect().width)));
+    return {n:t.length, hrefs:t.map(x=>x.getAttribute('href')), sizes:[...sizes], stages:document.querySelectorAll('#view .wstage').length};});
+  check('the Water tab shows every motor as an equal tile, the controller included', r.n>=2&&r.sizes.length===1&&r.hrefs.includes('#/motor/dcon')&&r.stages===0, JSON.stringify(r));
+  check('every tile opens a motor page, none another tab', r.hrefs.every(h=>h.startsWith('#/motor/')), r.hrefs.join(' '));
+  await p.click('#view .mtile[href="#/motor/dcon"]'); await p.waitForTimeout(400);
+  const d=await p.evaluate(()=>({hash:location.hash, tab:document.querySelector('.tab-item.on, .topnav-item.on')?.textContent||'', now:!!document.querySelector('#view .now')}));
+  check("the controller's page holds its controls, under the Water tab", d.hash==='#/motor/dcon'&&/Water/.test(d.tab)&&d.now, JSON.stringify(d));
+  await c.close();
+}
+{
   // Motor control (docs/motor-control.md): nothing until a motor is armed;
   // then one control that matches the motor's current state, closed on a
   // stale reading, during a change and in the cooldown; one press, one
   // minimal command.
-  const [p,c]=await open('?live=1#/water');
+  const [p,c]=await open('?live=1#/motor/river');
   const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND')&&m.text().includes('"motor"'))writes.push(m.text());});
   p.on('dialog',d=>d.accept());
-  await p.waitForSelector('#view .wmotor');
+  await p.waitForSelector('#view .page-title');
   const none=await p.evaluate(()=>document.querySelectorAll('[data-act="motor-cmd"]').length);
   check('motor buttons appear only for an armed motor', none===0, `${none}`);
   const r=await p.evaluate(()=>{const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
@@ -549,10 +565,10 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // Zone change on the zoned Niagara controller: chips only when its zones
   // are armed and a program is running; the current zone cannot be pressed;
   // one press, one command with the zone.
-  const [p,c]=await open('?live=1#/water');
+  const [p,c]=await open('?live=1#/motor/well-motor');
   const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND')&&m.text().includes('"motor"'))writes.push(m.text());});
   p.on('dialog',d=>d.accept());
-  await p.waitForSelector('#view .wmotor');
+  await p.waitForSelector('#view .page-title');
   const r=await p.evaluate(()=>{const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
     state.meta=Object.assign({},state.meta,{motorControl:{enabled:true,motors:{'well-motor':true}},
       water:{enabled:true,livesky:{ok:true,at:now-5000,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true,at:now-5000}}});
