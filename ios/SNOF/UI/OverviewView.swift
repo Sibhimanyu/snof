@@ -77,14 +77,8 @@ struct FlowHero: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button { store.selectedTab = .water } label: {
-                HStack {
-                    Text("Water").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    if !store.water.enabled { Text("readings off").font(Theme.small).foregroundStyle(Theme.faint) }
-                    Spacer()
-                    Text("Details").font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
-                    Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.on)
-                }
-                .padding(.horizontal, 16).padding(.top, 16)
+                CardHeader(title: "Water", meta: store.water.enabled ? nil : "readings off")
+                    .padding(.horizontal, 16).padding(.top, 16)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -122,22 +116,42 @@ struct Ring: View {
     }
 }
 
-private struct VCard<Content: View>: View {
-    let label: String
-    let go: () -> Void
+/// Every Home card's header: its name, how old its data is, and where it
+/// goes. One header, so Water, Power, Irrigation and Security read alike
+/// (they once mixed a title with an uppercase eyebrow).
+struct CardHeader: View {
+    let title: String
+    var meta: String? = nil
+    var link = "Details"
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title).font(Theme.panelTitle).foregroundStyle(Theme.text)
+            if let meta { Text(meta).font(Theme.small).foregroundStyle(Theme.faint).lineLimit(1) }
+            Spacer(minLength: 8)
+            HStack(spacing: 4) {
+                Text(link)
+                Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))
+            }
+            .font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
+        }
+    }
+}
+
+/// A Home card: the header, then its picture and words, inset as Water's.
+struct HomeCard<Content: View>: View {
+    let title: String
+    var meta: String? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
-        Button { Haptics.select(); go() } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(label).eyebrowStyle()
-                content
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(14)
-            .modifier(Panel(padding: 0))
+        VStack(alignment: .leading, spacing: 12) {
+            CardHeader(title: title, meta: meta)
+            content
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(16)
+        .modifier(Panel(padding: 0))
     }
 }
 
@@ -149,7 +163,7 @@ struct IrrigationRingCard: View {
         let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
         let last = Irrigation.runs(c).first
         let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
-        VCard(label: "Irrigation" + (checked.map { " · \($0)" } ?? ""), go: { store.openMotor(FarmStore.dconKey) }) {
+        Button { Haptics.select(); store.openMotor(FarmStore.dconKey) } label: { HomeCard(title: "Irrigation", meta: checked) {
             if c.isEmpty {
                 Text("No data yet").font(Theme.meta).foregroundStyle(Theme.muted)
             } else {
@@ -189,7 +203,8 @@ struct IrrigationRingCard: View {
                     }
                 }
             }
-        }
+        } }
+        .buttonStyle(.plain)
     }
 }
 
