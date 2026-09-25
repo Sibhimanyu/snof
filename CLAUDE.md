@@ -384,3 +384,8 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   press, after them on system and room pages (`offPanels()` / `OffPanels`),
   in place of the old "Switched off: …" line. An AC or TV shows only itself
   there, never its setting switches.
+- **Admins manage people on iOS too** (owner, 2026-09-25; iOS 0.11.17).
+  Account → People and access (`PeopleView`, `Parse.access`) mirrors the
+  web's `#/admin`: invite by email (view or view + control), grant or revoke
+  view and control, cancel an invite. Same writes as `aclSet()` /
+  `sendInvite()`, so the RTDB rules decide; admin is never offered.

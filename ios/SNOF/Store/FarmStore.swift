@@ -1006,6 +1006,62 @@ final class FarmStore {
 
     /* ---- toasts ---- */
 
+    /* ---- people and access (admins) ---- Mirrors aclSet(), sendInvite()
+     * and cancelInvite() in app.js, down to the toasts. */
+
+    private(set) var access: AccessList?
+    private(set) var accessBusy: Set<String> = []
+
+    func watchAccess(_ on: Bool) {
+        guard isAdmin || !on else { return }
+        if on {
+            backend.observeAccess { [weak self] v in self?.access = Parse.access(v) }
+        } else {
+            backend.observeAccess(nil)
+        }
+    }
+
+    func setAccess(_ person: Person, to tier: AccessTier) async {
+        guard isAdmin, person.uid != user?.uid, person.tier != .admin, tier != .admin else { return }
+        accessBusy.insert(person.uid); defer { accessBusy.remove(person.uid) }
+        do {
+            try await backend.setAccess(uid: person.uid, tier: tier)
+            show(.ok, "Access updated.")
+        } catch {
+            show(.err, (error as? BackendError) == .refused ? "The database refused that change." : "Could not update: \(error.localizedDescription)")
+        }
+    }
+
+    /// true when the invite was written, so the form can clear.
+    func invite(email raw: String, tier: AccessTier) async -> Bool {
+        guard isAdmin else { return false }
+        let email = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard Invites.isEmail(email), let key = Invites.key(for: email) else {
+            show(.err, "Enter a valid email address."); return false
+        }
+        let t: AccessTier = tier == .control ? .control : .view
+        accessBusy.insert(key); defer { accessBusy.remove(key) }
+        do {
+            try await backend.invite(key: key, tier: t)
+            show(.ok, "\(email) will get \(t == .control ? "view + control" : "view") access the moment they sign in.")
+            return true
+        } catch {
+            show(.err, (error as? BackendError) == .refused ? "The database refused that invite." : "Could not invite: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    func cancelInvite(_ invite: PendingInvite) async {
+        guard isAdmin else { return }
+        accessBusy.insert(invite.key); defer { accessBusy.remove(invite.key) }
+        do {
+            try await backend.cancelInvite(key: invite.key)
+            show(.ok, "Invite cancelled.")
+        } catch {
+            show(.err, "Could not cancel that invite.")
+        }
+    }
+
     func show(_ kind: Toast.Kind, _ message: String) {
         let t = Toast(kind: kind, message: message)
         toast = t

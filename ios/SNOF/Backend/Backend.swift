@@ -104,6 +104,17 @@ protocol FarmBackend: AnyObject {
     /// with this user's Firebase ID token. Returns its JSON answer; throws
     /// with the function's own error text when it refuses.
     func waterSession(_ body: [String: Any]) async throws -> [String: Any]
+    /* People and access (admins; mirrors adminView() in app.js). Each write is
+     * one the RTDB rules already allow an admin, and nothing here can make
+     * an admin: acl/admins refuses every client write. */
+    /// Listen to the whole acl subtree; nil handler stops listening.
+    func observeAccess(_ handler: ((Any?) -> Void)?)
+    /// view: viewer only; control: viewer + controller; none: both removed.
+    func setAccess(uid: String, tier: AccessTier) async throws
+    /// acl/invites/<key> = {tier, at}: claimed by that person's first sign-in.
+    func invite(key: String, tier: AccessTier) async throws
+    func cancelInvite(key: String) async throws
+
     /// Drop writes the server has not acknowledged yet. Called when a control
     /// times out, so a toggle queued while offline cannot fire minutes later.
     func cancelUnsentWrites()
