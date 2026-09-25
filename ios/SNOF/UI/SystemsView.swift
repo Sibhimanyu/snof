@@ -361,14 +361,15 @@ struct PowerPage: View {
             ("Today", i.kwh.map(Power.kwh) ?? "—"),
             ("Lifetime", i.total.map { "\(Int($0.rounded()).formatted()) kWh" } ?? "—"),
             ("Grid", i.grid.map { "\(Int($0.rounded())) V" } ?? "—"),
-            ("Inverter", i.temp.map { "\(Format.trim($0)) °C" } ?? "—"),
+            ("Inverter temp", i.temp.map { "\(Format.trim($0)) °C" } ?? "—"),
         ]
         if let m = i.mode { out.append(("Mode", m)) }
         let ents = l.device?.entities ?? []
         func f(_ suffix: String) -> Entity? { ents.first { $0.name.lowercased().hasSuffix(suffix) && !$0.isBad } }
         if let sw = f("export limit switch") {
             let pct = f("grid export limit").flatMap { Double($0.state ?? "") }
-            out.append(("Export limit", (sw.state == "on" ? "On" : "Off") + (pct.map { " (limit \(Format.trim($0))%)" } ?? "")))
+            out.append(("Export limit", sw.state == "on" ? "On, at " + (pct.map { "\(Format.trim($0))%" } ?? "its set value")
+                                                     : "Not in use" + (pct.map { " (set to \(Format.trim($0))%)" } ?? "")))
         }
         return out
     }
@@ -562,7 +563,7 @@ struct SystemView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     if cam.isBad { Tag(text: "Offline", kind: .bad) }
                     else if !now.isEmpty { Tag(text: now.joined(separator: ", ").capitalized + " now", kind: .on) }
-                    else { Tag(text: "Watching") }
+                    else { Tag(text: "Online") }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .accessibilityElement(children: .combine)
@@ -719,7 +720,8 @@ struct PumpPowerCard: View {
                             else { Tag(text: "All three phases", kind: .on) }
                         }
                         if let d = s.pumpDrawing {
-                            Tag(text: d ? "Pump running · " + s.currentA.map { String(format: "%.1f", $0) }.joined(separator: " / ") + " A" : "Pump off",
+                            let at = s.at.map { " at \($0)" } ?? ""
+                            Tag(text: d ? "Pump on\(at) · " + s.currentA.map { String(format: "%.1f", $0) }.joined(separator: " / ") + " A" : "Pump off\(at)",
                                 kind: d ? .on : .plain)
                         }
                     }

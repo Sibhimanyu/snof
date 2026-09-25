@@ -322,11 +322,11 @@ public struct SecurityGlance: Sendable {
         return SecurityGlance(alarms: alarms, cameras: cameras, sensors: sensors)
     }
 
-    /// "armed_home" -> "Armed · home".
+    /// "armed_home" -> "Armed · home mode".
     public static func alarmLabel(_ state: String?) -> String {
         guard let s = state, !s.isEmpty else { return "Unknown" }
         if s.hasPrefix("armed_") {
-            return "Armed · " + s.dropFirst(6).replacingOccurrences(of: "_", with: " ")
+            return "Armed · " + s.dropFirst(6).replacingOccurrences(of: "_", with: " ") + " mode"
         }
         return s.prefix(1).uppercased() + s.dropFirst().replacingOccurrences(of: "_", with: " ")
     }

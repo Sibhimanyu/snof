@@ -83,7 +83,7 @@ REPORT_TYPES = {
 }
 
 REPORT_LABELS = {
-    "live_readings": "Power and pressure now",
+    "live_readings": "Power and pressure reading",
     "session_log": "Irrigation session log",
     "performance": "Valve runtime against pressure",
     "controller": "Controller dashboard",

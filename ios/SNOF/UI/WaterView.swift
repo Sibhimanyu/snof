@@ -296,7 +296,7 @@ struct MotorCard: View {
                         .font(Theme.meta).foregroundStyle(Theme.muted)
                 }
                 Spacer(minLength: 8)
-                Tag(text: m.running == true ? "Running" : m.running == false ? "Off" : "Unknown",
+                Tag(text: m.running == true ? (current ? "Running" : "Was running") : m.running == false ? (current ? "Off" : "Was off") : "Unknown",
                     kind: m.running == true && current ? .on : .plain)
             }
             if !headline.isEmpty { factGrid(headline) }

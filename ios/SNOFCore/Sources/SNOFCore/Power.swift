@@ -55,9 +55,11 @@ public struct LineStatus: Sendable, Equatable {
 
 public enum Power {
     public static let lines: [PowerLineSpec] = [
-        .init(id: "home", title: "Home & sheds", phase: "Single phase", short: "1-phase", inverter: .goodwe, brand: "GoodWe", use: "The house and the sheds"),
-        .init(id: "ev", title: "EV charging", phase: "Three phase", short: "3-phase", inverter: .foxess, brand: "V-Guard", use: "Charges the XEV 9e"),
-        .init(id: "farm", title: "Farm motor", phase: "Three phase", short: "3-phase", inverter: nil, brand: "", use: "Free agricultural supply"),
+        // Titles name the line, never an action: "EV charging" read as the
+        // car charging right now (owner, 2026-09-25).
+        .init(id: "home", title: "Home & sheds line", phase: "Single phase", short: "1-phase", inverter: .goodwe, brand: "GoodWe", use: "For the house and the sheds"),
+        .init(id: "ev", title: "EV charger line", phase: "Three phase", short: "3-phase", inverter: .foxess, brand: "V-Guard", use: "For charging the XEV 9e"),
+        .init(id: "farm", title: "Farm motor line", phase: "Three phase", short: "3-phase", inverter: nil, brand: "", use: "Free agricultural supply, runs the main farm motor"),
     ]
 
     static func m(_ s: String, _ p: String) -> Bool { s.range(of: p, options: .regularExpression) != nil }
@@ -116,11 +118,14 @@ public enum Power {
         guard let s = l.supply, s.hasVoltage else {
             return .init(state: .off, figure: "No reading", unit: "", sub: "from the irrigation controller")
         }
-        let at = s.at.map { " · \($0)" } ?? ""
         // Free agricultural power comes and goes on the board's schedule, so a
-        // line with no power is "off now", not a fault; a missing phase is.
-        if !s.powerOn { return .init(state: .rest, figure: "Power off", unit: "", sub: (l.supplyToday.map { "\($0) today" } ?? "no supply") + at) }
-        if s.missingPhase { return .init(state: .bad, figure: "\(s.livePhases) of 3", unit: "phases", sub: "phase missing" + at) }
-        return .init(state: .on, figure: "3", unit: "phases", sub: (s.pumpDrawing == true ? "pump running" : "pump off") + at)
+        // line with no power is not a fault; a missing phase is. The reading is
+        // from a moment ("at 08:16"), so it is said as one, never as now.
+        let when = s.at.map { " at \($0)" } ?? ""
+        if !s.powerOn {
+            return .init(state: .rest, figure: "No power", unit: "", sub: (l.supplyToday.map { "\($0) supply today · " } ?? "") + "read" + (when.isEmpty ? " last" : when))
+        }
+        if s.missingPhase { return .init(state: .bad, figure: "\(s.livePhases) of 3", unit: "phases", sub: "a phase was missing" + when) }
+        return .init(state: .on, figure: "3", unit: "phases", sub: "pump " + (s.pumpDrawing == true ? "on" : "off") + when)
     }
 }

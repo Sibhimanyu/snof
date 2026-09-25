@@ -113,8 +113,10 @@ private struct Station: View {
 struct FlowHero: View {
     @Environment(FarmStore.self) private var store
 
-    private func word(_ m: WaterMotor?) -> String {
-        m.map { $0.running == true ? "Running" : $0.running == false ? "Off" : "Unknown" } ?? "No reading"
+    /// An old reading says what the motor *was* doing: "Was running", never a
+    /// bare "Running" with an age beside it (owner, 2026-09-25).
+    private func word(_ m: WaterMotor?, current: Bool = true) -> String {
+        m.map { $0.running == true ? (current ? "Running" : "Was running") : $0.running == false ? (current ? "Off" : "Was off") : "Unknown" } ?? "No reading"
     }
 
     var body: some View {
@@ -144,17 +146,17 @@ struct FlowHero: View {
                 }
                 HStack(alignment: .top, spacing: 0) {
                     Station(art: live(w.river) ? "art-motor-on" : "art-motor-off", title: "River",
-                            sub: word(w.river), on: live(w.river), age: aged(w.river))
+                            sub: word(w.river, current: w.river.map { w.isCurrent($0, now: store.now) } ?? true), on: live(w.river), age: aged(w.river))
                     Pipe(on: live(w.river)).padding(.top, 28)
                     Station(art: live(supply) ? "art-motor-on" : "art-motor-off", title: "Other farm",
-                            sub: supply.map { "7.5 HP \(word($0).lowercased())" } ?? "No reading", on: live(supply), age: aged(supply))
+                            sub: supply.map { "7.5 HP \(word($0, current: w.isCurrent($0, now: store.now)).lowercased())" } ?? "No reading", on: live(supply), age: aged(supply))
                     Pipe(on: live(supply)).padding(.top, 28)
                     Station(art: "art-kulam", title: "Main farm", sub: say.running ? "Watering" : "Not watering", on: say.running)
                 }
                 if let drip {
                     HStack(spacing: 8) {
                         Image(live(drip) ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 22, height: 22)
-                        Text([drip.name, word(drip), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }, aged(drip)]
+                        Text([drip.name, word(drip, current: w.isCurrent(drip, now: store.now)), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }, aged(drip)]
                                 .compactMap { $0 }.joined(separator: " · "))
                             .font(Theme.font(12.5, live(drip) ? .semibold : .regular, relativeTo: .caption))
                             .foregroundStyle(live(drip) ? Theme.on : Theme.muted).lineLimit(1)

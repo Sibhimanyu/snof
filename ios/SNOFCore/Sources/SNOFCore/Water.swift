@@ -56,8 +56,8 @@ public struct WaterMotor: Hashable, Sendable, Identifiable {
 
     public var roleText: String {
         switch role {
-        case "main-farm": return "Sends water to the main farm"
-        case "drip": return "Runs this farm's own drip zones"
+        case "main-farm": return "For the main farm's water"
+        case "drip": return "For this farm's own drip zones"
         default: return group
         }
     }

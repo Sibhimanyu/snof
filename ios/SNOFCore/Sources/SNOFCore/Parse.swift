@@ -183,7 +183,7 @@ public enum Parse {
         let type = string(d["type"]) ?? ""
         let params = d["params"] as? [String: Any]
         return Report(key: key, type: type,
-                      label: string(d["label"]) ?? IrrigationTypes.label(for: type) ?? "Report",
+                      label: IrrigationTypes.label(for: type) ?? string(d["label"]) ?? "Report",
                       from: string(params?["from"]), to: string(params?["to"]),
                       status: string(d["status"]) ?? "",
                       summary: string(d["summary"]) ?? "",
