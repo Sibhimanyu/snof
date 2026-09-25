@@ -650,7 +650,8 @@ function skeletonView() {
   const r = route();
   const title = { water: 'Water', motor: 'Water', areas: 'Rooms', devices: 'Rooms', admin: 'Admin' }[r.name] || 'Home';
   return head(title, '', '') +
-    `<div class="sk-grid">${'<div class="sk-card"></div>'.repeat(6)}</div>`;
+    `<div class="loader-block" role="status"><span class="loader"><img src="/art/logo-mark.png" alt="" width="84" height="84"></span>
+      <p>Connecting to the farm…</p></div>`;
 }
 
 /** Rooms with anything not reporting, worst first. */

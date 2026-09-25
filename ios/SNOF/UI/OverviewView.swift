@@ -745,10 +745,43 @@ struct AdaptiveGrid<Content: View>: View {
 
 struct LoadingBlock: View {
     var body: some View {
-        VStack(spacing: 12) {
-            ProgressView()
+        VStack(spacing: 14) {
+            LogoLoader()
             Text("Connecting to the farm…").font(Theme.meta).foregroundStyle(Theme.muted)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 80)
+    }
+}
+
+/// The loading state (owner, 2026-09-25): the logo, breathing, with a brand
+/// ring turning round it. 84 pt, the launch screen's LaunchLogo, so launch
+/// hands over to the app without a jump. Mirrors .loader in styles.css.
+struct LogoLoader: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var turn = false
+    @State private var breathe = false
+
+    var body: some View {
+        ZStack {
+            // Inset by half the line, so the ring stays inside its frame.
+            Circle().inset(by: 1.25).stroke(Theme.line2, lineWidth: 2.5)
+            Circle().inset(by: 1.25).trim(from: 0, to: 0.28)
+                .stroke(Theme.brand, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(turn ? 360 : 0))
+            Image("brand-logo").resizable().interpolation(.high).scaledToFit()
+                .frame(width: 84, height: 84)
+                .scaleEffect(breathe ? 0.94 : 1).opacity(breathe ? 0.85 : 1)
+        }
+        .frame(width: 104, height: 104)
+        .onAppear {
+            // The ring keeps turning with Reduce Motion on: it is what says
+            // "still working". Only the breathing stops.
+            withAnimation(.linear(duration: reduceMotion ? 1.2 : 0.9).repeatForever(autoreverses: false)) { turn = true }
+            if !reduceMotion {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { breathe = true }
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Loading")
     }
 }

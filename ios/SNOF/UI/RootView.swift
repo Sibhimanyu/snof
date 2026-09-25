@@ -9,7 +9,8 @@ struct RootView: View {
     var body: some View {
         Group {
             switch store.phase {
-            case .boot: Theme.bg.ignoresSafeArea()
+            // Centred on the whole screen, where the launch screen drew it.
+            case .boot: ZStack { Theme.bg; LogoLoader() }.ignoresSafeArea()
             case .signedOut: GateView(kind: .signIn)
             case .denied(let email): GateView(kind: .denied(email))
             case .misconfigured(let why): GateView(kind: .message(why))
