@@ -32,7 +32,6 @@ struct MainTabs: View {
     @State private var account = false
     @State private var overviewPath = NavigationPath()
     @State private var areasPath = NavigationPath()
-    @State private var irrigationPath = NavigationPath()
     @State private var waterPath = NavigationPath()
 
     var body: some View {
@@ -40,9 +39,6 @@ struct MainTabs: View {
         TabView(selection: $store.selectedTab) {
             Tab("Home", systemImage: "house", value: AppTab.overview) {
                 stack(path: $overviewPath) { OverviewView() }
-            }
-            Tab("Irrigation", systemImage: "drop", value: AppTab.irrigation) {
-                stack(path: $irrigationPath) { IrrigationView() }
             }
             Tab("Water", systemImage: "water.waves", value: AppTab.water) {
                 stack(path: $waterPath) { WaterView() }
@@ -62,6 +58,14 @@ struct MainTabs: View {
         // TabView was built without it on Catalyst (fatal "No Observable
         // object of type FarmStore found", snapshot review 2026-09-25).
         .sheet(isPresented: $account) { AccountSheet().environment(store) }
+        // Anything that used to open the Irrigation tab opens the controller's
+        // own page under Water instead.
+        .onChange(of: store.openMotorKey, initial: true) { _, key in
+            guard let key else { return }
+            store.selectedTab = .water
+            waterPath = NavigationPath([MotorRoute(key: key)])
+            store.openMotorKey = nil
+        }
         #if DEBUG
         .onAppear {
             if let id = Snapshot.value("-area") { store.selectedTab = .areas; areasPath.append(AreaRoute(id: id)) }

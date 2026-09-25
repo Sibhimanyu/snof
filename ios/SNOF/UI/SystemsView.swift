@@ -89,7 +89,7 @@ private struct AttentionRowView: View {
         case .system(let id):
             NavigationLink(value: SystemRoute(id: id)) { label }.buttonStyle(.plain)
         case .irrigation:
-            Button { store.selectedTab = .irrigation } label: { label }.buttonStyle(.plain)
+            Button { store.openMotor(FarmStore.dconKey) } label: { label }.buttonStyle(.plain)
         case .water:
             Button { store.selectedTab = .water } label: { label }.buttonStyle(.plain)
         case .home:
@@ -341,7 +341,7 @@ struct PowerPage: View {
             } else {
                 if let s = l.supply, s.hasVoltage { PhaseBars(volts: s.phaseV) }
                 Facts(items: supplyFacts(l))
-                Button { store.selectedTab = .irrigation } label: {
+                Button { store.openMotor(FarmStore.dconKey) } label: {
                     HStack(spacing: 4) {
                         Text("Pump & irrigation").font(Theme.font(13, .bold, relativeTo: .footnote))
                         Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))

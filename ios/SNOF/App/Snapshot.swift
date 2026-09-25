@@ -25,7 +25,7 @@ enum Snapshot {
         switch value("-tab") {
         case "areas": store.selectedTab = .areas
         case "devices": store.selectedTab = .areas; store.roomsMode = .devices
-        case "irrigation": store.selectedTab = .irrigation
+        case "irrigation": store.openMotor(FarmStore.dconKey)
         case "water": store.selectedTab = .water
         default: break
         }

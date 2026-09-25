@@ -11,7 +11,9 @@ enum Phase: Equatable {
     case app
 }
 
-enum AppTab: Hashable { case overview, irrigation, water, areas }
+/// No tab of its own for the main farm (owner, 2026-09-25: "give equal
+/// importance"): its controller is one of the motors under Water.
+enum AppTab: Hashable { case overview, water, areas }
 /// The Rooms tab shows rooms, or the same devices as one list.
 enum RoomsMode: Hashable { case rooms, devices }
 
@@ -83,6 +85,11 @@ final class FarmStore {
 
     var toast: Toast?
     var selectedTab: AppTab = .overview
+    /// A motor page to open on the Water tab (RootView pushes it).
+    var openMotorKey: String?
+
+    /// Open one motor's own page, e.g. the main farm's controller.
+    func openMotor(_ key: String) { openMotorKey = key }
     var roomsMode: RoomsMode = .rooms
     var deviceStatus: StatusFilter = .all
     var deviceDomain: String?
