@@ -36,7 +36,7 @@ it, each written down where it lives:
   Mobitech controller (phases, supply/pump hours). The line ↔ inverter map
   is written in `POWER_LINES` (app.js) / `Power.lines` (SNOFCore), since HA
   does not know it; inverters are recognised by their integration's
-  entities. Home shows the three side by side; `#/sys/solar` is the Power
+  entities. Home draws them as a meter board (rows, square tiles, one solar bar split by inverter), deliberately unlike the water chain's circles (owner); `#/sys/solar` is the Power
   page. Needs a look names an inverter offline in daylight per line. No
   car or charger entity exists in HA, so the EV line shows only its
   inverter. Free-line power off reads as "Power off" (the board's schedule),

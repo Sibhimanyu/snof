@@ -21,11 +21,14 @@ struct OverviewView: View {
             } else {
                 AttentionCard()
                 FlowHero()
-                PowerCard()
                 if sizeClass == .regular {
-                    HStack(alignment: .top, spacing: 14) { IrrigationRingCard(); SecurityCard() }
-                        .fixedSize(horizontal: false, vertical: true)
+                    // Power beside Irrigation and Security, stacked, as on the web.
+                    HStack(alignment: .top, spacing: 14) {
+                        PowerCard().frame(maxWidth: .infinity)
+                        VStack(spacing: 14) { IrrigationRingCard(); SecurityCard() }.frame(maxWidth: .infinity)
+                    }
                 } else {
+                    PowerCard()
                     IrrigationRingCard()
                     SecurityCard()
                 }

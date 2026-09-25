@@ -1024,28 +1024,46 @@ function lineStatus(l) {
   return { state: 'on', figure: '3', unit: 'phases', sub: `${sp.drawing ? 'pump running' : 'pump off'}${at}` };
 }
 
-const lineArt = (id) => id === 'home' ? artImg('house', 'flow-art')
-  : id === 'farm' ? artImg('motor-on', 'flow-art')
+const lineArt = (id) => id === 'home' ? artImg('house', 'pw-art')
+  : id === 'farm' ? artImg('motor-on', 'pw-art')
   : `<svg viewBox="0 0 24 24" class="ico pw-ico" aria-hidden="true"><use href="#i-car"/></svg>`;
 
-/* Home: the three lines side by side, what each is doing now. */
+/* Home: a meter board, not a picture. Water is a chain (river → farm), so it
+ * is drawn as one; the three EB lines are separate supplies, so they are rows
+ * that read down like a meter board: what the line is for, then its number.
+ * Solar on top as one bar, split by inverter. (Owner, 2026-09-25: the two
+ * panels looked the same.) */
 function powerPanel(systems) {
   const lines = powerLines(systems);
   if (!lines.some((l) => l.dev || (l.supply && l.supply.v.length))) return '';
-  const solarW = lines.reduce((t, l) => t + (l.inv?.watts || 0), 0);
+  const solar = lines.filter((l) => l.inverter);
+  const solarW = solar.reduce((t, l) => t + (l.inv?.watts || 0), 0);
+  const split = solarW > 0 ? `<div class="pw-split" role="img" aria-label="${escapeHtml(solar.map((l) => `${l.title} ${fmtPower(l.inv?.watts || 0)}`).join(', '))}">` +
+    solar.map((l, i) => `<i class="pw-seg s${i}" style="flex:${(l.inv?.watts || 0).toFixed(0)}"></i>`).join('') + `</div>` : '';
+  const right = (l, st) => {
+    if (!l.inverter && l.supply && l.supply.v.length && st.state !== 'rest') {
+      return `<span class="pw-right"><span class="pw-mini" aria-label="Phase voltages ${l.supply.v.map(Math.round).join(', ')} volts">` +
+        l.supply.v.map((x) => `<i class="${x < 120 ? 'dead' : x < 200 || x > 260 ? 'warn' : ''}" style="height:${Math.max(8, Math.min(100, x / 300 * 100)).toFixed(0)}%"></i>`).join('') +
+        `</span><span class="pw-sub">${escapeHtml(st.sub)}</span></span>`;
+    }
+    return `<span class="pw-right"><strong class="pw-fig">${escapeHtml(st.figure)}${st.unit ? `<small>${escapeHtml(st.unit)}</small>` : ''}</strong>` +
+      `${st.sub ? `<span class="pw-sub">${escapeHtml(st.sub)}</span>` : ''}</span>`;
+  };
+  let seg = 0;
   return `<section class="panel power" aria-label="Power">
-    <div class="flow-head"><h2 class="panel-title">Power</h2>
-      ${solarW > 0 ? `<span class="card-age">${escapeHtml(fmtPower(solarW))} solar now</span>` : ''}
+    <div class="pw-head"><h2 class="panel-title">Power</h2>
       <a class="panel-link" href="#/sys/solar">Details${arrow()}</a></div>
-    <div class="pw-row">${lines.map((l) => {
+    ${solarW > 0 ? `<div class="pw-solar"><span class="pw-solar-n">${escapeHtml(fmtPower(solarW))}</span><span class="pw-solar-l">solar right now</span></div>${split}`
+      : `<div class="pw-solar"><span class="pw-solar-l">No solar right now</span></div>`}
+    <div class="pw-rows">${lines.map((l) => {
       const st = lineStatus(l);
       const stale = !l.inverter && !l.current;
+      const key = l.inverter ? `<i class="pw-key s${seg++}"></i>` : '';
       return `<a class="pw-line is-${st.state}${stale ? ' is-stale' : ''}" href="#/sys/solar">
-        <span class="flow-disc">${lineArt(l.id)}</span>
-        <span class="pw-title">${escapeHtml(l.title)}</span>
-        <span class="pw-phase">${escapeHtml(l.short)} · ${escapeHtml(l.brand || 'free')}</span>
-        <strong class="pw-fig">${escapeHtml(st.figure)}${st.unit ? `<small>${escapeHtml(st.unit)}</small>` : ''}</strong>
-        ${st.sub ? `<span class="pw-sub">${escapeHtml(st.sub)}</span>` : ''}</a>`;
+        <span class="pw-tile">${lineArt(l.id)}</span>
+        <span class="pw-main"><span class="pw-title">${key}${escapeHtml(l.title)}</span>
+          <span class="pw-phase">${escapeHtml(l.phase)} · ${escapeHtml(l.brand ? `${l.brand} solar` : 'free supply')}</span></span>
+        ${right(l, st)}</a>`;
     }).join('')}</div></section>`;
 }
 
@@ -1095,7 +1113,7 @@ function powerPage(systems) {
         `<a class="panel-link pw-more" href="#/irrigation">Pump & irrigation${arrow()}</a>`;
     }
     return `<section class="panel pw-sec is-${st.state}" aria-label="${escapeHtml(l.title)}">
-      <div class="pw-sec-head"><span class="flow-disc">${lineArt(l.id)}</span>
+      <div class="pw-sec-head"><span class="pw-tile">${lineArt(l.id)}</span>
         <div><h2 class="panel-title">${escapeHtml(l.title)}</h2>
           <p class="pw-sec-sub">${escapeHtml([l.phase, l.inverter && `${l.brand} solar`, l.use].filter(Boolean).join(' · '))}</p></div>
         <strong class="pw-fig">${escapeHtml(st.figure)}${st.unit ? `<small>${escapeHtml(st.unit)}</small>` : ''}</strong></div>
@@ -1238,8 +1256,8 @@ function overviewView(all) {
   const pill = `<span id="head-bridge" class="pill pill-head ${b.cls}" role="status"><span class="dot"></span><span id="head-bridge-text">${escapeHtml(b.long)}</span></span>`;
   // Nothing is "all clear" until the farm has actually been heard from.
   const heard = !!(state.meta && (state.meta.bridge || state.meta.updatedAt));
-  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() + powerPanel(systems) +
-    `<div class="vcards">${irrigationCard()}${securityCard(systems)}</div>` +
+  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() +
+    `<div class="vcards">${powerPanel(systems)}${irrigationCard()}${securityCard(systems)}</div>` +
     switchTiles(all) + systemsGrid(systems);
 }
 
