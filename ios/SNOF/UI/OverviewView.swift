@@ -100,8 +100,10 @@ struct Ring: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(track, lineWidth: 9)
-            Circle().trim(from: 0, to: max(0, min(1, fraction)))
+            // Inset by half the line, so the ring stays inside its frame and
+            // lines up with the card's other edges.
+            Circle().inset(by: 4.5).stroke(track, lineWidth: 9)
+            Circle().inset(by: 4.5).trim(from: 0, to: max(0, min(1, fraction)))
                 .stroke(color, style: StrokeStyle(lineWidth: 9, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
