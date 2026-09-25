@@ -123,24 +123,19 @@ First live pull (2026-09-24 22:44): river motor running 42 min at
 467/457/453 V; the zoned motor on P1 zone 3; the 7.5 HP motor off. No long
 digit run anywhere under `water/` except the `pulledAt` timestamp.
 
-## Control (not built): owner decisions first
+## Control
 
-Motor on/off for the three motors is step 2. It follows
-[irrigation-control.md](irrigation-control.md): a lock per vendor taken
-before sending, confirmation only from the controller's own state (Livesky
-`-inprogress` clearing; Niagara `liveMessage`/`msgcode`, never `status`),
-admin-only rules, fixed templates (`MOTORON`/`MOTOROFF`; `MTRON`/`MTROF`),
-and a kill switch off by default. **Before building it the owner must
-answer:**
+Built 2026-09-25: on and off, one motor at a time, confirmed by the motor
+itself, off by default and armed per motor. See
+[motor-control.md](motor-control.md). Still open, and still the owner's:
 
 1. Do the Niagara "well" motors draw from wells, from storage the river
    motor fills, or both? Do they share one source?
 2. What does the 7.5 HP motor fill at the main farm: a sump, a tank, or
    straight into the DCON mains?
 3. Is the empty group "Irrigation 5HP" a retired motor or one still to come?
-4. Livesky: re-enabling auto-start (`AUTOON`) with power present *starts*
-   the motor. It stays out of scope, along with every settings keyword and
-   every program start.
+4. Livesky auto-start (`AUTOON`) stays out of scope: with power present it
+   *starts* the motor. So do settings keywords and program starts.
 
 Any cross-farm interlock (for example: no 7.5 HP run while the river motor
 is off) is a new safety decision: propose it, and don't build it until the

@@ -35,6 +35,7 @@ from firebase_functions.params import SecretParam, StringParam
 
 import dcon
 import irrigation_control
+import motor_control
 import reports
 import water
 
@@ -311,6 +312,48 @@ def water_poll(event: scheduler_fn.ScheduledEvent) -> None:
     except Exception:          # noqa: BLE001 — best-effort, like _status
         _LOG.exception("Could not write meta/reports.transport")
 
+
+
+# ---------------------------------------------------------------- motor control
+#
+# On and off for the river motor and the other farm's two motors: the one
+# path, docs/motor-control.md. Triggered only by an admin's own append (the
+# RTDB rules refuse everyone else, and refuse while switched off or while a
+# change is in flight); nothing scheduled or automatic writes that queue.
+# Cost shape: per press, one trigger, ~3 vendor reads before sending, one
+# send, then at most 15 reads over 150 s. Nothing runs between presses.
+
+@db_fn.on_value_created(
+    reference="/farms/{farm}/motor_commands/{cmd}",
+    instance="snof-live-default-rtdb",
+    region="asia-southeast1",
+    secrets=[NIAGARA_BASE, NIAGARA_USER_ID],
+    memory=options.MemoryOption.MB_256,
+    # Reads, one send, then up to 150 s of confirmation reads.
+    timeout_sec=240,
+    # One at a time, ever: this starts and stops pumps.
+    max_instances=1,
+    concurrency=1,
+)
+def motor_command(event: db_fn.Event[Any]) -> None:
+    """Start or stop one motor, once, and confirm it from the motor itself."""
+    farm, cmd_id = event.params["farm"], event.params["cmd"]
+    if farm != FARM_SLUG.value:
+        return
+    store = _db()
+    root = f"farms/{farm}"
+
+    def motor_factory(motor: str):
+        # Built only after every gate has passed: a refused command never
+        # touches a vendor or a secret's value.
+        if motor == motor_control.RIVER:
+            return motor_control.LiveskyMotor(LIVESKY_BASE.value, store.reference(water.LIVESKY_PATH).get() or {})
+        return motor_control.NiagaraMotor(NIAGARA_BASE.value.strip(), NIAGARA_USER_ID.value.strip(), motor)
+
+    result = motor_control.handle(store, root, cmd_id, event.data, motor_factory=motor_factory)
+    if result is not None:
+        _LOG.info("Motor command %s: %s %s — %s", cmd_id, result.get("motor"), result.get("action"),
+                  result.get("message", ""))
 
 def _json(body: dict, status: int = 200) -> https_fn.Response:
     import json

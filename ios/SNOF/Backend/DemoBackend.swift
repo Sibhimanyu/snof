@@ -101,6 +101,8 @@ final class DemoBackend: FarmBackend {
                    "signedInAt": now - 4 * 3_600_000, "mobileLast4": "3210"],
             "niagara": ["ok": true, "error": "", "at": now - 20_000],
         ] as [String: Any]
+        // -demo-motors: the water-chain motors armed for switching.
+        if flag("motors") { meta["motorControl"] = ["enabled": true, "motors": ["river": true, "wellmotor75hp": true, "well-motor": true]] }
         tree["meta"] = meta
         #if DEBUG
         // Review hook: SNOF_DEMO_TREE=<farm.json> replays a whole production
@@ -368,6 +370,34 @@ final class DemoBackend: FarmBackend {
     func clearMobitechSession() async throws {
         tree["mobitech_status"] = nil
         handler?(.mobitechStatus(nil))
+    }
+
+    /// As the function does it: lock, "confirming", then the motor confirms.
+    func sendMotor(motor: String, action: String, uid: String) async throws -> String {
+        if flag("viewer") || !flag("motors") { throw BackendError.refused }
+        let key = "demo_motor_\(UUID().uuidString.prefix(8))"
+        Task { [weak self] in
+            guard let self else { return }
+            let at = Date().timeIntervalSince1970 * 1000
+            self.handler?(.motorLock(["cmd": key, "motor": motor, "action": action, "until": at + 200_000]))
+            var results = self.tree["motor_command_results"] as? [String: Any] ?? [:]
+            results[key] = ["ok": true, "confirming": true, "verified": false, "motor": motor, "action": action]
+            self.handler?(.motorResults(results))
+            try? await Task.sleep(for: .seconds(3))
+            var water = self.tree["water"] as? [String: Any] ?? [:]
+            if motor == "river", var r = water["river"] as? [String: Any] { r["running"] = action == "on"; water["river"] = r }
+            else if var ms = water["motors"] as? [String: Any], var m = ms[motor] as? [String: Any] {
+                m["running"] = action == "on"; ms[motor] = m; water["motors"] = ms
+            }
+            self.tree["water"] = water
+            self.handler?(.water(water))
+            results[key] = ["ok": true, "confirming": false, "verified": true, "motor": motor, "action": action,
+                            "message": "confirmed by the motor"]
+            self.tree["motor_command_results"] = results
+            self.handler?(.motorResults(results))
+            self.handler?(.motorLock(nil))
+        }
+        return key
     }
 
     func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String {

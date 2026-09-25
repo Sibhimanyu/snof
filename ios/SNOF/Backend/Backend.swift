@@ -27,6 +27,11 @@ enum FarmEvent {
     /// irrigation_lock: held from before a Run/Stop is sent until the
     /// controller confirms it (or 3 min pass). While live, nothing may change.
     case irrigationLock(Any?)
+    /// motor_command_results: what the motor_command function did with each press.
+    case motorResults(Any?)
+    /// motor_lock: held from before a motor command is sent until the motor
+    /// confirms it (or the lock expires). While live, no motor may change.
+    case motorLock(Any?)
     /// farms/<farm>/mobitech_status: who is signed in to Mobitech (never the token).
     case mobitechStatus(Any?)
     /// farms/<farm>/water: the river motor and the other farm's motors, as
@@ -84,6 +89,10 @@ protocol FarmBackend: AnyObject {
     /// Append one node to /farms/<farm>/irrigation_commands (admins only);
     /// returns its key, which the NUC reuses for the result.
     func sendIrrigation(_ command: IrrigationCommand, uid: String) async throws -> String
+    /// Append one node to /farms/<farm>/motor_commands (admins only, armed
+    /// motors only): {motor, action, uid, at}. Returns its key, which the
+    /// motor_command function reuses for the result.
+    func sendMotor(motor: String, action: String, uid: String) async throws -> String
     /// Store a Mobitech session: the token where no client can read it
     /// (/private/mobitech) and a non-secret status line. Admins only.
     func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws

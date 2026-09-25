@@ -128,6 +128,9 @@ final class FirebaseBackend: FarmBackend {
         observe(db.reference(withPath: "\(farm)/irrigation_command_results").queryLimited(toLast: 10),
                 onDenied: nil) { handler(.irrigationResults($0)) }
         observe("\(farm)/irrigation_lock", onDenied: nil) { handler(.irrigationLock($0)) }
+        observe(db.reference(withPath: "\(farm)/motor_command_results").queryLimited(toLast: 10),
+                onDenied: nil) { handler(.motorResults($0)) }
+        observe("\(farm)/motor_lock", onDenied: nil) { handler(.motorLock($0)) }
         observe("\(farm)/mobitech_status", onDenied: nil) { handler(.mobitechStatus($0)) }
         observe("\(farm)/water", onDenied: nil) { handler(.water($0)) }
     }
@@ -199,6 +202,11 @@ final class FirebaseBackend: FarmBackend {
         node["uid"] = uid
         node["at"] = ServerValue.timestamp()
         return try await push("farms/\(Farm.slug)/irrigation_commands", node)
+    }
+
+    func sendMotor(motor: String, action: String, uid: String) async throws -> String {
+        try await push("farms/\(Farm.slug)/motor_commands",
+                       ["motor": motor, "action": action, "uid": uid, "at": ServerValue.timestamp()])
     }
 
     func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws {

@@ -503,6 +503,44 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   } else console.log('  skip  room section checks (no replay.local.json)');
 }
 {
+  // Motor control (docs/motor-control.md): nothing until a motor is armed;
+  // then one control that matches the motor's current state, closed on a
+  // stale reading, during a change and in the cooldown; one press, one
+  // minimal command.
+  const [p,c]=await open('?live=1#/water');
+  const writes=[]; p.on('console',m=>{if(m.text().startsWith('COMMAND')&&m.text().includes('"motor"'))writes.push(m.text());});
+  p.on('dialog',d=>d.accept());
+  await p.waitForSelector('#view .wmotor');
+  const none=await p.evaluate(()=>document.querySelectorAll('[data-act="motor-cmd"]').length);
+  check('motor buttons appear only for an armed motor', none===0, `${none}`);
+  const r=await p.evaluate(()=>{const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
+    state.meta=Object.assign({},state.meta,{motorControl:{enabled:true,motors:{river:true}},
+      water:{enabled:true,livesky:{ok:true,at:now-5000,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true,at:now-5000}}});
+    state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,connected:true,reportedAt:iso(now-20e3)},
+      motors:{wellmotor75hp:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:false}}};
+    render();
+    const btns=[...document.querySelectorAll('#view [data-act="motor-cmd"]')].map(b=>({m:b.dataset.motor,a:b.dataset.action,d:b.disabled}));
+    state.water.river.reportedAt=iso(now-3600e3); render();
+    const stale=document.querySelector('#view [data-act="motor-cmd"]')?.disabled;
+    state.water.river.reportedAt=iso(now-20e3); render();
+    return {btns,stale};});
+  check('an armed river motor offers exactly one enabled "Turn off"', r.btns.length===1&&r.btns[0].m==='river'&&r.btns[0].a==='off'&&!r.btns[0].d, JSON.stringify(r.btns));
+  check('no switching a motor off a stale reading', r.stale===true);
+  await p.click('#view [data-act="motor-cmd"]'); await p.waitForTimeout(120);
+  const busy=await p.evaluate(()=>document.querySelector('#view [data-act="motor-cmd"]')?.disabled);
+  await p.waitForTimeout(1200);
+  const after=await p.evaluate(()=>{const t=[...document.querySelectorAll('.toast')].map(x=>x.textContent).join('|');
+    state.meta.motorControl.lastByMotor={river:serverNow()-30000}; render();
+    return {t,cool:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,
+      why:document.querySelector('#view .wmotor-actions + .more-note')?.textContent||''};});
+  check('one press writes one command: motor, action, uid, at and nothing else',
+    writes.length===1&&/"motor":"river","action":"off","uid":"[^"]+","at":/.test(writes[0])&&!/valves|keyword|sentSms|status/.test(writes[0]), writes.join(' | '));
+  check('the button closes while the motor confirms', busy===true);
+  check('the result says the motor confirmed it', /Confirmed: River Motor is off/.test(after.t), after.t);
+  check('the per-motor cooldown closes the button, with the wait', after.cool===true&&/Wait \d+s/.test(after.why), after.why);
+  await c.close();
+}
+{
   // Every page, on the narrowest phone, with the real farm's names and
   // readings: nothing is wider than the screen. (The iOS Irrigation page
   // once was, from two tags that could not wrap.)
