@@ -2757,7 +2757,8 @@ function motorPending(m) {
     : 'Asked to stop; the controller has not reported it off yet.';
 }
 
-function waterMotorCard(m, vendorErr) {
+/** `onPage`: on the motor's own page, whose title already names it. */
+function waterMotorCard(m, vendorErr, onPage = false) {
   if (!m) return '';
   const facts = [];
   if (m.vendor === 'livesky') {
@@ -2799,7 +2800,7 @@ function waterMotorCard(m, vendorErr) {
   return `<article class="panel wmotor${live ? ' is-on' : ''}">
     <div class="wmotor-head">
       <img class="wmotor-art" src="/art/${live ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
-      <div class="wmotor-title"><h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p></div>
+      <div class="wmotor-title">${onPage ? '' : `<h3>${escapeHtml(m.name || 'Motor')}</h3><p>${escapeHtml(sub)}</p>`}</div>
       ${motorStateTag(m, waterCurrent(m))}
     </div>
     ${headline.length ? `<div class="mb-facts">${headline.map(([k, v]) => {
@@ -2889,7 +2890,7 @@ function motorView(key) {
   const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
   return head(m.name || 'Motor', sub, `<button class="btn btn-ghost btn-sm" data-act="water-refresh">Refresh</button>`, back) +
     (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
-    waterMotorCard(m, vendorErr) + account;
+    waterMotorCard(m, vendorErr, true) + account;
 }
 
 /* ---- Livesky sign-in (admins) ----
