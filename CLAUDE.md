@@ -378,7 +378,7 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   dedicated tab or give one motor more room than the others.
 
 - **ACs are operable and off devices are faded** (owner, 2026-09-25; add-on
-  0.10.6, web, iOS 0.11.14). A `climate` entity is an AC card (power, set
+  0.10.6, web, iOS 0.11.15). A `climate` entity is an AC card (power, set
   temperature, mode, fan, preset; docs/device-control.md "The ACs"). A device
   that is off or offline is drawn like the rest, faded and with nothing to
   press, after them on system and room pages (`offPanels()` / `OffPanels`),
