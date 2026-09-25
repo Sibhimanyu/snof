@@ -49,6 +49,14 @@ def _answer(what: str, status: int, text: str) -> Any:
         raise DconError(f"DCON {what}: not JSON") from None
     if isinstance(body, dict) and body.get("status") == "failed":
         raise DconError(f"DCON {what}: {str(body.get('reason') or 'refused')[:80]}")
+    # The dashboard says it differently: {"state": "failed", "message": …}.
+    # Taken as data, it read as "nothing running" with a blank controller
+    # (2026-09-25: the session had been signed in on another phone).
+    if isinstance(body, dict) and body.get("state") == "failed":
+        msg = str(body.get("message") or "refused")
+        if "other mobile" in msg.lower() or "re-sign" in msg.lower():
+            msg = "Mobitech signed this session out (the account was signed in on another phone)"
+        raise DconError(f"DCON {what}: {msg[:120]}")
     return body
 
 

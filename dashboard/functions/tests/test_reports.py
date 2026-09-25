@@ -661,6 +661,29 @@ def test_a_run_the_log_caught_part_way_is_so_far_not_stopped():
     assert "cut short" in rows[0]["note"], rows[0]
 
 
+def test_a_dashboard_failure_is_an_error_not_an_idle_controller():
+    """2026-09-25: Mobitech answered the dashboard with {"state": "failed",
+    "message": "Your account has been sign-in on other mobile devices…"}.
+    Taken as data it read "Not watering" with a blank controller while a
+    program ran. It must be an error, and must not touch the cache."""
+    import dcon
+    envelope = json.dumps({"message": "Your account has been sign-in on other mobile devices. "
+                                      "Please re-sign in your account.", "state": "failed"})
+    try:
+        dcon._answer("dashboard", 200, envelope)
+        assert False, "a failed dashboard must raise"
+    except dcon.DconError as err:
+        assert "signed this session out" in str(err), err
+    src = Source()
+
+    def failed():
+        return dcon._answer("dashboard", 200, envelope)
+    src.dashboard = failed
+    rep, patch = R.build("controller", {}, src)
+    assert rep["status"] == "error" and "signed this session out" in rep["error"], rep
+    assert patch == {}, "the last good program and controller stay in the cache"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
