@@ -217,9 +217,9 @@ private struct PowerRow: View {
                     .font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1).minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // The line's name wins the width; the reading truncates, so an
-            // offline inverter's longer words never wrap the title.
-            .layoutPriority(1)
+            // The reading keeps its full width and the name column gives way
+            // (one line each, shrinking a little). The name once had the
+            // priority and pushed "965 W" and "pumping" off the card.
             VStack(alignment: .trailing, spacing: 2) {
                 if line.spec.inverter == nil, let s = line.supply, s.hasVoltage, st.state != .rest {
                     MiniPhases(volts: s.phaseV, stale: stale)
@@ -228,6 +228,8 @@ private struct PowerRow: View {
                 }
                 if !st.sub.isEmpty { Text(st.sub).font(Theme.font(12, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(1) }
             }
+            .fixedSize()
+            .layoutPriority(1)
         }
         .padding(.horizontal, 16).padding(.vertical, 11)
         .contentShape(Rectangle())
