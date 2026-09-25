@@ -28,7 +28,7 @@ await shot('07-area-detail',{url:'#/area/packing_shed'});
 await shot('08-area-detail-light',{url:'#/area/nursery',scheme:'light'});
 await shot('09-devices',{url:'#/devices'});
 await shot('10-viewer-no-control',{url:'?viewer=1'});
-await shot('11-loading',{url:'?nodata=1',wait:'.sk-card'});
+await shot('11-loading',{url:'?nodata=1',wait:'.loader-block'});
 await shot('12-big-farm',{url:'?big=1#/areas'});
 await shot('13-mobile-overview',{vp:{width:390,height:844}});
 await shot('14-mobile-area',{url:'#/area/cold_store',vp:{width:390,height:844}});
