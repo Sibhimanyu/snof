@@ -106,7 +106,7 @@ public enum Power {
     public static func status(_ l: PowerLine) -> LineStatus {
         if l.spec.inverter != nil {
             guard let i = l.inverter else {
-                return .init(state: .off, figure: "No inverter", unit: "", sub: "\(l.spec.brand) not reporting to Home Assistant")
+                return .init(state: .off, figure: "Not reporting", unit: "", sub: "\(l.spec.brand) inverter")
             }
             guard !i.offline, let w = i.watts else {
                 return .init(state: .offline, figure: "Inverter offline", unit: "", sub: (i.kwh ?? 0) > 0 ? "\(kwh(i.kwh!)) today" : "")

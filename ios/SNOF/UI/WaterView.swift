@@ -57,6 +57,8 @@ struct WaterView: View {
 /// on a current reading. Mirrors waterPath() in app.js.
 struct WaterPath: View {
     @Environment(FarmStore.self) private var store
+    /// Home: the same rows without the place names, inside its own card.
+    var compact = false
 
     var body: some View {
         let w = store.water, now = store.now
@@ -83,8 +85,8 @@ struct WaterPath: View {
                 on: onFarm, age: checked, up: onFarm, down: nil)
             ForEach(rest) { m in motorRow(m, fallback: m.id, up: nil, down: nil) }
         }
-        .padding(.vertical, 6)
-        .modifier(Panel(padding: 0))
+        .padding(.vertical, compact ? 0 : 6)
+        .modifier(PathCard(on: !compact))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Where the water goes")
     }
@@ -150,7 +152,7 @@ struct WaterPath: View {
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
                     .padding(.leading, 10)
             }
-            .frame(minHeight: 68)
+            .frame(minHeight: compact ? 58 : 68)
             .padding(.trailing, 14)
             .contentShape(Rectangle())
         }
@@ -159,7 +161,12 @@ struct WaterPath: View {
         .accessibilityLabel("\(name): \(word)\(line.isEmpty ? "" : ", \(line)")\(age.map { ", \($0)" } ?? "")")
     }
 
+    @ViewBuilder
     private func place(_ name: String, up: Bool?, down: Bool?) -> some View {
+        if !compact { placeRow(name, up: up, down: down) }
+    }
+
+    private func placeRow(_ name: String, up: Bool?, down: Bool?) -> some View {
         HStack(spacing: 12) {
             ZStack {
                 Rail(up: up, down: down)
@@ -172,6 +179,14 @@ struct WaterPath: View {
         }
         .frame(height: 30)
         .accessibilityHidden(true)
+    }
+}
+
+/// The Water tab's panel; on Home the card around it is Home's own.
+private struct PathCard: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on { content.modifier(Panel(padding: 0)) } else { content }
     }
 }
 

@@ -668,7 +668,6 @@ function skeletonView() {
  * reporting, and the switches as tiles. Colour still only means something:
  * brand green is on / flowing, brick is offline. */
 
-const motorArt = (m) => artImg(m && m.running ? 'motor-on' : 'motor-off', 'flow-art');
 // An old reading says what the motor *was* doing: "Was running", never a
 // bare "Running" with an age beside it (owner, 2026-09-25).
 const motorWord = (m, current = true) => (!m ? 'No reading' : m.running === true ? (current ? 'Running' : 'Was running')
@@ -699,41 +698,15 @@ function waterCurrent(m) {
 const waterAge = (m) => (m.vendor === 'livesky' && liveskyState().kind !== 'ok' ? 'not read'
   : agoText(m.vendor === 'livesky' ? (m.liveAt || m.reportedAt) : (state.meta?.water?.niagara?.at || state.water?.pulledAt)));
 
+/* Home's water card: the Water tab's path, compact (owner, 2026-09-25:
+ * every motor equal). The same rows, each opening its motor's page. */
 function flowHero() {
   const w = state.water || {};
-  const motors = Object.values(w.motors || {});
-  const supply = motors.find((m) => m.role === 'main-farm');
-  const drip = motors.find((m) => m.role === 'drip');
-  const s = irrNowState();
-  const live = (m) => !!m && m.running === true && waterCurrent(m);
-  const node = (cls, art, title, sub, on, age = '') =>
-    `<div class="flow-node ${cls}${on ? ' is-on' : ''}"><span class="flow-disc">${art}</span>` +
-    `<span class="flow-title">${escapeHtml(title)}</span><span class="flow-sub">${escapeHtml(sub)}</span>` +
-    (age ? `<span class="flow-age">${escapeHtml(age)}</span>` : '') + `</div>`;
-  const pipe = (on, label) => `<div class="flow-pipe${on ? ' is-on' : ''}" aria-hidden="true">` +
-    `<span class="pipe-line"></span>` +
-    (label ? `<em>${escapeHtml(label)}</em>` : '') + `</div>`;
-  const aged = (m) => (m && !waterCurrent(m) ? waterAge(m) : '');
-  const drips = drip ? `<a class="flow-branch${live(drip) ? ' is-on' : ''}" href="#/water">${artImg(live(drip) ? 'motor-on' : 'motor-off', 'flow-mini')}` +
-    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip, waterCurrent(drip)))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}` +
-    `${aged(drip) ? ` · ${escapeHtml(aged(drip))}` : ''}</span></a>` : '';
-  const hasWater = w.river || motors.length;
-  // The pull's age only while every reading drawn is current; otherwise the
-  // stale ones carry their own, and "just now" would vouch for them.
-  const allCurrent = [w.river, supply].filter(Boolean).every(waterCurrent);
-  return `<section class="panel flow" aria-label="Water from the river through Thoppu to Farm">
+  return `<section class="panel flow" aria-label="Where the water goes">
     <div class="flow-head"><h2 class="panel-title">Water</h2>
-      ${state.meta?.water?.enabled !== true ? '<span class="card-age">readings off</span>'
-        : w.pulledAt && allCurrent ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
+      ${state.meta?.water?.enabled !== true ? '<span class="card-age">readings off</span>' : ''}
       <a class="panel-link" href="#/water">Details${arrow()}</a></div>
-    <div class="flow-row">
-      ${node('', motorArt(live(w.river) ? w.river : null), 'River', hasWater ? motorWord(w.river, !w.river || waterCurrent(w.river)) : 'No reading', live(w.river), aged(w.river))}
-      ${pipe(live(w.river), '')}
-      ${node('', motorArt(live(supply) ? supply : null), 'Thoppu', supply ? `7.5 HP ${motorWord(supply, waterCurrent(supply)).toLowerCase()}` : 'No reading', live(supply), aged(supply))}
-      ${pipe(live(supply), '')}
-      ${node('farm', artImg('kulam', 'flow-art'), 'Farm', s.running ? 'Watering' : 'Not watering', s.running)}
-    </div>
-    ${drips}
+    ${waterPath({ compact: true })}
   </section>`;
 }
 
@@ -750,6 +723,12 @@ function ring(frac, tone, label, sub) {
 /** When the controller was last asked, as "5 min ago" (Refresh pulls it). */
 const irrChecked = () => { const c = irrig(); const t = c.program?.at || c.meta?.lastUpdated; return t ? agoText(t) : ''; };
 
+/** "Started 09:50", "Started 21:10 yesterday": a bare time on a card said
+ *  nothing about what it was. */
+function startedText(start) {
+  const w = farmWhen(start || '');
+  return w ? `Started ${w}` : '';
+}
 function irrigationCard() {
   const c = irrig(), p = c.program, s = irrNowState();
   const empty = !p && !(c.timerLog || []).length;
@@ -777,7 +756,7 @@ function irrigationCard() {
     <span class="vcard-label">Irrigation${irrChecked() ? ` <em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}</span>
     ${empty ? `<p class="vcard-empty">No data yet</p>` : `<div class="vcard-body">${ring(frac, tone, label, sub)}
       <div class="vcard-text"><strong>${escapeHtml(s.running ? s.title : s.title.replace(/^Last: /, ''))}</strong>
-        <span>${escapeHtml(s.running ? 'Watering now' : farmWhen(irrRuns()[0]?.start || '') || 'Not watering')}</span>
+        <span>${escapeHtml(s.running ? 'Watering now' : startedText(irrRuns()[0]?.start) || 'Not watering')}</span>
         <span class="crops">${pics}</span></div></div>`}
   </a>`;
 }
@@ -790,7 +769,11 @@ function tileFor(e) {
   const full = e.name || e.entity_id;
   const dev = deviceName(e.device);
   const trimmed = dev && full.startsWith(`${dev} `) ? full.slice(dev.length + 1) : full;
-  const name = trimmed || full;
+  // The room is said under the name ("Car Shed · Off"), so "Car Shed Light 1"
+  // is "Light 1": on a phone the long form cut off before the number.
+  const room = areaName(e.area) || '';
+  const bare = room && trimmed.toLowerCase().startsWith(`${room.toLowerCase()} `) ? trimmed.slice(room.length + 1) : trimmed;
+  const name = bare || trimmed || full;
   return `<button class="tile${on ? ' is-on' : ''}${want ? ' busy' : ''}" data-key="${escapeHtml(e.key)}" data-act="toggle"` +
     ` role="switch" aria-checked="${on}" aria-label="${escapeHtml(full)}"${can ? '' : ' disabled'}>` +
     `<span class="tile-ico"><svg viewBox="0 0 24 24" class="ico"><use href="#i-${iconFor(e)}"/></svg></span>` +
@@ -1017,7 +1000,7 @@ function powerLines(systems) {
 function lineStatus(l) {
   if (l.inverter) {
     const i = l.inv;
-    if (!i) return { state: 'off', figure: 'No inverter', unit: '', sub: `${l.brand} not reporting to Home Assistant` };
+    if (!i) return { state: 'off', figure: 'Not reporting', unit: '', sub: `${l.brand} inverter` };
     if (i.offline) return { state: 'offline', figure: 'Inverter offline', unit: '', sub: i.kwh ? `${fmtKwh(i.kwh)} today` : '' };
     const [v, u] = fmtPower(i.watts).split(' ');
     return { state: i.watts > 0 ? 'on' : 'rest', figure: v, unit: u,
@@ -1268,8 +1251,8 @@ function overviewView(all) {
   const pill = `<span id="head-bridge" class="pill pill-head ${b.cls}" role="status"><span class="dot"></span><span id="head-bridge-text">${escapeHtml(b.long)}</span></span>`;
   // Nothing is "all clear" until the farm has actually been heard from.
   const heard = !!(state.meta && (state.meta.bridge || state.meta.updatedAt));
-  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() +
-    `<div class="vcards">${powerPanel(systems)}${irrigationCard()}${securityCard(systems)}</div>` +
+  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') +
+    `<div class="vcards">${flowHero()}${powerPanel(systems)}${irrigationCard()}${securityCard(systems)}</div>` +
     switchTiles(all) + systemsGrid(systems);
 }
 
@@ -1942,11 +1925,22 @@ function irrLegacyBody(rep, label) {
     moreNote(rows.length, 6, 'rows') : '');
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+/** "2026-09-24", "2026-09-25" -> "24–25 Sept"; across months "30 Sept – 1 Oct".
+ *  The raw ISO pair read like a database row. Mirrors Format.dayRange. */
+function dayRange(from, to) {
+  const p = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); return m ? { y: +m[1], mo: +m[2] - 1, d: +m[3] } : null; };
+  const a = p(from), b = p(to || from);
+  if (!a || !b) return [from, to].filter(Boolean).join(' – ');
+  const yr = (x) => (x.y !== new Date(serverNow()).getFullYear() ? ` ${x.y}` : '');
+  if (a.y === b.y && a.mo === b.mo) return a.d === b.d ? `${a.d} ${MONTHS[a.mo]}${yr(a)}` : `${a.d}–${b.d} ${MONTHS[a.mo]}${yr(a)}`;
+  return `${a.d} ${MONTHS[a.mo]}${a.y !== b.y ? yr(a) : ''} – ${b.d} ${MONTHS[b.mo]}${yr(b)}`;
+}
+
 function irrReportCard(key, rep, open = true) {
   // The app's own name for the type first, so a rename reaches old reports too.
   const label = IRR_TYPES.find((t) => t.type === rep.type)?.label || rep.label || rep.type || 'Report';
-  const when = rep.at ? new Date(rep.at).toLocaleString('en-GB',
-    { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const when = rep.at ? agoText(rep.at) : '';
   const from = rep.params && rep.params.from, to = rep.params && rep.params.to;
   const params = from && to && from === to ? from : [from, to].filter(Boolean).join(' → ');
   // Three outcomes, three tags: a report where one vendor answered and one
@@ -1972,7 +1966,7 @@ function irrReportCard(key, rep, open = true) {
   return `<section class="rep-card${open ? ' open' : ''}" data-rep="${escapeHtml(key)}">
     <button class="rep-head" data-act="rep-open" data-rep="${escapeHtml(key)}" aria-expanded="${open}">
       <span class="rep-title">${escapeHtml(label)}</span>${statusTag}
-      <span class="rep-when">${escapeHtml([params, when].filter(Boolean).join(' · '))}</span>
+      <span class="rep-when">${escapeHtml([from ? dayRange(from, to) : '', when].filter(Boolean).join(' · '))}</span>
       <svg viewBox="0 0 24 24" class="ico rep-chev" aria-hidden="true"><use href="#i-chevron"/></svg>
     </button>
     ${summary ? `<p class="rep-summary">${escapeHtml(summary)}</p>` : ''}
@@ -2845,7 +2839,7 @@ function motorLine(m, current) {
   }
   return WATER_WAY[m.key === 'river' ? 'river' : m.role] || m.group || '';
 }
-function waterPath() {
+function waterPath({ compact = false } = {}) {
   const motors = waterMotors();
   const river = motors.find((m) => m.key === 'river');
   const supply = motors.find((m) => m.role === 'main-farm');
@@ -2857,7 +2851,7 @@ function waterPath() {
   // A rail cell: the pipe above and below the row's centre, each on or off.
   const rail = (up, down) => `<span class="wp-rail${up == null ? ' no-up' : up ? ' up-on' : ''}${down == null ? ' no-dn' : down ? ' dn-on' : ''}" aria-hidden="true"></span>`;
   const station = (flowing) => `<span class="wp-st${flowing ? ' is-on' : ''}"><img src="/art/${flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span>`;
-  const place = (name, up, down) => `<div class="wp-row wp-place">${rail(up, down)}<span class="wp-place-name">${escapeHtml(name)}</span></div>`;
+  const place = (name, up, down) => compact ? '' : `<div class="wp-row wp-place">${rail(up, down)}<span class="wp-place-name">${escapeHtml(name)}</span></div>`;
   const row = (key, name, line, word, flowing, age, up, down, branch = null) =>
     `<a class="wp-row wp-motor${branch != null ? ' wp-branch' : ''}${flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(key)}">` +
     (branch != null ? `${rail(up, down)}<span class="wp-stub${branch ? ' is-on' : ''}">${station(flowing)}</span>` : `<span class="wp-g">${rail(up, down)}${station(flowing)}</span>`) +
@@ -2871,17 +2865,19 @@ function waterPath() {
   };
   const t = dconTile();
   const farmLine = s.running ? [s.valves || s.title, s.left != null && s.left > 0 ? `${fmtMin(s.left)} left` : ''].filter(Boolean).join(' · ') : 'Valves closed';
-  return `<section class="panel wpath" aria-label="Where the water goes">` +
-    place('River', null, on.river) +
+  const rows = place('River', null, on.river) +
     motorRow(river, 'river', on.river, on.river) +
     // Both Thoppu motors draw from the pipe between Thoppu and the branch.
     place('Thoppu', on.river, on.supply || on.drip) +
     motorRow(drip, 'well-motor', on.supply || on.drip, on.supply, on.drip) +
     motorRow(supply, 'wellmotor75hp', on.supply, on.supply) +
     place('Farm', on.supply, on.farm) +
-    row(DCON_KEY, t.name, farmLine, t.word, on.farm, t.age, on.farm, null) +
-    `</section>` +
-    (rest.length ? `<section class="panel wpath">${rest.map((m) => motorRow(m, m.key, null, null)).join('')}</section>` : '');
+    row(DCON_KEY, t.name, farmLine, t.word, on.farm, t.age, on.farm, null);
+  const extra = rest.map((m) => motorRow(m, m.key, null, null)).join('');
+  // Home: the same rows, without the place names, inside its own card.
+  if (compact) return `<div class="wpath is-compact">${rows}${extra}</div>`;
+  return `<section class="panel wpath" aria-label="Where the water goes">${rows}</section>` +
+    (extra ? `<section class="panel wpath">${extra}</section>` : '');
 }
 
 function waterView() {

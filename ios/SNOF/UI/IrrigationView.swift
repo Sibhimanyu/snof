@@ -197,10 +197,10 @@ struct ReportListRow: View {
 
     private var summary: String { report.summaryWithoutRange }
 
-    /// "2026-02-20 → 2026-02-22 · 2h ago".
+    /// "20–22 Feb · 2h ago".
     private var meta: String {
         var bits: [String] = []
-        if let f = report.from, let t = report.to { bits.append(f == t ? f : "\(f) → \(t)") }
+        if let f = report.from, let t = report.to { bits.append(Format.dayRange(f, t, now: now)) }
         if report.at > 0 {
             let age = now.timeIntervalSince1970 - report.at / 1000
             bits.append(age < 60 ? "just now" : "\(Format.age(age)) ago")
@@ -340,7 +340,7 @@ struct ReportBody: View {
 
     private var when: String {
         var bits: [String] = []
-        if let f = report.from, let t = report.to { bits.append("\(f) → \(t)") }
+        if let f = report.from, let t = report.to { bits.append(Format.dayRange(f, t, now: Date())) }
         if report.at > 0 {
             bits.append(FarmTime.when(ms: report.at, now: Date()))
         }
