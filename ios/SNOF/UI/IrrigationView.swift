@@ -60,6 +60,7 @@ struct IrrigationView: View {
         .navigationTitle(title)
         // Again once meta arrives: before it the gate is closed.
         .task(id: store.metaLoaded) { await store.autoRefreshIrrigationIfStale() }
+        .task(id: "\(store.metaLoaded)-controller") { await store.keepControllerFresh() }
         .sheet(item: $opened) { open in
             ReportSheet(reportKey: open.id).environment(store)
         }

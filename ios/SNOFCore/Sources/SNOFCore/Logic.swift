@@ -20,6 +20,9 @@ public enum Farm {
      * opening a gate or unlocking a door from a phone is a separate security
      * decision, not a config tweak. */
     public static let controllable: Set<String> = ["switch", "light", "fan", "input_boolean"]
+    /// How old the Mobitech controller's reading may be and still be said as
+    /// now (it is re-read every minute while it is on screen).
+    public static let controllerCurrentMs = 3 * 60_000
 
     static let onStates: Set<String> = ["on", "open", "opening", "home", "playing", "unlocked", "detected"]
     static let offStates: Set<String> = ["off", "closed", "closing", "not_home", "idle", "standby", "locked"]

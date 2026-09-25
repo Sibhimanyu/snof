@@ -113,6 +113,7 @@ function detach() {
   refs = [];
   if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
   syncWaterPolling(false);
+  syncControllerPolling(false);
 }
 
 function leave() {
@@ -666,6 +667,7 @@ function render() {
 
   reconcilePending(all);
   syncWaterPolling(r.name === 'water' || r.name === 'overview' || r.name === 'motor');
+  syncControllerPolling(r.name === 'water' || r.name === 'overview' || (r.name === 'motor' && r.arg === DCON_KEY));
   if (r.name === 'overview' || (r.name === 'motor' && r.arg === DCON_KEY)) autoRefreshIrrigation();
 
   // Chrome above stays live regardless; only the view body is held back.
@@ -2478,7 +2480,7 @@ function motorControls(m) {
  * and-today's runs. Each is a press, never a poll, so the rules, the kill
  * switch and the function's own checks apply unchanged. */
 const irrRefreshing = new Set();
-function refreshIrrigation(quiet = false) {
+function refreshIrrigation(quiet = false, liveOnly = false) {
   if (!canControl) { if (!quiet) toast('err', 'Your account can view, but not refresh.'); return; }
   const g = reportsGate();
   if (!g.ok) { if (!quiet) toast('err', g.why); return; }
@@ -2489,7 +2491,9 @@ function refreshIrrigation(quiet = false) {
   if (serverNow() - last < 45000) { if (!quiet) toast('ok', `Just checked, ${agoText(last)}.`); return; }
   const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
   const db = firebase.database();
-  for (const [type, from, to] of [['controller'], ['live_readings'], ['session_log', yesterday, today]]) {
+  const reads = [['controller'], ['live_readings']];
+  if (!liveOnly) reads.push(['session_log', yesterday, today]);
+  for (const [type, from, to] of reads) {
     const ref = db.ref(`farms/${FARM}/irrigation_requests`).push();
     const key = ref.key;
     irrRefreshing.add(key);
@@ -2524,6 +2528,33 @@ function autoRefreshIrrigation() {
   irrAutoAt = now;
   setTimeout(() => refreshIrrigation(true), 0);
 }
+
+/* While a page that shows the controller is open (Home, Water, its page):
+ * what it is doing and its live readings every minute (owner, 2026-09-25:
+ * "when the user is looking at the screen the data should always try and
+ * stay new. 5 min is old"). Two light reads; the day's run log stays on the
+ * 15-minute refresh above. The 45 s guard in refreshIrrigation is on the
+ * shared read time, so several screens at once do not add reads. Mirrors
+ * keepControllerFresh() in FarmStore.swift. */
+const CONTROLLER_ASK_MS = 60000;
+const CONTROLLER_CURRENT_MS = 3 * 60000;
+let controllerTimer = null;
+function askController() {
+  if (!canControl || !currentUser || document.hidden || irrRefreshing.size || !reportsGate().ok) return;
+  refreshIrrigation(true, true);
+}
+function syncControllerPolling(active) {
+  if (active && !controllerTimer) {
+    setTimeout(askController, 0);
+    controllerTimer = setInterval(askController, CONTROLLER_ASK_MS);
+  } else if (!active && controllerTimer) {
+    clearInterval(controllerTimer);
+    controllerTimer = null;
+  }
+}
+document.addEventListener('visibilitychange', () => { if (controllerTimer && !document.hidden) askController(); });
+/** Read in the last 3 minutes: said as now. Older is said in the past tense. */
+const controllerCurrent = () => serverNow() - (irrig().program?.at || irrig().meta?.lastUpdated || 0) <= CONTROLLER_CURRENT_MS;
 
 /* ---- the modules ---- */
 
@@ -2901,8 +2932,11 @@ function waterMotors() {
 function dconTile() {
   const d = (state.irrigation || {}).dcon || {};
   const s = irrNowState();
-  return { key: DCON_KEY, name: d.device || 'Mobitech DCON', vendor: 'mobitech', running: s.running,
-    sub: 'Mobitech · Farm valves', word: s.running ? 'Watering' : 'Not watering', age: irrChecked() };
+  // Like the motors: no age while current, past tense and its age after.
+  const cur = controllerCurrent();
+  return { key: DCON_KEY, name: d.device || 'Mobitech DCON', vendor: 'mobitech', running: s.running, current: cur,
+    sub: 'Mobitech · Farm valves', word: cur ? (s.running ? 'Watering' : 'Not watering') : (s.running ? 'Was watering' : 'Was not watering'),
+    age: cur ? '' : irrChecked() };
 }
 /* The water's path (owner, 2026-09-25: "a visual representation of the
  * water flow"; then "bad use of space and not clean"). One panel, one row per
@@ -2931,7 +2965,7 @@ function waterPath({ compact = false } = {}) {
   const rest = motors.filter((m) => m !== river && m !== supply && m !== drip);
   const s = irrNowState();
   const live = (m) => !!m && m.running === true && waterCurrent(m);
-  const on = { river: live(river), supply: live(supply), drip: live(drip), farm: !!s.running };
+  const on = { river: live(river), supply: live(supply), drip: live(drip), farm: !!s.running && controllerCurrent() };
   // A rail cell: the pipe above and below the row's centre, each on or off.
   const rail = (up, down) => `<span class="wp-rail${up == null ? ' no-up' : up ? ' up-on' : ''}${down == null ? ' no-dn' : down ? ' dn-on' : ''}" aria-hidden="true"></span>`;
   const station = (flowing) => `<span class="wp-st${flowing ? ' is-on' : ''}"><img src="/art/${flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span>`;
