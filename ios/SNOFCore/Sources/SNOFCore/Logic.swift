@@ -480,6 +480,26 @@ public enum Pulse {
 }
 
 public enum Format {
+    private static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"]
+
+    /// "2026-09-24", "2026-09-25" -> "24–25 Sept"; across months
+    /// "30 Sept – 1 Oct"; the year only when it is not this one. The raw ISO
+    /// pair read like a database row. Mirrors dayRange() in app.js.
+    public static func dayRange(_ from: String, _ to: String?, now: Date = Date()) -> String {
+        func parse(_ d: String) -> (y: Int, m: Int, d: Int)? {
+            let p = d.split(separator: "-").compactMap { Int($0) }
+            guard d.count == 10, p.count == 3, (1...12).contains(p[1]) else { return nil }
+            return (p[0], p[1] - 1, p[2])
+        }
+        guard let a = parse(from), let b = parse(to ?? from) else { return [from, to].compactMap { $0 }.joined(separator: " – ") }
+        let thisYear = Calendar(identifier: .gregorian).component(.year, from: now)
+        func yr(_ x: (y: Int, m: Int, d: Int)) -> String { x.y != thisYear ? " \(x.y)" : "" }
+        if a.y == b.y, a.m == b.m {
+            return a.d == b.d ? "\(a.d) \(months[a.m])\(yr(a))" : "\(a.d)–\(b.d) \(months[a.m])\(yr(a))"
+        }
+        return "\(a.d) \(months[a.m])\(a.y != b.y ? yr(a) : "") – \(b.d) \(months[b.m])\(yr(b))"
+    }
+
     /// "3h" since an ISO-8601 timestamp (Home Assistant's, with microseconds),
     /// "4 days" past two days, nil if unparseable or in the future.
     public static func since(_ iso: String?, now: Date = Date()) -> String? {

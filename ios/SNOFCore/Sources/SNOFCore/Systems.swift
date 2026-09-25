@@ -178,11 +178,17 @@ public enum Systems {
     }
 
     /// An entity's name without its device's name in front ("Storage Shed
-    /// Smart Switch Switch 4" -> "Switch 4"), for places that show the room.
-    public static func shortName(_ e: Entity, deviceName: String?) -> String {
-        guard let d = deviceName, !d.isEmpty, e.name.hasPrefix(d + " ") else { return e.name }
-        let rest = String(e.name.dropFirst(d.count + 1))
-        return rest.isEmpty ? e.name : rest
+    /// Smart Switch Switch 4" -> "Switch 4"), for places that show the room;
+    /// and without the room's ("Car Shed Light 1" in Car Shed -> "Light 1"),
+    /// since the long form cut off before the number on a phone. As tileFor()
+    /// in app.js.
+    public static func shortName(_ e: Entity, deviceName: String?, roomName: String? = nil) -> String {
+        var name = e.name
+        if let d = deviceName, !d.isEmpty, name.hasPrefix(d + " "), name.count > d.count + 1 { name = String(name.dropFirst(d.count + 1)) }
+        if let r = roomName, !r.isEmpty, name.lowercased().hasPrefix(r.lowercased() + " "), name.count > r.count + 1 {
+            name = String(name.dropFirst(r.count + 1))
+        }
+        return name
     }
 }
 

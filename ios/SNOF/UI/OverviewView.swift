@@ -20,14 +20,18 @@ struct OverviewView: View {
                 LoadingBlock()
             } else {
                 AttentionCard()
-                FlowHero()
                 if sizeClass == .regular {
-                    // Power beside Irrigation and Security, stacked, as on the web.
+                    // Water | Power, then Irrigation | Security, as on the web.
                     HStack(alignment: .top, spacing: 14) {
+                        FlowHero().frame(maxWidth: .infinity)
                         PowerCard().frame(maxWidth: .infinity)
-                        VStack(spacing: 14) { IrrigationRingCard(); SecurityCard() }.frame(maxWidth: .infinity)
+                    }
+                    HStack(alignment: .top, spacing: 14) {
+                        IrrigationRingCard().frame(maxWidth: .infinity)
+                        SecurityCard().frame(maxWidth: .infinity)
                     }
                 } else {
+                    FlowHero()
                     PowerCard()
                     IrrigationRingCard()
                     SecurityCard()
@@ -64,112 +68,29 @@ struct OverviewView: View {
  * runs, a ring for the irrigation run, solar, a donut of what reports, and
  * the switches as tiles. Green = on / flowing, brick = offline. */
 
-/// A pipe between two stations; dashes move while water does.
-private struct Pipe: View {
-    let on: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var phase: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { g in
-            Path { p in p.move(to: CGPoint(x: 0, y: 3)); p.addLine(to: CGPoint(x: g.size.width, y: 3)) }
-                .stroke(on ? Theme.brand : Theme.line2,
-                        style: StrokeStyle(lineWidth: 6, lineCap: .round, dash: on ? [10, 8] : [], dashPhase: phase))
-        }
-        .frame(height: 6)
-        .onAppear {
-            guard on, !reduceMotion else { return }
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { phase = -18 }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-private struct Station: View {
-    let art: String
-    let title: String
-    let sub: String
-    let on: Bool
-    /// How old the reading is, when it is not current.
-    var age: String? = nil
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(art).resizable().scaledToFit().frame(width: 38, height: 38)
-                .frame(width: 62, height: 62)
-                .background(Theme.panel2, in: Circle())
-                .overlay(Circle().strokeBorder(on ? Theme.brand : Theme.line, lineWidth: 2))
-                .background(Circle().fill(on ? Theme.brand.opacity(0.22) : .clear).padding(-6))
-            Text(title).font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.text).padding(.top, 4)
-            Text(sub).font(Theme.font(11.5, on ? .semibold : .regular, relativeTo: .caption))
-                .foregroundStyle(on ? Theme.on : Theme.muted).lineLimit(1).minimumScaleFactor(0.8)
-            if let age { Text(age).font(Theme.font(11, .regular, relativeTo: .caption2)).foregroundStyle(Theme.faint).lineLimit(1) }
-        }
-        .frame(width: 88)
-        .accessibilityElement(children: .combine)
-    }
-}
-
+/// Home's water card: the Water tab's path, compact (owner, 2026-09-25:
+/// every motor equal). The same rows, each opening its motor's page.
+/// Mirrors flowHero() in app.js.
 struct FlowHero: View {
     @Environment(FarmStore.self) private var store
 
-    /// An old reading says what the motor *was* doing: "Was running", never a
-    /// bare "Running" with an age beside it (owner, 2026-09-25).
-    private func word(_ m: WaterMotor?, current: Bool = true) -> String {
-        m.map { $0.running == true ? (current ? "Running" : "Was running") : $0.running == false ? (current ? "Off" : "Was off") : "Unknown" } ?? "No reading"
-    }
-
     var body: some View {
-        let w = store.water
-        let supply = w.supply.first
-        let drip = w.motors.first { $0.role == "drip" }
-        let c = store.irrigation
-        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
-        // Flowing only on a current reading; a stale one shows its age.
-        let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: store.now) }
-        let aged = { (m: WaterMotor?) -> String? in
-            guard let m, !w.isCurrent(m, now: store.now) else { return nil }
-            if m.vendor == "livesky", w.livesky.kind(nowMs: store.now.timeIntervalSince1970 * 1000) != .ok { return "not read" }
-            return w.readingDate(m).map { Water.ago($0, now: store.now) }
-        }
-        // The pull's age only while every reading drawn is current.
-        let allCurrent = [w.river, supply].compactMap { $0 }.allSatisfy { w.isCurrent($0, now: store.now) }
-        Button { store.selectedTab = .water } label: {
-            VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { store.selectedTab = .water } label: {
                 HStack {
                     Text("Water").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    if !w.enabled { Text("readings off").font(Theme.small).foregroundStyle(Theme.faint) }
-                    else if let t = w.pulledAt, allCurrent { Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint) }
+                    if !store.water.enabled { Text("readings off").font(Theme.small).foregroundStyle(Theme.faint) }
                     Spacer()
                     Text("Details").font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
                     Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.on)
                 }
-                HStack(alignment: .top, spacing: 0) {
-                    Station(art: live(w.river) ? "art-motor-on" : "art-motor-off", title: "River",
-                            sub: word(w.river, current: w.river.map { w.isCurrent($0, now: store.now) } ?? true), on: live(w.river), age: aged(w.river))
-                    Pipe(on: live(w.river)).padding(.top, 28)
-                    Station(art: live(supply) ? "art-motor-on" : "art-motor-off", title: "Thoppu",
-                            sub: supply.map { "7.5 HP \(word($0, current: w.isCurrent($0, now: store.now)).lowercased())" } ?? "No reading", on: live(supply), age: aged(supply))
-                    Pipe(on: live(supply)).padding(.top, 28)
-                    Station(art: "art-kulam", title: "Farm", sub: say.running ? "Watering" : "Not watering", on: say.running)
-                }
-                if let drip {
-                    HStack(spacing: 8) {
-                        Image(live(drip) ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 22, height: 22)
-                        Text([drip.name, word(drip, current: w.isCurrent(drip, now: store.now)), drip.program.map { "\($0) zone \(drip.zone.map(String.init) ?? "")" }, aged(drip)]
-                                .compactMap { $0 }.joined(separator: " · "))
-                            .font(Theme.font(12.5, live(drip) ? .semibold : .regular, relativeTo: .caption))
-                            .foregroundStyle(live(drip) ? Theme.on : Theme.muted).lineLimit(1)
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(Theme.panel2, in: Capsule())
-                    .frame(maxWidth: .infinity)
-                }
+                .padding(.horizontal, 16).padding(.top, 16)
+                .contentShape(Rectangle())
             }
-            .padding(16)
-            .modifier(Panel(padding: 0))
+            .buttonStyle(.plain)
+            WaterPath(compact: true).padding(.bottom, 6)
         }
-        .buttonStyle(.plain)
+        .modifier(Panel(padding: 0))
     }
 }
 
@@ -255,7 +176,7 @@ struct IrrigationRingCard: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(say.running ? say.title : say.title.replacingOccurrences(of: "Last: ", with: ""))
                             .font(Theme.font(16, .bold, relativeTo: .headline)).foregroundStyle(Theme.text).lineLimit(1)
-                        Text(say.running ? "Watering now" : (last.flatMap { FarmTime.when($0.start, now: store.now, zone: FarmTime.zone(c.timeZone)) } ?? "Not watering"))
+                        Text(say.running ? "Watering now" : (last.flatMap { FarmTime.when($0.start, now: store.now, zone: FarmTime.zone(c.timeZone)) }.map { "Started \($0)" } ?? "Not watering"))
                             .font(Theme.meta).foregroundStyle(Theme.muted)
                         let valves = (say.running ? c.program?.valves : last?.valves) ?? ""
                         HStack(spacing: 4) {
@@ -298,7 +219,7 @@ struct SwitchTiles: View {
             .padding(.top, 10)
             ControlNote()
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: sizeClass == .regular ? 4 : 2), spacing: 10) {
-                ForEach(shown) { e in SwitchTile(entity: e, name: Systems.shortName(e, deviceName: store.deviceNames[e.device ?? ""])) }
+                ForEach(shown) { e in SwitchTile(entity: e, name: Systems.shortName(e, deviceName: store.deviceNames[e.device ?? ""], roomName: store.areaName(e.area))) }
             }
         }
     }
@@ -306,6 +227,7 @@ struct SwitchTiles: View {
 
 struct SwitchTile: View {
     @Environment(FarmStore.self) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let entity: Entity
     var name: String? = nil
     /// Own presses only: a switch flipped by someone else must not buzz this phone.
@@ -316,12 +238,45 @@ struct SwitchTile: View {
         let busy = store.pending[entity.id] != nil
         let can = store.canOperate(entity)
         Button { presses += 1; store.toggle(entity) } label: {
+            if sizeClass == .compact { row(on: on, can: can, busy: busy) } else { tile(on: on, can: can, busy: busy) }
+        }
+        .buttonStyle(TileButtonStyle())
+        .disabled(!can)
+        .sensoryFeedback(.impact(weight: .light), trigger: presses)
+        .accessibilityLabel(entity.name)
+        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+    }
+
+    private func icon(on: Bool, can: Bool, size: CGFloat) -> some View {
+        Image(systemName: Theme.symbol(entity.domain)).font(.system(size: size * 0.45, weight: .semibold))
+            .foregroundStyle(on ? .white : Theme.muted)
+            .frame(width: size, height: size)
+            .background(on ? Color.white.opacity(0.2) : Theme.panel2, in: Circle())
+            .opacity(can ? 1 : 0.6)
+    }
+
+    /// Phone: icon, then name and state, half the height of a tile, so
+    /// seven switches no longer take a whole screen (as on the web).
+    private func row(on: Bool, can: Bool, busy: Bool) -> some View {
+        HStack(spacing: 10) {
+            icon(on: on, can: can, size: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name ?? entity.name).font(Theme.font(14, .bold, relativeTo: .subheadline))
+                    .foregroundStyle(on ? .white : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
+                Text("\(store.areaName(entity.area)) · \(on ? "On" : "Off")").font(Theme.font(12, .regular, relativeTo: .caption))
+                    .foregroundStyle(on ? .white : Theme.muted).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .modifier(TileLook(on: on, can: can, busy: busy))
+    }
+
+    private func tile(on: Bool, can: Bool, busy: Bool) -> some View {
             VStack(alignment: .leading, spacing: 4) {
-                Image(systemName: Theme.symbol(entity.domain)).font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(on ? .white : Theme.muted)
-                    .frame(width: 38, height: 38)
-                    .background(on ? Color.white.opacity(0.2) : Theme.panel2, in: Circle())
-                    .opacity(can ? 1 : 0.6)
+                icon(on: on, can: can, size: 38)
                 Spacer(minLength: 10)
                 Text(name ?? entity.name).font(Theme.font(14, .bold, relativeTo: .subheadline))
                     .foregroundStyle(on ? .white : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
@@ -330,6 +285,14 @@ struct SwitchTile: View {
             }
             .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
             .padding(14)
+            .modifier(TileLook(on: on, can: can, busy: busy))
+    }
+}
+
+private struct TileLook: ViewModifier {
+    let on: Bool, can: Bool, busy: Bool
+    func body(content: Content) -> some View {
+        content
             .background(on ? Theme.brand : Theme.panel, in: RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.rLg, style: .continuous).strokeBorder(on ? .clear : Theme.edge, lineWidth: 1))
             // Not pressable: flat, the icon dimmed, but the words at full
@@ -337,13 +300,6 @@ struct SwitchTile: View {
             // state a viewer came to read.
             .shadow(color: can ? Theme.cardShadow : .clear, radius: 10, y: 4)
             .opacity(busy ? 0.7 : 1)
-        }
-        .buttonStyle(TileButtonStyle())
-        .disabled(!can)
-        .sensoryFeedback(.impact(weight: .light), trigger: presses)
-        .accessibilityLabel(entity.name)
-        .accessibilityValue(on ? "On" : "Off")
-        .accessibilityAddTraits(.isToggle)
     }
 }
 

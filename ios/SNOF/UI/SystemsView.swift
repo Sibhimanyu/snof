@@ -211,11 +211,15 @@ private struct PowerRow: View {
                 HStack(spacing: 7) {
                     if let key { RoundedRectangle(cornerRadius: 2).fill(Theme.brand.opacity(key == 0 ? 1 : 0.42)).frame(width: 8, height: 8) }
                     Text(line.spec.title).font(Theme.font(14.5, .bold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
+                        .lineLimit(1).minimumScaleFactor(0.9)
                 }
                 Text("\(line.spec.phase) · \(line.spec.brand.isEmpty ? "free supply" : "\(line.spec.brand) solar")")
                     .font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1).minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The line's name wins the width; the reading truncates, so an
+            // offline inverter's longer words never wrap the title.
+            .layoutPriority(1)
             VStack(alignment: .trailing, spacing: 2) {
                 if line.spec.inverter == nil, let s = line.supply, s.hasVoltage, st.state != .rest {
                     MiniPhases(volts: s.phaseV, stale: stale)
@@ -258,10 +262,12 @@ struct LineFigure: View {
         let words = status.unit.isEmpty && Double(status.figure) == nil
         let tone: Color = stale ? Theme.muted : Self.tone(status.state)
         HStack(alignment: .firstTextBaseline, spacing: 3) {
-            Text(status.figure).font(Theme.font(words ? 15 : big, .bold, relativeTo: .title3).monospacedDigit()).tracking(words ? 0 : -0.6)
+            Text(status.figure).font(Theme.font(words ? 13.5 : big, .bold, relativeTo: .title3).monospacedDigit()).tracking(words ? 0 : -0.6)
             if !status.unit.isEmpty { Text(status.unit).font(Theme.font(12.5, .semibold, relativeTo: .caption)).foregroundStyle(Theme.muted) }
         }
-        .foregroundStyle(tone).lineLimit(1).minimumScaleFactor(0.7)
+        // Words never shrink: two offline lines once showed "Not reporting" at
+        // two sizes, each scaled to its own row's leftover width.
+        .foregroundStyle(tone).lineLimit(1).minimumScaleFactor(words ? 1 : 0.7)
     }
 
     static func tone(_ s: LineStatus.State) -> Color {
@@ -450,19 +456,30 @@ struct AroundTheFarm: View {
                 ForEach(ids) { id in
                     let s = Systems.summary(systems[id]!)
                     NavigationLink(value: SystemRoute(id: id)) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Image(systemName: id.symbol).font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(s.state == .on ? Theme.on : Theme.muted)
-                                .frame(width: 36, height: 36)
-                                .background(s.state == .on ? Theme.brand.opacity(0.15) : Theme.panel2, in: Circle())
-                            Spacer(minLength: 10)
+                        let icon = Image(systemName: id.symbol).font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(s.state == .on ? Theme.on : Theme.muted)
+                            .frame(width: 36, height: 36)
+                            .background(s.state == .on ? Theme.brand.opacity(0.15) : Theme.panel2, in: Circle())
+                        let words = VStack(alignment: .leading, spacing: 2) {
                             Text(id.title).font(Theme.font(14, .bold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
                             Text(s.line).font(Theme.font(13, .semibold, relativeTo: .footnote))
                                 .foregroundStyle(s.state == .on ? Theme.on : s.state == .offline || s.state == .warn ? Theme.warn : Theme.muted)
                             if !s.sub.isEmpty { Text(s.sub).font(Theme.font(12, .regular, relativeTo: .caption)).foregroundStyle(Theme.faint) }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
-                        .padding(14)
+                        // Words from the top, whatever their count (a tile
+                        // with no third line once sat lower than its
+                        // neighbours); on a phone, across, as the switches.
+                        Group {
+                            if sizeClass == .compact {
+                                HStack(spacing: 10) { icon; words; Spacer(minLength: 0) }
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .padding(.horizontal, 12).padding(.vertical, 10)
+                            } else {
+                                VStack(alignment: .leading, spacing: 10) { icon; words }
+                                    .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
+                                    .padding(14)
+                            }
+                        }
                         .modifier(Panel(padding: 0))
                     }
                     .buttonStyle(.plain)
@@ -491,7 +508,7 @@ struct SystemView: View {
                     if !ops.isEmpty {
                         ControlNote()
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                            ForEach(ops) { e in SwitchTile(entity: e, name: Systems.shortName(e, deviceName: store.deviceNames[e.device ?? ""])) }
+                            ForEach(ops) { e in SwitchTile(entity: e, name: Systems.shortName(e, deviceName: store.deviceNames[e.device ?? ""], roomName: store.areaName(e.area))) }
                         }
                     }
                 }

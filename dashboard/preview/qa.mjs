@@ -193,7 +193,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const partial=await p.evaluate(()=>{
     const card=[...document.querySelectorAll('.rep-card')]
       .find(c=>c.querySelector('.rep-title').textContent.startsWith('Irrigation session log')
-        &&c.querySelector('.rep-when').textContent.includes('2026-02-20'));
+        &&/\b20(–\d+)? Feb/.test(c.querySelector('.rep-when').textContent));
     return card&&{tag:card.querySelector('.tag').textContent,
       err:card.querySelector('.rep-err')?.textContent||''};});
   check('a partly-failed report says so on the card',
@@ -203,7 +203,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const legacy=await p.evaluate(()=>{
     const card=[...document.querySelectorAll('.rep-card')]
       .find(c=>c.querySelector('.rep-title').textContent==='Timer log'
-        &&c.querySelector('.rep-when').textContent.includes('2026-02-20'));
+        &&/\b20(–\d+)? Feb/.test(c.querySelector('.rep-when').textContent));
     return card&&card.querySelectorAll('.row').length;});
   check('pre-sections reports still render their rows', legacy>=1, `${legacy} rows`);
 
@@ -470,8 +470,10 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     state.meta=Object.assign({},state.meta,{water:{enabled:true,livesky:{ok:true,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true}}});
     state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,reportedAt:iso(now-3600e3)},
       motors:{s:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:true,reportedAt:iso(now-3600e3)}}};
-    const f=()=>{render();return {pipes:[...document.querySelectorAll('#view .flow-pipe')].map(x=>x.classList.contains('is-on')),
-      ages:[...document.querySelectorAll('#view .flow-age')].map(x=>x.textContent),head:document.querySelector('#view .flow .flow-head .card-age')?.textContent||''};};
+    // Home's water card is the Water tab's path, compact: one row per motor.
+    const rows=()=>[...document.querySelectorAll('#view .flow .wp-motor')].filter(a=>a.getAttribute('href')!=='#/motor/dcon'&&a.querySelector('.tag').textContent!=='No reading');
+    const f=()=>{render();return {pipes:rows().map(a=>!!a.querySelector('.wp-st.is-on')),
+      ages:rows().map(a=>a.querySelector('.wp-state em')?.textContent).filter(Boolean),head:document.querySelector('#view .flow .flow-head .card-age')?.textContent||''};};
     const stale=f();
     state.water.river.reportedAt=iso(now-20e3); const fresh=f();
     state.meta.water.livesky.expires=now-60e3; const expired=f();
@@ -482,7 +484,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     return {stale,fresh,expired,off,niagaraDown};});
   check('a stale river reading shows its age and does not flow', r.stale.pipes[0]===false&&r.stale.ages.length===1&&r.stale.head==='', JSON.stringify(r.stale));
   check('Niagara, which reports on change, still flows on a fresh pull', r.stale.pipes[1]===true);
-  check('fresh readings flow, with the pull age in the header', r.fresh.pipes.every(Boolean)&&r.fresh.ages.length===0&&/ago|just now/.test(r.fresh.head), JSON.stringify(r.fresh));
+  check('fresh readings flow, with no age beside them', r.fresh.pipes.every(Boolean)&&r.fresh.ages.length===0, JSON.stringify(r.fresh));
   check('an ended Livesky session stops the river flowing', r.expired.pipes[0]===false&&r.expired.ages[0]==='not read', JSON.stringify(r.expired));
   check('Home says when water readings are off', r.off.head==='readings off', r.off.head);
   check('a failing Niagara read is not current, and ages from its last good read', r.niagaraDown.pipes[1]===false&&r.niagaraDown.ages.includes('3h ago'), JSON.stringify(r.niagaraDown));

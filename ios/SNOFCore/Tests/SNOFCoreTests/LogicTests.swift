@@ -317,4 +317,21 @@ final class ValveArtTests: XCTestCase {
         XCTAssertEqual(ValveArt.key(timelineSource: "timer"), "timer")
         XCTAssertNil(ValveArt.key(timelineSource: "dcon"))
     }
+
+    func testDayRangeReadsLikeADate() {
+        let now = ISO8601DateFormatter().date(from: "2026-09-25T06:00:00Z")!
+        XCTAssertEqual(Format.dayRange("2026-09-24", "2026-09-25", now: now), "24–25 Sept")
+        XCTAssertEqual(Format.dayRange("2026-09-24", "2026-09-24", now: now), "24 Sept")
+        XCTAssertEqual(Format.dayRange("2026-09-30", "2026-10-01", now: now), "30 Sept – 1 Oct")
+        XCTAssertEqual(Format.dayRange("2025-12-31", "2026-01-01", now: now), "31 Dec 2025 – 1 Jan")
+        XCTAssertEqual(Format.dayRange("bad", "2026-01-01", now: now), "bad – 2026-01-01")
+    }
+
+    func testShortNameDropsDeviceAndRoom() {
+        let e = Entity(domain: "switch", objectId: "x", name: "Car Shed Light 1", state: "off", area: "car_shed", attrs: Attrs())
+        XCTAssertEqual(Systems.shortName(e, deviceName: nil, roomName: "Car Shed"), "Light 1")
+        XCTAssertEqual(Systems.shortName(e, deviceName: nil, roomName: "Hall"), "Car Shed Light 1")
+        let bare = Entity(domain: "switch", objectId: "y", name: "Car Shed", state: "off", area: "car_shed", attrs: Attrs())
+        XCTAssertEqual(Systems.shortName(bare, deviceName: nil, roomName: "Car Shed"), "Car Shed")
+    }
 }
