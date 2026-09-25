@@ -13,7 +13,7 @@ enum Phase: Equatable {
 
 /// No tab of its own for the main farm (owner, 2026-09-25: "give equal
 /// importance"): its controller is one of the motors under Water.
-enum AppTab: Hashable { case overview, water, areas }
+enum AppTab: Hashable { case overview, water, areas, squeak }
 /// The Rooms tab shows rooms, or the same devices as one list.
 enum RoomsMode: Hashable { case rooms, devices }
 
