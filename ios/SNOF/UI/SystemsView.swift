@@ -516,7 +516,7 @@ struct SystemView: View {
                             if rows.isEmpty {
                                 Text(store.areaName(d.area)).font(Theme.meta).foregroundStyle(Theme.muted).padding(14)
                             } else {
-                                RowList(items: Array(rows.prefix(12)), framed: false) { DeviceRow(entity: $0) }
+                                RowList(items: Array(rows.prefix(12)), framed: false) { DeviceRow(entity: $0, device: d.name) }
                             }
                         }
                     }

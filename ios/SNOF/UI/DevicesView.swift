@@ -112,7 +112,7 @@ struct DeviceGroupRow: View {
                 .buttonStyle(.plain)
                 .accessibilityHint(open ? "Hides its readings" : "Shows its readings")
                 if open {
-                    RowList(items: group.entities, framed: false) { DeviceRow(entity: $0) }
+                    RowList(items: group.entities, framed: false) { DeviceRow(entity: $0, device: group.name) }
                         .background(Theme.bg)
                         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
                 }
