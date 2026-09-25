@@ -508,12 +508,15 @@ struct DeviceRow: View {
     var withArea = false
     /// Off under a room section that already names the kind ("Detectors").
     var showDomain = true
+    /// The device heading this row sits under: its name is not repeated
+    /// ("Room air conditioner Energy" reads "Energy"), nor is the kind.
+    var device: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
             DeviceIcon(domain: entity.domain, tone: entity.tone, size: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entity.name).font(Theme.font(14.5, .semibold, relativeTo: .subheadline))
+                Text(name).font(Theme.font(14.5, .semibold, relativeTo: .subheadline))
                     .foregroundStyle(Theme.text).lineLimit(2)
                 if !meta.isEmpty { Text(meta).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1) }
             }
@@ -534,9 +537,16 @@ struct DeviceRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var name: String { device.map { Systems.shortName(entity, deviceName: $0) } ?? entity.name }
+
     private var meta: String {
-        [withArea ? store.areaName(entity.area) : showDomain ? entity.humanDomain : "", entity.subtitle]
-            .filter { !$0.isEmpty }.joined(separator: " · ")
+        guard device != nil else {
+            return [withArea ? store.areaName(entity.area) : showDomain ? entity.humanDomain : "", entity.subtitle]
+                .filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+        // "Energy" over "energy" says nothing twice.
+        let sub = entity.subtitle
+        return name.lowercased().contains(sub.lowercased()) ? "" : sub
     }
 }
 

@@ -753,7 +753,8 @@ function irrigationCard() {
   const pics = String(valves).split(/,\s*/).filter(Boolean).slice(0, 5)
     .map((v) => { const a = valveArt(v, 'irrigation'); return a ? artImg(a, 'crop') : ''; }).join('');
   return `<a class="panel vcard" href="#/motor/dcon">
-    <span class="vcard-label">Irrigation${irrChecked() ? ` <em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}</span>
+    <div class="pw-head"><h2 class="panel-title">Irrigation</h2>${irrChecked() ? `<em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}
+      <span class="panel-link">Details${arrow()}</span></div>
     ${empty ? `<p class="vcard-empty">No data yet</p>` : `<div class="vcard-body">${ring(frac, tone, label, sub)}
       <div class="vcard-text"><strong>${escapeHtml(s.running ? s.title : s.title.replace(/^Last: /, ''))}</strong>
         <span>${escapeHtml(s.running ? 'Watering now' : startedText(irrRuns()[0]?.start) || 'Not watering')}</span>
@@ -1220,7 +1221,7 @@ function securityCard(systems) {
   const s = systemSummary(sys);
   const tone = s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : '';
   return `<a class="panel vcard sec ${tone}" href="#/sys/security">
-    <span class="vcard-label">Security</span>
+    <div class="pw-head"><h2 class="panel-title">Security</h2><span class="panel-link">Details${arrow()}</span></div>
     <div class="vcard-body"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
       <div class="vcard-text"><strong>${escapeHtml(s.line)}</strong>
         <span>${escapeHtml(s.sub || (s.cams ? `${s.camsOn} of ${s.cams} cameras online` : ''))}</span>

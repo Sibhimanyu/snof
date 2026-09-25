@@ -135,13 +135,8 @@ struct PowerCard: View {
             let solarW = solar.compactMap { $0.inverter?.watts }.reduce(0, +)
             NavigationLink(value: SystemRoute(id: .solar)) {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("Power").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                        Spacer()
-                        Text("Details").font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
-                        Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.on)
-                    }
-                    .padding(.horizontal, 16).padding(.top, 16)
+                    CardHeader(title: "Power")
+                        .padding(.horizontal, 16).padding(.top, 16)
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         if solarW > 0 {
                             Text(Systems.power(solarW)).font(Theme.font(26, .bold, relativeTo: .title).monospacedDigit()).tracking(-1)
@@ -217,9 +212,9 @@ private struct PowerRow: View {
                     .font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1).minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // The line's name wins the width; the reading truncates, so an
-            // offline inverter's longer words never wrap the title.
-            .layoutPriority(1)
+            // The reading keeps its full width and the name column gives way
+            // (one line each, shrinking a little). The name once had the
+            // priority and pushed "965 W" and "pumping" off the card.
             VStack(alignment: .trailing, spacing: 2) {
                 if line.spec.inverter == nil, let s = line.supply, s.hasVoltage, st.state != .rest {
                     MiniPhases(volts: s.phaseV, stale: stale)
@@ -228,6 +223,8 @@ private struct PowerRow: View {
                 }
                 if !st.sub.isEmpty { Text(st.sub).font(Theme.font(12, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(1) }
             }
+            .fixedSize()
+            .layoutPriority(1)
         }
         .padding(.horizontal, 16).padding(.vertical, 11)
         .contentShape(Rectangle())
@@ -415,8 +412,9 @@ struct SecurityCard: View {
             let tone: Color = s.state == .bad ? Theme.bad : s.armed ? Theme.on : Theme.faint
             let cams = sys.entities.filter { $0.domain == "camera" }
             NavigationLink(value: SystemRoute(id: .security)) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Security").eyebrowStyle()
+                // Picture left, words right, as the irrigation ring.
+                HomeCard(title: "Security") {
+                    HStack(spacing: 14) {
                     Image(systemName: s.armed ? "shield.lefthalf.filled" : "shield").font(.system(size: 28))
                         .foregroundStyle(tone).frame(width: 64, height: 64)
                         .background(tone.opacity(0.12), in: Circle())
@@ -430,10 +428,8 @@ struct SecurityCard: View {
                         }
                         .accessibilityHidden(true)
                     }
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(14)
-                .modifier(Panel(padding: 0))
             }
             .buttonStyle(.plain)
         }
@@ -520,7 +516,7 @@ struct SystemView: View {
                             if rows.isEmpty {
                                 Text(store.areaName(d.area)).font(Theme.meta).foregroundStyle(Theme.muted).padding(14)
                             } else {
-                                RowList(items: Array(rows.prefix(12)), framed: false) { DeviceRow(entity: $0) }
+                                RowList(items: Array(rows.prefix(12)), framed: false) { DeviceRow(entity: $0, device: d.name) }
                             }
                         }
                     }
