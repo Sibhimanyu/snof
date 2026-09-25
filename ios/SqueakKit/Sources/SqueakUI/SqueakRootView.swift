@@ -15,6 +15,11 @@ public struct SqueakRootView: View {
 
     public init() {}
 
+    /// Squeak's duck as a tab-bar glyph (a template image, so the tab bar
+    /// tints it), for an app that hosts this view as a tab. Generated from
+    /// the duck artwork; never an SF Symbol, which draws a generic bird.
+    public static var tabIcon: Image { Image("squeak-tab-duck", bundle: .module) }
+
     public var body: some View {
         RootView()
             .environmentObject(model)

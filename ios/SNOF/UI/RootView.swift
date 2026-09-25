@@ -53,7 +53,12 @@ struct MainTabs: View {
             // Faults only: ACs, TVs and the printer off at the wall are not.
             .badge(store.faultyDevices.isEmpty ? nil : Text(""))
             if SqueakAccess.shows(for: store.user?.email) {
-                Tab("Squeak", systemImage: "bird", value: AppTab.squeak) { SqueakRootView() }
+                // The duck from Squeak's own artwork; SF Symbols' "bird" reads as a dove.
+                Tab(value: AppTab.squeak) {
+                    SqueakRootView()
+                } label: {
+                    Label { Text("Squeak") } icon: { SqueakRootView.tabIcon }
+                }
             }
         }
         .tint(Theme.text)
