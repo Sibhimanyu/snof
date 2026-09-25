@@ -163,6 +163,10 @@ _CTRL_STAMP = re.compile(r"DATE=(\d{1,2}/\d{1,2}/\d{4})\s+TIME=(\d{1,2}:\d{1,2}:
 _SKIPPED = re.compile(r"ZONE=(\d{1,3}) SKIPPED")
 _ZONE = re.compile(r"(\d{1,3})")
 _HMS = re.compile(r"^\d{2}:\d{2}:\d{2}$")
+# A zone that has just ended reads a few seconds below zero, which the
+# controller prints wrapped: "23:59:56" left (seen 2026-09-25, one poll after
+# a zone change). No zone runs 20 hours, so 20:00:00 and up is dropped.
+_WRAPPED = ("20:", "21:", "22:", "23:")
 
 
 def slug(name: str) -> str:
@@ -270,7 +274,7 @@ def parse_niagara_controller(c: Any, group: str = "") -> tuple[str, dict] | None
             out["zone"] = int(zm.group(1))
         for src, dst in (("ZoneRunTime", "zoneRun"), ("zoneRemainingTime", "zoneLeft")):
             v = str(c.get(src) or "")
-            if _HMS.match(v):
+            if _HMS.match(v) and not v.startswith(_WRAPPED):
                 out[dst] = v
     sk = _SKIPPED.search(latest)
     if code == "114" and sk:

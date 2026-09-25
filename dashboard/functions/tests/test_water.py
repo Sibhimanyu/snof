@@ -118,6 +118,9 @@ def test_niagara_zoned_off_and_running():
     assert on["running"] is True and on["eventCode"] == "044" and on["event"] == "Zone changed"
     assert on["program"] == "P1" and on["zone"] == 3
     assert on["zoneRun"] == "00:00:32" and on["zoneLeft"] == "01:04:28"
+    # Just past a zone's end the controller prints minus 4 s as 23:59:56.
+    _, wrapped = W.parse_niagara_controller(dict(ZONED_ZONE3, zoneRemainingTime="23:59:56"), "GROUP ONE")
+    assert "zoneLeft" not in wrapped and wrapped["zone"] == 3
     assert on["volts"] == [231, 232, 235]
     # Position 12 (116.3) is not a current on this controller.
     assert on["amps"] == [8.6, 8.4]
