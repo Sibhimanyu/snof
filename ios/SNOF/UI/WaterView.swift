@@ -32,13 +32,15 @@ struct WaterView: View {
             WaterPath()
         }
         .navigationTitle("Water")
-        // Ask now, and every 30 s while this tab is on screen.
+        // Ask now, and every 30 s while this tab is on screen; the controller
+        // every minute.
         .task {
             while !Task.isCancelled {
                 await store.refreshWater()
                 try? await Task.sleep(for: .seconds(30))
             }
         }
+        .task(id: store.metaLoaded) { await store.keepControllerFresh() }
     }
 
     private var refresh: (@MainActor () async -> Void)? {
@@ -68,7 +70,9 @@ struct WaterPath: View {
         let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: now)
         let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: now) }
         let onRiver = live(river), onSupply = live(supply), onDrip = live(drip), onFarm = say.running
-        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: now) }
+        // Like the motors: no age while current, past tense and its age after.
+        let farmCurrent = store.controllerCurrent
+        let checked = farmCurrent ? nil : (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: now) }
         let farmLine = onFarm
             ? [c.program?.valves.isEmpty == false ? c.program!.valves : say.title,
                say.leftMin.flatMap { $0 > 0 ? "\(Format.minutes($0)) left" : nil }].compactMap { $0 }.joined(separator: " · ")
@@ -80,9 +84,10 @@ struct WaterPath: View {
             place("Thoppu", up: onRiver, down: onSupply || onDrip)
             motorRow(drip, fallback: "well-motor", up: onSupply || onDrip, down: onSupply, branch: onDrip)
             motorRow(supply, fallback: "wellmotor75hp", up: onSupply, down: onSupply)
-            place("Farm", up: onSupply, down: onFarm)
-            row(key: FarmStore.dconKey, name: store.dconName, line: farmLine, word: onFarm ? "Watering" : "Not watering",
-                on: onFarm, age: checked, up: onFarm, down: nil)
+            place("Farm", up: onSupply, down: onFarm && farmCurrent)
+            row(key: FarmStore.dconKey, name: store.dconName, line: farmLine,
+                word: farmCurrent ? (onFarm ? "Watering" : "Not watering") : (onFarm ? "Was watering" : "Was not watering"),
+                on: onFarm && farmCurrent, age: checked, up: onFarm && farmCurrent, down: nil)
             ForEach(rest) { m in motorRow(m, fallback: m.id, up: nil, down: nil) }
         }
         .padding(.vertical, compact ? 0 : 6)

@@ -521,7 +521,7 @@ final class FarmStore {
     /// pressure now, and yesterday-and-today's runs. Three ordinary report
     /// requests — each a press, never a poll — so the rules, the kill switch
     /// and the function's own checks all apply unchanged.
-    func refreshIrrigation(quiet: Bool = false) async {
+    func refreshIrrigation(quiet: Bool = false, liveOnly: Bool = false) async {
         if !canControl { if !quiet { show(.err, "Your account can view, but not run reports.") }; return }
         let g = gate(.irrigation)
         if !g.ok { if !quiet { show(.err, g.why) }; return }
@@ -538,8 +538,9 @@ final class FarmStore {
         let zone = FarmTime.zone(irrigation.timeZone)
         let today = FarmTime.today(Date(), zone: zone), yesterday = FarmTime.yesterday(Date(), zone: zone)
         var sent = 0
-        for (type, from, to) in [("controller", nil, nil), ("live_readings", nil, nil),
-                                 ("session_log", yesterday, today)] as [(String, String?, String?)] {
+        var reads: [(String, String?, String?)] = [("controller", nil, nil), ("live_readings", nil, nil)]
+        if !liveOnly { reads.append(("session_log", yesterday, today)) }
+        for (type, from, to) in reads {
             do {
                 let key = try await backend.requestReport(type: type, from: from, to: to, uid: uid)
                 refreshKeys.insert(key)
@@ -564,6 +565,30 @@ final class FarmStore {
     /// fetches it again, at most once every 10 minutes, so nobody has to press
     /// Refresh to trust what they see. Quiet unless it fails.
     private var autoRefreshedAt = Date.distantPast
+    /// While a screen that shows the controller is open (Home, Water, its
+    /// page): what it is doing and its live readings, every minute (owner,
+    /// 2026-09-25: "when the user is looking at the screen the data should
+    /// always try and stay new. 5 min is old"). Two light reads; the day's
+    /// run log stays on its 15-minute refresh below. The 45 s guard in
+    /// refreshIrrigation is on the shared read time, so several phones
+    /// watching at once do not add reads. Controllers only: a viewer cannot
+    /// ask the controller anything, and sees what the last read said.
+    func keepControllerFresh() async {
+        while !Task.isCancelled {
+            if canControl, connected, gate(.irrigation).ok, !refreshingIrrigation {
+                await refreshIrrigation(quiet: true, liveOnly: true)
+            }
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+
+    /// The controller's reading is current: read in the last 3 minutes. Past
+    /// that it is said in the past tense with its age, never as live.
+    var controllerCurrent: Bool {
+        guard let at = irrigation.program?.at ?? irrigation.lastUpdated else { return false }
+        return nowMs + skewMs - at <= Double(Farm.controllerCurrentMs)
+    }
+
     func autoRefreshIrrigationIfStale() async {
         guard canControl, connected, !refreshingIrrigation, gate(.irrigation).ok else { return }
         let last = irrigation.program?.at ?? irrigation.lastUpdated ?? 0

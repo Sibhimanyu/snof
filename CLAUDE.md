@@ -389,3 +389,12 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   web's `#/admin`: invite by email (view or view + control), grant or revoke
   view and control, cancel an invite. Same writes as `aclSet()` /
   `sendInvite()`, so the RTDB rules decide; admin is never offered.
+- **The controller stays fresh while it is on screen** (owner, 2026-09-25:
+  "top says live but … 5 min ago … 5 min is old"; web, iOS 0.11.18). On
+  Home, Water and the controller's page, controllers ask for the
+  `controller` + `live_readings` reads every 60 s (`keepControllerFresh()` /
+  `syncControllerPolling()`; the session log stays on its 15-minute refresh;
+  the shared 45 s guard still applies). The SibhiSump row, like the motors,
+  shows no age while its reading is under 3 minutes old and says "Was
+  watering / Was not watering · 5m ago" after, so nothing under the "Live"
+  pill reads as current when it is not.

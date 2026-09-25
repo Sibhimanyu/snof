@@ -44,6 +44,7 @@ struct OverviewView: View {
         // Home is the first screen: keep the water picture current while it is
         // open (the function spaces pulls 15 s apart whoever asks). Restarted
         // once meta arrives: before it the gate is closed and nothing refreshes.
+        .task(id: "\(store.metaLoaded)-controller") { await store.keepControllerFresh() }
         .task(id: store.metaLoaded) {
             await store.autoRefreshIrrigationIfStale()
             while !Task.isCancelled {
