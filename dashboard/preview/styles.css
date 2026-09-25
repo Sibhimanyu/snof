@@ -1308,32 +1308,44 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   .boot-mark{animation:spin 1s linear infinite!important}
 }
 
-/* Water: every motor alike, each opening its own page (owner, 2026-09-25). */
-.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
-.mtile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:16px;color:inherit;text-decoration:none;min-height:176px}
-.mtile:hover{background:var(--panel-2)}
-.mtile.is-on{box-shadow:0 0 0 1px var(--accent-line) inset, var(--shadow-card)}
-.mtile-art{width:48px;height:48px;object-fit:contain;margin-bottom:6px}
-.mtile-name{font-size:15.5px;font-weight:700;color:var(--text)}
-.mtile-sub{font-size:12.5px;color:var(--muted);line-height:1.3}
-.mtile-state{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:8px}
-.mtile-state em{font-style:normal;font-size:12px;color:var(--faint)}
-.mtile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-
-/* The water's path (waterFlowMap): equal motor nodes, place labels, pipes
- * that flow only while their motor runs on a current reading. */
-.wflowmap{padding:12px 8px;margin-bottom:12px;display:flex;justify-content:center}
-.fm{width:100%;max-width:420px;height:auto;overflow:visible}
-.fm-pipe{fill:none;stroke:var(--line-2);stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
-.fm-pipe.is-on{stroke:var(--brand);stroke-dasharray:10 8;animation:fm-flow .9s linear infinite}
-@keyframes fm-flow{to{stroke-dashoffset:-18}}
-@media (prefers-reduced-motion:reduce){.fm-pipe.is-on{animation:none;stroke-dasharray:none}}
-.fm-node circle{fill:var(--panel-2);stroke:var(--line-2);stroke-width:2;transition:stroke .2s}
-.fm-node.is-on circle{stroke:var(--brand);stroke-width:3;filter:drop-shadow(0 0 6px var(--accent-glow, rgba(1,136,67,.35)))}
-.fm-node:hover circle,.fm-node:focus-visible circle{stroke:var(--accent)}
-.fm-node:focus-visible{outline:none}
-.fm-node-name{font-size:12.5px;font-weight:700;fill:var(--text);text-anchor:middle}
-.fm-node-word{font-size:11px;fill:var(--muted);text-anchor:middle}
-.fm-node.is-on .fm-node-word{fill:var(--accent);font-weight:650}
-.fm-place-name{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;fill:var(--faint);text-anchor:middle}
-.fm-place-sub{font-size:11px;fill:var(--muted);text-anchor:middle}
+/* Water: the water's path (waterPath). One row per motor on the pipe the
+ * water takes; every motor row alike, each opening its own page. A pipe
+ * segment is green only while its motor runs on a current reading. */
+.wpath{padding:6px 0;max-width:760px;overflow:hidden}
+.wpath + .wpath{margin-top:12px}
+.wp-row{display:grid;grid-template-columns:56px minmax(0,1fr) auto auto;align-items:center;column-gap:12px;
+  position:relative;padding-right:14px;color:inherit;text-decoration:none}
+.wp-place{grid-template-columns:56px 1fr;min-height:30px}
+.wp-motor{min-height:68px}
+.wp-branch{grid-template-columns:56px 50px minmax(0,1fr) auto auto;column-gap:0}
+.wp-branch .wp-text{padding-left:10px}
+.wp-branch .wp-state{margin-left:12px}
+.wp-branch .wp-go{margin-left:12px}
+.wp-motor:hover{background:var(--panel-2)}
+.wp-motor:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.wp-g{position:relative;align-self:stretch;display:grid;place-items:center}
+/* The pipe: two halves, above and below the row's centre. */
+.wp-rail{position:relative;align-self:stretch;width:56px;display:block}
+.wp-g .wp-rail{position:absolute;inset:0}
+.wp-rail::before,.wp-rail::after{content:"";position:absolute;left:26px;width:4px;background:var(--line-2)}
+.wp-rail::before{top:0;height:50%}
+.wp-rail::after{top:50%;bottom:0}
+.wp-rail.up-on::before,.wp-rail.dn-on::after{background:var(--brand)}
+.wp-rail.no-up::before,.wp-rail.no-dn::after{display:none}
+.wp-place .wp-rail::after{top:50%}
+.wp-place .wp-rail{background:radial-gradient(circle at 28px 50%, var(--line-2) 0 5px, transparent 5.5px)}
+.wp-place-name{font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.wp-st{position:relative;z-index:1;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;
+  background:var(--panel-2);border:2px solid var(--line-2)}
+.wp-st img{width:26px;height:26px;object-fit:contain}
+.wp-st.is-on{border:3px solid var(--brand);box-shadow:0 0 0 4px rgba(1,136,67,.14)}
+/* The branch: a short pipe from the rail to the Well motor. */
+.wp-stub{position:relative;align-self:stretch;display:grid;place-items:center end}
+.wp-stub::before{content:"";position:absolute;left:-28px;right:40px;top:calc(50% - 2px);height:4px;background:var(--line-2)}
+.wp-stub.is-on::before{background:var(--brand)}
+.wp-text{display:flex;flex-direction:column;gap:2px;min-width:0;padding:10px 0}
+.wp-text strong{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wp-text small{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wp-state{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.wp-state em{font-style:normal;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.wp-go{width:16px;height:16px;color:var(--faint)}
