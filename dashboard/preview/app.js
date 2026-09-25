@@ -2841,6 +2841,57 @@ function motorTile(m) {
   </a>`;
 }
 
+/* The water's path, drawn (owner, 2026-09-25: "a visual representation of
+ * the water flow"). River → River Motor → Thoppu → Wellmotor75HP → Farm →
+ * SibhiSump → the valves, with Thoppu's Well motor branching to its drip
+ * zones. Every motor is the same size and opens its own page; places are
+ * small labels between them. A pipe flows only while the motor pushing
+ * water through it runs on a current reading. */
+function waterFlowMap() {
+  const w = state.water || {};
+  const motors = waterMotors();
+  const river = motors.find((m) => m.key === 'river');
+  const supply = motors.find((m) => m.role === 'main-farm');
+  const drip = motors.find((m) => m.role === 'drip');
+  const s = irrNowState();
+  const live = (m) => !!m && m.running === true && waterCurrent(m);
+  const on = { river: live(river), supply: live(supply), drip: live(drip), farm: !!s.running };
+  const pipe = (d, flowing) => `<path class="fm-pipe${flowing ? ' is-on' : ''}" d="${d}"/>`;
+  const place = (x, y, text, sub = '') => `<g class="fm-place" transform="translate(${x} ${y})">
+      <text class="fm-place-name" y="${sub ? -2 : 4}">${escapeHtml(text)}</text>${sub ? `<text class="fm-place-sub" y="12">${escapeHtml(sub)}</text>` : ''}</g>`;
+  const node = (x, y, m, key, word, flowing) => {
+    const name = m?.name || (key === DCON_KEY ? dconTile().name : 'Motor');
+    const art = flowing ? 'motor-on' : 'motor-off';
+    return `<a class="fm-node${flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(key)}" aria-label="${escapeHtml(`${name}: ${word}`)}">
+      <circle cx="${x}" cy="${y}" r="27"/><image href="/art/${art}.png" x="${x - 17}" y="${y - 17}" width="34" height="34"/>
+      <text class="fm-node-name" x="${x}" y="${y + 43}">${escapeHtml(name)}</text>
+      <text class="fm-node-word" x="${x}" y="${y + 57}">${escapeHtml(word)}</text></a>`;
+  };
+  const word = (m) => (!m ? 'No reading' : motorWord(m, waterCurrent(m)));
+  const zone = drip?.program ? `${drip.program}${drip.zone != null ? ` · zone ${drip.zone}` : ''}` : '';
+  return `<section class="panel wflowmap" aria-label="Where the water goes">
+    <svg class="fm" viewBox="0 0 360 560" role="img" aria-label="River to Thoppu to Farm">
+      ${pipe('M180 42 V78', on.river)}
+      ${pipe('M180 167 V194', on.river)}
+      ${pipe('M180 222 V238 H95 V262', on.supply)}
+      ${pipe('M180 222 V238 H265 V262', on.drip)}
+      ${pipe('M95 353 V379', on.supply)}
+      ${pipe('M265 353 V377', on.drip)}
+      ${pipe('M95 406 V430', on.farm)}
+      ${pipe('M95 521 V535', on.farm)}
+      ${place(180, 30, 'River')}
+      ${node(180, 105, river, 'river', word(river), on.river)}
+      ${place(180, 208, 'Thoppu')}
+      ${node(95, 289, supply, supply?.key || 'wellmotor75hp', word(supply), on.supply)}
+      ${node(265, 289, drip, drip?.key || 'well-motor', word(drip), on.drip)}
+      ${place(95, 392, 'Farm')}
+      ${place(265, 392, 'Thoppu drip', zone)}
+      ${node(95, 457, null, DCON_KEY, s.running ? 'Watering' : 'Not watering', on.farm)}
+      ${place(95, 548, 'Valves', s.running ? (s.title || 'watering') : 'closed')}
+    </svg>
+  </section>`;
+}
+
 function waterView() {
   const gate = waterGate();
   const w = state.water || {};
@@ -2853,7 +2904,7 @@ function waterView() {
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
     (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
     (niagaraErr ? `<p class="more-note note-off">${escapeHtml(niagaraErr)} Showing the last readings.</p>` : '') +
-    `<div class="mgrid">${tiles.map(motorTile).join('')}</div>`;
+    waterFlowMap() + `<div class="mgrid">${tiles.map(motorTile).join('')}</div>`;
 }
 
 /** One motor's own page: its controls, readings and reports. */
