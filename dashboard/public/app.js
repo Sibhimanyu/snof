@@ -2826,70 +2826,62 @@ function dconTile() {
   return { key: DCON_KEY, name: d.device || 'Mobitech DCON', vendor: 'mobitech', running: s.running,
     sub: 'Mobitech · Farm valves', word: s.running ? 'Watering' : 'Not watering', age: irrChecked() };
 }
-function motorTile(m) {
-  const isDcon = m.key === DCON_KEY;
-  const current = isDcon || waterCurrent(m);
-  const on = m.running === true && current;
-  const sub = isDcon ? m.sub : [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
-  const word = isDcon ? m.word : motorWord(m, current);
-  const age = isDcon ? m.age : current ? '' : waterAge(m);
-  return `<a class="panel mtile${on ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(m.key)}">
-    <img class="mtile-art" src="/art/${on ? 'motor-on' : 'motor-off'}.png" alt="" width="48" height="48">
-    <span class="mtile-name">${escapeHtml(m.name || 'Motor')}</span>
-    <span class="mtile-sub">${escapeHtml(sub)}</span>
-    <span class="mtile-state"><span class="tag${on ? ' tag-on' : ''}">${escapeHtml(word)}</span>${age ? `<em>${escapeHtml(age)}</em>` : ''}</span>
-  </a>`;
+/* The water's path (owner, 2026-09-25: "a visual representation of the
+ * water flow"; then "bad use of space and not clean"). One panel, one row per
+ * motor, strung on the pipe the water takes: River → River Motor → Thoppu →
+ * Wellmotor75HP → Farm → SibhiSump, with Thoppu's Well motor on a branch to
+ * its drip zones. Every motor row is the same and opens its own page; a pipe
+ * segment is green only while the motor pushing water through it runs on a
+ * current reading. The same rows are WaterPath in WaterView.swift. */
+const WATER_WAY = { river: 'River to Thoppu', 'main-farm': 'Thoppu to Farm', drip: "Thoppu's drip zones" };
+/** What a motor row says under its name: what it is doing, else its job. */
+function motorLine(m, current) {
+  if (current && m.vendor === 'livesky') {
+    if (m.running === true && m.runMinutes != null) return `For ${hm(m.runMinutes)}`;
+    if (m.running === false && m.stopMinutes != null) return `Off for ${hm(m.stopMinutes)}`;
+  }
+  if (current && m.running && m.program) {
+    return [m.program, m.zone != null ? `zone ${m.zone}` : '', m.zoneLeft ? `${hms(m.zoneLeft)} left` : ''].filter(Boolean).join(' · ');
+  }
+  return WATER_WAY[m.key === 'river' ? 'river' : m.role] || m.group || '';
 }
-
-/* The water's path, drawn (owner, 2026-09-25: "a visual representation of
- * the water flow"). River → River Motor → Thoppu → Wellmotor75HP → Farm →
- * SibhiSump → the valves, with Thoppu's Well motor branching to its drip
- * zones. Every motor is the same size and opens its own page; places are
- * small labels between them. A pipe flows only while the motor pushing
- * water through it runs on a current reading. */
-function waterFlowMap() {
-  const w = state.water || {};
+function waterPath() {
   const motors = waterMotors();
   const river = motors.find((m) => m.key === 'river');
   const supply = motors.find((m) => m.role === 'main-farm');
   const drip = motors.find((m) => m.role === 'drip');
+  const rest = motors.filter((m) => m !== river && m !== supply && m !== drip);
   const s = irrNowState();
   const live = (m) => !!m && m.running === true && waterCurrent(m);
   const on = { river: live(river), supply: live(supply), drip: live(drip), farm: !!s.running };
-  const pipe = (d, flowing) => `<path class="fm-pipe${flowing ? ' is-on' : ''}" d="${d}"/>`;
-  const place = (x, y, text, sub = '') => `<g class="fm-place" transform="translate(${x} ${y})">
-      <text class="fm-place-name" y="${sub ? -2 : 4}">${escapeHtml(text)}</text>${sub ? `<text class="fm-place-sub" y="12">${escapeHtml(sub)}</text>` : ''}</g>`;
-  const node = (x, y, m, key, word, flowing) => {
-    const name = m?.name || (key === DCON_KEY ? dconTile().name : 'Motor');
-    const art = flowing ? 'motor-on' : 'motor-off';
-    return `<a class="fm-node${flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(key)}" aria-label="${escapeHtml(`${name}: ${word}`)}">
-      <circle cx="${x}" cy="${y}" r="27"/><image href="/art/${art}.png" x="${x - 17}" y="${y - 17}" width="34" height="34"/>
-      <text class="fm-node-name" x="${x}" y="${y + 43}">${escapeHtml(name)}</text>
-      <text class="fm-node-word" x="${x}" y="${y + 57}">${escapeHtml(word)}</text></a>`;
+  // A rail cell: the pipe above and below the row's centre, each on or off.
+  const rail = (up, down) => `<span class="wp-rail${up == null ? ' no-up' : up ? ' up-on' : ''}${down == null ? ' no-dn' : down ? ' dn-on' : ''}" aria-hidden="true"></span>`;
+  const station = (flowing) => `<span class="wp-st${flowing ? ' is-on' : ''}"><img src="/art/${flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span>`;
+  const place = (name, up, down) => `<div class="wp-row wp-place">${rail(up, down)}<span class="wp-place-name">${escapeHtml(name)}</span></div>`;
+  const row = (key, name, line, word, flowing, age, up, down, branch = null) =>
+    `<a class="wp-row wp-motor${branch != null ? ' wp-branch' : ''}${flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(key)}">` +
+    (branch != null ? `${rail(up, down)}<span class="wp-stub${branch ? ' is-on' : ''}">${station(flowing)}</span>` : `<span class="wp-g">${rail(up, down)}${station(flowing)}</span>`) +
+    `<span class="wp-text"><strong>${escapeHtml(name)}</strong>${line ? `<small>${escapeHtml(line)}</small>` : ''}</span>` +
+    `<span class="wp-state"><span class="tag${flowing ? ' tag-on' : ''}">${escapeHtml(word)}</span>${age ? `<em>${escapeHtml(age)}</em>` : ''}</span>` +
+    `${arrow('i-arrow', 'wp-go')}</a>`;
+  const motorRow = (m, fallbackKey, up, down, branch) => {
+    if (!m) return row(fallbackKey, { river: 'River Motor', 'well-motor': 'Well motor', wellmotor75hp: 'Wellmotor75HP' }[fallbackKey] || 'Motor', 'No reading yet', 'No reading', false, '', up, down, branch);
+    const cur = waterCurrent(m);
+    return row(m.key, m.name || 'Motor', motorLine(m, cur), motorWord(m, cur), live(m), cur ? '' : waterAge(m), up, down, branch);
   };
-  const word = (m) => (!m ? 'No reading' : motorWord(m, waterCurrent(m)));
-  const zone = drip?.program ? `${drip.program}${drip.zone != null ? ` · zone ${drip.zone}` : ''}` : '';
-  return `<section class="panel wflowmap" aria-label="Where the water goes">
-    <svg class="fm" viewBox="0 0 360 560" role="img" aria-label="River to Thoppu to Farm">
-      ${pipe('M180 42 V78', on.river)}
-      ${pipe('M180 167 V194', on.river)}
-      ${pipe('M180 222 V238 H95 V262', on.supply)}
-      ${pipe('M180 222 V238 H265 V262', on.drip)}
-      ${pipe('M95 353 V379', on.supply)}
-      ${pipe('M265 353 V377', on.drip)}
-      ${pipe('M95 406 V430', on.farm)}
-      ${pipe('M95 521 V535', on.farm)}
-      ${place(180, 30, 'River')}
-      ${node(180, 105, river, 'river', word(river), on.river)}
-      ${place(180, 208, 'Thoppu')}
-      ${node(95, 289, supply, supply?.key || 'wellmotor75hp', word(supply), on.supply)}
-      ${node(265, 289, drip, drip?.key || 'well-motor', word(drip), on.drip)}
-      ${place(95, 392, 'Farm')}
-      ${place(265, 392, 'Thoppu drip', zone)}
-      ${node(95, 457, null, DCON_KEY, s.running ? 'Watering' : 'Not watering', on.farm)}
-      ${place(95, 548, 'Valves', s.running ? (s.title || 'watering') : 'closed')}
-    </svg>
-  </section>`;
+  const t = dconTile();
+  const farmLine = s.running ? [s.valves || s.title, s.left != null && s.left > 0 ? `${fmtMin(s.left)} left` : ''].filter(Boolean).join(' · ') : 'Valves closed';
+  return `<section class="panel wpath" aria-label="Where the water goes">` +
+    place('River', null, on.river) +
+    motorRow(river, 'river', on.river, on.river) +
+    // Both Thoppu motors draw from the pipe between Thoppu and the branch.
+    place('Thoppu', on.river, on.supply || on.drip) +
+    motorRow(drip, 'well-motor', on.supply || on.drip, on.supply, on.drip) +
+    motorRow(supply, 'wellmotor75hp', on.supply, on.supply) +
+    place('Farm', on.supply, on.farm) +
+    row(DCON_KEY, t.name, farmLine, t.word, on.farm, t.age, on.farm, null) +
+    `</section>` +
+    (rest.length ? `<section class="panel wpath">${rest.map((m) => motorRow(m, m.key, null, null)).join('')}</section>` : '');
 }
 
 function waterView() {
@@ -2899,12 +2891,11 @@ function waterView() {
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
   const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
   const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
-  const tiles = [...waterMotors(), dconTile()];
   return head('Water', w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet', refresh) +
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
     (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
     (niagaraErr ? `<p class="more-note note-off">${escapeHtml(niagaraErr)} Showing the last readings.</p>` : '') +
-    waterFlowMap() + `<div class="mgrid">${tiles.map(motorTile).join('')}</div>`;
+    waterPath();
 }
 
 /** One motor's own page: its controls, readings and reports. */

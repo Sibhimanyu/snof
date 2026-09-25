@@ -365,9 +365,11 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   the reason while `meta/reports.transport` is relay (absent = relay) and the
   bridge is quiet. Details: docs/HANDOFF.md "What changed overnight".
 - **No tab for the main farm** (owner, 2026-09-25, said twice: "give equal
-  importance"). Three tabs: Home · Water · Rooms. Water is an equal grid of
-  every motor — the river motor, Thoppu's two motors and the main farm's
-  Mobitech controller — each opening its own page (web `#/motor/<key>`, iOS
+  importance"). Three tabs: Home · Water · Rooms. Water is one panel, the
+  water's path (owner: "bad use of space and not clean" about a map plus
+  tiles): one equal row per motor — the river motor, Thoppu's two motors and
+  the main farm's Mobitech controller — strung on the pipe, green only on a
+  current reading (`waterPath()` / `WaterPath`), each opening its own page (web `#/motor/<key>`, iOS
   `MotorRoute`; `#/irrigation` redirects to `#/motor/dcon`, iOS
   `store.openMotor(FarmStore.dconKey)`). Valve control, reports and the
   Mobitech account live on the controller's page. Don't bring back a

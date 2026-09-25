@@ -3,9 +3,10 @@ import SNOFCore
 
 /* Water: every motor alike (owner, 2026-09-25: "a plain visual of all the
  * motors, and when we click a motor the controls and reports and related
- * data of that one motor shows up … don't be biased"). Four equal tiles —
- * the river motor (Livesky), the other farm's two motors (Niagara) and the
- * main farm's controller (Mobitech DCON) — each opening its own page.
+ * data of that one motor shows up … don't be biased"). Four equal rows on
+ * the water's path — the river motor (Livesky), the other farm's two motors
+ * (Niagara) and the main farm's controller (Mobitech DCON) — each opening
+ * its own page.
  * Mirrors waterView() / motorView() in app.js. */
 struct MotorRoute: Hashable { let key: String }
 
@@ -28,13 +29,7 @@ struct WaterView: View {
             if water.niagara.ok == false, !water.niagara.error.isEmpty {
                 Note(text: "\(water.niagara.error) Showing the last readings.", tone: .warn)
             }
-            FlowMap()
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
-                ForEach(store.waterMotorList) { m in
-                    NavigationLink(value: MotorRoute(key: m.id)) { MotorTile(motor: m) }.buttonStyle(TileButtonStyle())
-                }
-                NavigationLink(value: MotorRoute(key: FarmStore.dconKey)) { DconTile() }.buttonStyle(TileButtonStyle())
-            }
+            WaterPath()
         }
         .navigationTitle("Water")
         // Ask now, and every 30 s while this tab is on screen.
@@ -53,156 +48,158 @@ struct WaterView: View {
     }
 }
 
-/// The water's path, drawn (owner, 2026-09-25): River → River Motor → Thoppu
-/// → Wellmotor75HP → Farm → SibhiSump → the valves, with the Well motor
-/// branching to Thoppu's drip zones. Every motor is the same size and opens
-/// its own page; a pipe flows only while its motor runs on a current
-/// reading. Same layout as waterFlowMap() in app.js (a 360 × 560 plan).
-struct FlowMap: View {
+/// The water's path (owner, 2026-09-25: "a visual representation of the
+/// water flow"; then "bad use of space and not clean"). One panel, one row per
+/// motor on the pipe the water takes: River → River Motor → Thoppu →
+/// Wellmotor75HP → Farm → SibhiSump, with the Well motor on a branch to
+/// Thoppu's drip zones. Every motor row is the same and opens its own page; a
+/// pipe segment is green only while the motor pushing water through it runs
+/// on a current reading. Mirrors waterPath() in app.js.
+struct WaterPath: View {
     @Environment(FarmStore.self) private var store
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var phase: CGFloat = 0
 
     var body: some View {
-        let w = store.water
+        let w = store.water, now = store.now
         let river = w.river, supply = w.supply.first, drip = w.motors.first { $0.role == "drip" }
+        let rest = w.motors.filter { $0.id != supply?.id && $0.id != drip?.id }
         let c = store.irrigation
-        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
-        let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: store.now) }
-        let word = { (m: WaterMotor?) -> String in
-            guard let m else { return "No reading" }
-            let cur = w.isCurrent(m, now: store.now)
-            return m.running == true ? (cur ? "Running" : "Was running") : m.running == false ? (cur ? "Off" : "Was off") : "Unknown"
-        }
+        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: now)
+        let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: now) }
         let onRiver = live(river), onSupply = live(supply), onDrip = live(drip), onFarm = say.running
-        let zone = drip?.program.map { p in p + (drip?.zone.map { " · zone \($0)" } ?? "") }
-        GeometryReader { g in
-            let k = g.size.width / 360
-            ZStack(alignment: .topLeading) {
-                pipe([(180, 42), (180, 78)], onRiver, k)
-                pipe([(180, 167), (180, 194)], onRiver, k)
-                pipe([(180, 222), (180, 238), (95, 238), (95, 262)], onSupply, k)
-                pipe([(180, 222), (180, 238), (265, 238), (265, 262)], onDrip, k)
-                pipe([(95, 353), (95, 379)], onSupply, k)
-                pipe([(265, 353), (265, 377)], onDrip, k)
-                pipe([(95, 406), (95, 430)], onFarm, k)
-                pipe([(95, 521), (95, 535)], onFarm, k)
-                place("River", nil, at: (180, 30), k)
-                place("Thoppu", nil, at: (180, 208), k)
-                place("Farm", nil, at: (95, 392), k)
-                place("Thoppu drip", zone, at: (265, 392), k)
-                place("Valves", onFarm ? say.title : "closed", at: (95, 548), k)
-                node(key: river?.id ?? "river", name: river?.name ?? "River Motor", word: word(river), on: onRiver, at: (180, 105), k)
-                node(key: supply?.id ?? "wellmotor75hp", name: supply?.name ?? "7.5 HP motor", word: word(supply), on: onSupply, at: (95, 289), k)
-                node(key: drip?.id ?? "well-motor", name: drip?.name ?? "Well motor", word: word(drip), on: onDrip, at: (265, 289), k)
-                node(key: FarmStore.dconKey, name: store.dconName, word: onFarm ? "Watering" : "Not watering", on: onFarm, at: (95, 457), k)
-            }
+        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: now) }
+        let farmLine = onFarm
+            ? [c.program?.valves.isEmpty == false ? c.program!.valves : say.title,
+               say.leftMin.flatMap { $0 > 0 ? "\(Format.minutes($0)) left" : nil }].compactMap { $0 }.joined(separator: " · ")
+            : "Valves closed"
+        VStack(spacing: 0) {
+            place("River", up: nil, down: onRiver)
+            motorRow(river, fallback: "river", up: onRiver, down: onRiver)
+            // Both Thoppu motors draw from the pipe between Thoppu and the branch.
+            place("Thoppu", up: onRiver, down: onSupply || onDrip)
+            motorRow(drip, fallback: "well-motor", up: onSupply || onDrip, down: onSupply, branch: onDrip)
+            motorRow(supply, fallback: "wellmotor75hp", up: onSupply, down: onSupply)
+            place("Farm", up: onSupply, down: onFarm)
+            row(key: FarmStore.dconKey, name: store.dconName, line: farmLine, word: onFarm ? "Watering" : "Not watering",
+                on: onFarm, age: checked, up: onFarm, down: nil)
+            ForEach(rest) { m in motorRow(m, fallback: m.id, up: nil, down: nil) }
         }
-        .aspectRatio(360.0 / 572.0, contentMode: .fit)
-        .padding(.horizontal, 8).padding(.vertical, 12)
+        .padding(.vertical, 6)
         .modifier(Panel(padding: 0))
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { phase = -18 }
-        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Where the water goes")
     }
 
-    private func pipe(_ pts: [(CGFloat, CGFloat)], _ on: Bool, _ k: CGFloat) -> some View {
-        Path { p in
-            p.move(to: CGPoint(x: pts[0].0 * k, y: pts[0].1 * k))
-            for q in pts.dropFirst() { p.addLine(to: CGPoint(x: q.0 * k, y: q.1 * k)) }
+    private static let way = ["river": "River to Thoppu", "main-farm": "Thoppu to Farm", "drip": "Thoppu's drip zones"]
+
+    /// What a motor row says under its name: what it is doing, else its job.
+    private func line(_ m: WaterMotor, current: Bool) -> String {
+        if current, m.vendor == "livesky" {
+            if m.running == true, let r = m.runMinutes { return "For \(WaterFormat.minutes(r))" }
+            if m.running == false, let r = m.stopMinutes { return "Off for \(WaterFormat.minutes(r))" }
         }
-        .stroke(on ? Theme.brand : Theme.line2,
-                style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round,
-                                   dash: on && !reduceMotion ? [10, 8] : [], dashPhase: on ? phase : 0))
-        .accessibilityHidden(true)
+        if current, m.running == true, let p = m.program {
+            return [p, m.zone.map { "zone \($0)" }, m.zoneLeft.map { "\(WaterFormat.hms($0)) left" }].compactMap { $0 }.joined(separator: " · ")
+        }
+        return Self.way[m.id == "river" ? "river" : m.role] ?? m.group
     }
 
-    private func place(_ name: String, _ sub: String?, at pt: (CGFloat, CGFloat), _ k: CGFloat) -> some View {
-        VStack(spacing: 1) {
-            Text(name).font(Theme.font(10.5, .bold, relativeTo: .caption2)).tracking(0.9).textCase(.uppercase)
-                .foregroundStyle(Theme.faint)
-            if let sub, !sub.isEmpty { Text(sub).font(Theme.font(10.5, .regular, relativeTo: .caption2)).foregroundStyle(Theme.muted) }
+    @ViewBuilder
+    private func motorRow(_ m: WaterMotor?, fallback: String, up: Bool?, down: Bool?, branch: Bool? = nil) -> some View {
+        if let m {
+            let w = store.water
+            let cur = w.isCurrent(m, now: store.now)
+            let word = m.running == true ? (cur ? "Running" : "Was running") : m.running == false ? (cur ? "Off" : "Was off") : "Unknown"
+            let age: String? = cur ? nil : (m.vendor == "livesky" && store.liveskyProblem != nil ? "not read"
+                : w.readingDate(m).map { Water.ago($0, now: store.now) })
+            row(key: m.id, name: m.name, line: line(m, current: cur), word: word, on: m.running == true && cur,
+                age: age, up: up, down: down, branch: branch)
+        } else {
+            row(key: fallback, name: ["river": "River Motor", "well-motor": "Well motor", "wellmotor75hp": "Wellmotor75HP"][fallback] ?? "Motor", line: "No reading yet", word: "No reading",
+                on: false, age: nil, up: up, down: down, branch: branch)
         }
-        .lineLimit(1).fixedSize()
-        .position(x: pt.0 * k, y: (pt.1 + (sub == nil ? 0 : 5)) * k)
-        .accessibilityHidden(true)
     }
 
-    private func node(key: String, name: String, word: String, on: Bool, at pt: (CGFloat, CGFloat), _ k: CGFloat) -> some View {
+    private func row(key: String, name: String, line: String, word: String, on: Bool, age: String?,
+                     up: Bool?, down: Bool?, branch: Bool? = nil) -> some View {
         NavigationLink(value: MotorRoute(key: key)) {
-            VStack(spacing: 2) {
-                Image(on ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 34 * k, height: 34 * k)
-                    .frame(width: 54 * k, height: 54 * k)
-                    .background(Theme.panel2, in: Circle())
-                    .overlay(Circle().strokeBorder(on ? Theme.brand : Theme.line2, lineWidth: on ? 3 : 2))
-                    .background(Circle().fill(on ? Theme.brand.opacity(0.18) : .clear).padding(-6))
-                Text(name).font(Theme.font(12, .bold, relativeTo: .caption)).foregroundStyle(Theme.text).lineLimit(1)
-                Text(word).font(Theme.font(10.5, on ? .semibold : .regular, relativeTo: .caption2))
-                    .foregroundStyle(on ? Theme.on : Theme.muted).lineLimit(1)
+            HStack(spacing: 0) {
+                if let branch {
+                    Rail(up: up, down: down).frame(width: 56)
+                    ZStack(alignment: .trailing) {
+                        Rectangle().fill(branch ? Theme.brand : Theme.line2).frame(height: 4)
+                            .padding(.leading, -28).padding(.trailing, 20)
+                        Station(on: on)
+                    }
+                    .frame(width: 50)
+                    .padding(.trailing, 10)
+                } else {
+                    ZStack { Rail(up: up, down: down); Station(on: on) }.frame(width: 56)
+                        .padding(.trailing, 12)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(Theme.font(15, .bold, relativeTo: .headline)).foregroundStyle(Theme.text)
+                    if !line.isEmpty { Text(line).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted) }
+                }
+                .lineLimit(1)
+                .padding(.vertical, 10)
+                Spacer(minLength: 10)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Tag(text: word, kind: on ? .on : .plain)
+                    if let age { Text(age).font(Theme.font(11.5, .regular, relativeTo: .caption2)).foregroundStyle(Theme.faint) }
+                }
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)
+                    .padding(.leading, 10)
             }
-            .fixedSize()
+            .frame(minHeight: 68)
+            .padding(.trailing, 14)
+            .contentShape(Rectangle())
         }
         .buttonStyle(TileButtonStyle())
-        // Circle centre on the plan point: the stack's centre sits ~16 below it.
-        .position(x: pt.0 * k, y: (pt.1 + 16) * k)
-        .accessibilityLabel("\(name): \(word)")
-    }
-}
-
-/// One motor as a tile: picture, name, what it does, state, and age when
-/// the reading is not current. All tiles alike.
-private struct TileBody: View {
-    let name: String
-    let sub: String
-    let word: String
-    let on: Bool
-    let age: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Image(on ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 44, height: 44)
-                .padding(.bottom, 6)
-            Text(name).font(Theme.font(15.5, .bold, relativeTo: .headline)).foregroundStyle(Theme.text).lineLimit(2)
-            Text(sub).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(2)
-            Spacer(minLength: 8)
-            HStack(spacing: 8) {
-                Tag(text: word, kind: on ? .on : .plain)
-                if let age { Text(age).font(Theme.small).foregroundStyle(Theme.faint) }
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 168, alignment: .topLeading)
-        .padding(16)
-        .modifier(Panel(padding: 0))
-        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(name): \(word)\(line.isEmpty ? "" : ", \(line)")\(age.map { ", \($0)" } ?? "")")
+    }
+
+    private func place(_ name: String, up: Bool?, down: Bool?) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Rail(up: up, down: down)
+                Circle().fill(Theme.line2).frame(width: 10, height: 10)
+            }
+            .frame(width: 56)
+            Text(name).font(Theme.font(11, .bold, relativeTo: .caption2)).tracking(0.9).textCase(.uppercase)
+                .foregroundStyle(Theme.faint)
+            Spacer()
+        }
+        .frame(height: 30)
+        .accessibilityHidden(true)
     }
 }
 
-struct MotorTile: View {
-    @Environment(FarmStore.self) private var store
-    let motor: WaterMotor
+/// The pipe through a row: the half above its centre and the half below,
+/// each on (brand green), off (grey) or absent (nil).
+private struct Rail: View {
+    let up: Bool?
+    let down: Bool?
     var body: some View {
-        let w = store.water
-        let current = w.isCurrent(motor, now: store.now)
-        let on = motor.running == true && current
-        let word = motor.running == true ? (current ? "Running" : "Was running") : motor.running == false ? (current ? "Off" : "Was off") : "Unknown"
-        let age: String? = current ? nil : w.readingDate(motor).map { Water.ago($0, now: store.now) }
-        TileBody(name: motor.name, sub: [motor.vendor == "livesky" ? "Livesky" : "Niagara", motor.roleText].filter { !$0.isEmpty }.joined(separator: " · "),
-                 word: word, on: on, age: age)
+        VStack(spacing: 0) {
+            Rectangle().fill(up == true ? Theme.brand : Theme.line2).frame(width: 4).opacity(up == nil ? 0 : 1)
+            Rectangle().fill(down == true ? Theme.brand : Theme.line2).frame(width: 4).opacity(down == nil ? 0 : 1)
+        }
+        .frame(maxHeight: .infinity)
+        .accessibilityHidden(true)
     }
 }
 
-struct DconTile: View {
-    @Environment(FarmStore.self) private var store
+/// A motor on the pipe: every one the same size.
+private struct Station: View {
+    let on: Bool
     var body: some View {
-        let c = store.irrigation
-        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
-        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
-        TileBody(name: store.dconName, sub: "Mobitech · Farm valves", word: say.running ? "Watering" : "Not watering",
-                 on: say.running, age: checked)
+        Image(on ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 26, height: 26)
+            .frame(width: 40, height: 40)
+            .background(Theme.panel2, in: Circle())
+            .overlay(Circle().strokeBorder(on ? Theme.brand : Theme.line2, lineWidth: on ? 3 : 2))
+            .background(Circle().fill(on ? Theme.brand.opacity(0.14) : .clear).padding(-4))
+            .accessibilityHidden(true)
     }
 }
 

@@ -503,17 +503,19 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   } else console.log('  skip  room section checks (no replay.local.json)');
 }
 {
-  // Water: every motor alike (owner, 2026-09-25). Equal tiles, the main
-  // farm's controller among them, each opening its own page — no jump to
-  // another tab.
+  // Water: every motor alike (owner, 2026-09-25), once each, as equal rows
+  // on the water's path, the main farm's controller among them, each opening
+  // its own page — no jump to another tab, no second copy of the motors.
   const [p,c]=await open('?live=1#/water');
-  await p.waitForSelector('#view .mgrid');
-  const r=await p.evaluate(()=>{const t=[...document.querySelectorAll('#view .mtile')];
-    const sizes=new Set(t.map(x=>Math.round(x.getBoundingClientRect().width)));
-    return {n:t.length, hrefs:t.map(x=>x.getAttribute('href')), sizes:[...sizes], stages:document.querySelectorAll('#view .wstage').length};});
-  check('the Water tab shows every motor as an equal tile, the controller included', r.n>=2&&r.sizes.length===1&&r.hrefs.includes('#/motor/dcon')&&r.stages===0, JSON.stringify(r));
-  check('every tile opens a motor page, none another tab', r.hrefs.every(h=>h.startsWith('#/motor/')), r.hrefs.join(' '));
-  await p.click('#view .mtile[href="#/motor/dcon"]'); await p.waitForTimeout(400);
+  await p.waitForSelector('#view .wpath');
+  const r=await p.evaluate(()=>{const t=[...document.querySelectorAll('#view .wp-motor')];
+    const st=new Set(t.map(x=>Math.round(x.querySelector('.wp-st').getBoundingClientRect().width)));
+    const hrefs=t.map(x=>x.getAttribute('href'));
+    return {n:t.length, hrefs, once:new Set(hrefs).size===hrefs.length, stations:[...st],
+      dup:document.querySelectorAll('#view .mtile, #view .fm, #view .wstage').length};});
+  check('the Water tab shows every motor once, as equal rows, the controller included', r.n>=4&&r.once&&r.stations.length===1&&r.hrefs.includes('#/motor/dcon')&&r.dup===0, JSON.stringify(r));
+  check('every row opens a motor page, none another tab', r.hrefs.every(h=>h.startsWith('#/motor/')), r.hrefs.join(' '));
+  await p.click('#view .wp-motor[href="#/motor/dcon"]'); await p.waitForTimeout(400);
   const d=await p.evaluate(()=>({hash:location.hash, tab:document.querySelector('.tab-item.on, .topnav-item.on')?.textContent||'', now:!!document.querySelector('#view .now')}));
   check("the controller's page holds its controls, under the Water tab", d.hash==='#/motor/dcon'&&/Water/.test(d.tab)&&d.now, JSON.stringify(d));
   await c.close();
@@ -531,24 +533,24 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await c.close();
 }
 {
-  // The water's path, drawn: four equal motor nodes, each opening its page;
-  // a pipe flows only while its motor runs on a current reading.
+  // The water's path: a motor shows water moving only while it runs on a
+  // current reading, and a stale reading turns its pipe grey.
   const [p,c]=await open('?live=1#/water');
-  await p.waitForSelector('#view .fm');
+  await p.waitForSelector('#view .wpath');
   const r=await p.evaluate(()=>{const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
     state.meta=Object.assign({},state.meta,{water:{enabled:true,livesky:{ok:true,at:now-5000,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true,at:now-5000}}});
     state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,connected:true,reportedAt:iso(now-20e3)},
       motors:{wellmotor75hp:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:false},
               'well-motor':{name:'Well motor',vendor:'niagara',role:'drip',running:true,program:'P1',zone:3}}};
     render();
-    const nodes=[...document.querySelectorAll('#view .fm-node')];
-    const radii=new Set(nodes.map(n=>n.querySelector('circle').getAttribute('r')));
-    const flowing=[...document.querySelectorAll('#view .fm-pipe.is-on')].length;
+    const on=(k)=>!!document.querySelector(`#view .wp-motor.is-on[href="#/motor/${k}"]`);
+    const riverPipe=()=>!!document.querySelector('#view .wp-motor[href="#/motor/river"] .wp-rail.up-on');
+    const a={river:on('river'), drip:on('well-motor'), supply:on('wellmotor75hp'), pipe:riverPipe(),
+      stub:!!document.querySelector('#view .wp-stub.is-on')};
     state.water.river.reportedAt=iso(now-3600e3); render();
-    const staleFlow=[...document.querySelectorAll('#view .fm-pipe.is-on')].length;
-    return {hrefs:nodes.map(n=>n.getAttribute('href')), radii:[...radii], flowing, staleFlow};});
-  check('the flow map draws all four motors alike, each opening its page', r.hrefs.length===4&&r.radii.length===1&&r.hrefs.includes('#/motor/dcon'), JSON.stringify(r));
-  check('pipes flow for running motors and stop on a stale reading', r.flowing===4&&r.staleFlow===2, `${r.flowing} → ${r.staleFlow}`);
+    return {...a, staleRiver:on('river'), stalePipe:riverPipe(), word:document.querySelector('#view .wp-motor[href="#/motor/river"] .tag').textContent};});
+  check('running motors show water moving, a stopped one does not', r.river&&r.drip&&!r.supply&&r.pipe&&r.stub, JSON.stringify(r));
+  check('a stale reading stops the flow and says what the motor was doing', !r.staleRiver&&!r.stalePipe&&r.word==='Was running', JSON.stringify(r));
   await c.close();
 }
 {
