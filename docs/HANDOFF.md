@@ -6,7 +6,7 @@ Start here. Everything below links to a document that goes deeper.
 
 | Piece | Status |
 |---|---|
-| Dashboard | **Live** at https://snof-live.web.app. Four tabs: Home (Needs a look, the water chain drawn from current readings only, Power (the three EB lines), the irrigation ring, Security, switches, the farm's systems with their own pages), Irrigation (Now with Run/Stop for admins, Pump & power, Watered by crop, reports), Water (read-only), Rooms. |
+| Dashboard | **Live** at https://snof-live.web.app. Four tabs: Home (Needs a look, the water chain drawn from current readings only, Power (the three EB lines), the irrigation ring, Security, switches, the farm's systems with their own pages), Irrigation (Now with Run/Stop for admins, Pump & power, Watered by crop, reports), Water (every motor once, as equal rows on the water's path, each opening its own page), Rooms. |
 | iOS app | **0.10.0** on SideStore (https://snof-ios.web.app), the same screens and rules as the web (SNOFCore holds the shared logic and its tests). |
 | RTDB rules | **Live**, with the two write paths `/commands` and `/irrigation_commands`. |
 | Add-on | **0.10.5** on the NUC (image tag checked 2026-09-25 02:30, up since the 23:41 reboot): Home Assistant bridge, switch control, valve control, and the DCON read relay (`dcon_relay`). |
