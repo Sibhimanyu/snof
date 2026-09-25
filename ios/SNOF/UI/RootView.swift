@@ -1,5 +1,6 @@
 import SwiftUI
 import SNOFCore
+import SqueakUI
 
 struct RootView: View {
     @Environment(FarmStore.self) private var store
@@ -50,6 +51,9 @@ struct MainTabs: View {
             }
             // Faults only: ACs, TVs and the printer off at the wall are not.
             .badge(store.faultyDevices.isEmpty ? nil : Text(""))
+            if SqueakAccess.shows(for: store.user?.email) {
+                Tab("Squeak", systemImage: "bird", value: AppTab.squeak) { SqueakRootView() }
+            }
         }
         .tint(Theme.text)
         .toolbarBackground(.bar, for: .tabBar)
@@ -72,6 +76,7 @@ struct MainTabs: View {
             if let raw = Snapshot.value("-system"), let id = FarmSystemID(rawValue: raw) { store.selectedTab = .overview; overviewPath.append(SystemRoute(id: id)) }
             if let key = Snapshot.value("-motor") { store.selectedTab = .water; waterPath.append(MotorRoute(key: key)) }
             if Snapshot.args.contains("-account") { account = true }
+            if Snapshot.args.contains("-squeak-tab") { store.selectedTab = .squeak }
         }
         #endif
     }
