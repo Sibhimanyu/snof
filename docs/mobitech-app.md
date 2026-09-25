@@ -83,6 +83,17 @@ are answered for anyone who knows the serial number or device id. Only
    on the owner's phone, and it might sign the phone out. That decision is
    the owner's.
 
+3. **One session per account, and the relay holds a copy** (2026-09-25).
+   The NUC relay reads the dashboard with the add-on's `dcon_token_id`.
+   Signing in anywhere else — the Mobitech phone app, or SNOF's own
+   Mobitech sign-in — displaces it, and the dashboard then answers
+   `{"state":"failed","message":"Your account has been sign-in on other
+   mobile devices…"}`. That once read as "Not watering" (fixed: it is now an
+   error, and the cache keeps the last good program). After any re-sign-in,
+   set the add-on's `dcon_token_id` to the session in `/private/mobitech/token`
+   (merge into the Supervisor options, restart — nuc-access-and-deploy.md 6a),
+   or reads of "what is running" stop.
+
 ## Screens and their calls
 
 ### Home (polled every ~5–15 s while open)
