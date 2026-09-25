@@ -13,7 +13,8 @@ Start here. Everything below links to a document that goes deeper.
 | Device control | **Armed** since 2026-09-23 (`allow_control: true`). `commandsRun` was 1 at 02:27 on 2026-09-25 (counted since the bridge's last start, after the 23:41 reboot). Disarm: merge `allow_control: false` into the Supervisor options and restart. |
 | Irrigation control | **Armed** since 2026-09-24 (`allow_irrigation_control: true`), one change at a time under `irrigation_lock`. Run proven twice on 2026-09-24 ("started by A8" in the log); a Stop was refused mid-run — see [irrigation-control.md](irrigation-control.md). |
 | Irrigation reads | Cloud Function `irrigation_report`; reads go through the NUC's relay until the function has a static egress IP Mobitech allowlists ([dcon-off-the-nuc.md](dcon-off-the-nuc.md)). The apps close Refresh with the reason while the bridge is quiet. |
-| Water chain | **Live, read-only**: river motor (Livesky) and the other farm's two motors (Niagara) via Cloud Functions. Control is not built and waits on owner answers ([water.md](water.md)). |
+| Motor control | **Deployed, disarmed** (2026-09-25, PR #33, iOS 0.11.0): on/off for the river motor and the other farm's motors, confirmed by the motor, one send never retried. Nothing can be switched until the service account arms each motor — [motor-control.md](motor-control.md). |
+| Water chain | **Live, read-only**: river motor (Livesky) and the other farm's two motors (Niagara) via Cloud Functions. Switching is built but disarmed; cross-farm interlocks wait on owner answers ([water.md](water.md)). |
 | Git | `main` is the truth; work lands by PR and squash merge. After each merge reset the work branch, local and remote, to `origin/main`. |
 
 ## What changed overnight (2026-09-24 → 25)
@@ -56,8 +57,11 @@ it, each written down where it lives:
 - **Rename the serial-named devices in Home Assistant**: `P1S_01P09C510500118`
   (and its `_AMS_1`, `_ExternalSpool`) and `T8400P202040124D` (the Goats
   camera station). The apps tidy them for display; the source still says it.
-- **Livesky / Niagara motor control is not built.** It needs the owner's
-  answers to the questions in [water.md](water.md).
+- **Motor control is deployed but disarmed.** Arm one motor at a time with
+  someone at the pump ([motor-control.md](motor-control.md) "Arming"). Check
+  first whether Niagara delivers a command to an offline 7.5 HP controller
+  later. Cross-farm interlocks still need the owner's answers in
+  [water.md](water.md).
 - **Deploy `functions:reports` once iOS 0.10.0 is on the phone** (not done
   overnight on purpose): it writes runs caught part-way as "so far", which
   iOS 0.9.3 would misread as a valve list. `cd dashboard && firebase deploy
