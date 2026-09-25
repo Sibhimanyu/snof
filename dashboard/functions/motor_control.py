@@ -90,6 +90,12 @@ LOCK_SECONDS = 340.0
 # The zoned Niagara controller sends a live packet every few seconds while
 # connected; older than this, it is not answering.
 NIAGARA_LIVE_STALE_SECONDS = 15 * 60
+# A zone change needs a controller heard from moments ago (it sends a live
+# packet every few seconds) and a current zone that will not end by itself
+# inside the confirmation window — or a natural advance could read as success.
+ZONE_LIVE_SECONDS = 90
+ZONE_MIN_LEFT_SECONDS = 5 * 60
+ZONE_EVENTS = ("044", "045")              # zone changed / zone open
 # A Livesky starter reports every few seconds; older than this, it is not
 # answering and a command would not be heard.
 LIVESKY_STALE_SECONDS = 15 * 60
@@ -179,8 +185,8 @@ def check_zone(zone: int, state: dict, now_s: float) -> None:
     if state.get("vendor") != "niagara" or not state.get("liveAt"):
         raise Refused("this motor has no zones to change")
     at = _iso_seconds(state.get("liveAt"))
-    if at is None or now_s - at > NIAGARA_LIVE_STALE_SECONDS:
-        raise Refused("the controller has not reported recently")
+    if at is None or now_s - at > ZONE_LIVE_SECONDS:
+        raise Refused("the controller has not reported in the last 90 s")
     if state.get("pending"):
         raise Refused("a change is still on its way to this motor")
     if state.get("requested") is not None and state.get("requested") != state.get("running"):
@@ -191,12 +197,25 @@ def check_zone(zone: int, state: dict, now_s: float) -> None:
         raise Refused("no program is running")
     if state["zone"] == zone:
         raise Refused(f"it is already on zone {zone}")
+    left = _hms_seconds(state.get("zoneLeft"))
+    if left is None or left < ZONE_MIN_LEFT_SECONDS:
+        raise Refused("the current zone ends in under 5 minutes; change it after the program moves on")
 
 
-def confirmed_zone(zone: int, program: str, state: dict) -> bool:
-    """The controller's own report: that zone, same program, still running."""
-    return bool(state) and state.get("running") is True and state.get("zone") == zone \
-        and state.get("program") == program
+def _hms_seconds(value: Any) -> int | None:
+    m = re.fullmatch(r"(\d{1,3}):(\d{2}):(\d{2})", str(value or ""))
+    return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) if m else None
+
+
+def confirmed_zone(zone: int, program: str, state: dict, sent_s: float) -> bool:
+    """The controller's own report, made after the send: a zone event, that
+    zone, the same program, still running."""
+    if not state or state.get("running") is not True or state.get("zone") != zone:
+        return False
+    if state.get("program") != program or state.get("eventCode") not in ZONE_EVENTS:
+        return False
+    at = _iso_seconds(state.get("liveAt"))
+    return at is not None and at > sent_s
 
 
 def check_before(action: str, state: dict, now_s: float) -> None:
@@ -275,15 +294,20 @@ def claim_txn(cmd_id: str, motor: str, now_ms: float, outcome: dict, action: str
         if isinstance(last, (int, float)) and now_ms - last < MIN_GAP_SECONDS * 1000:
             outcome["why"] = "another motor command was sent seconds ago"
             return meta
-        prev = (meta.get("lastByMotor") or {}).get(motor)
-        if isinstance(prev, (int, float)) and now_ms - prev < MOTOR_COOLDOWN_SECONDS * 1000:
-            wait = int(MOTOR_COOLDOWN_SECONDS - (now_ms - prev) / 1000) + 1
-            outcome["why"] = f"this motor changed moments ago; wait {wait}s"
-            return meta
-        day = farm_day(now_ms / 1000)
-        if int(((meta.get("daily") or {}).get(day) or {}).get(motor) or 0) >= DAILY_CAP:
-            outcome["why"] = f"{DAILY_CAP} changes today already; the limit protects the motor"
-            return meta
+        # Stopping is never held back by the cooldown or the cap (only by a
+        # change in flight). Zone changes keep their own counters, so they
+        # cannot use up a motor's on/off budget either.
+        if action != "off":
+            last_key, daily_key = ("lastZoneByMotor", "dailyZones") if action == "zone" else ("lastByMotor", "daily")
+            prev = (meta.get(last_key) or {}).get(motor)
+            if isinstance(prev, (int, float)) and now_ms - prev < MOTOR_COOLDOWN_SECONDS * 1000:
+                wait = int(MOTOR_COOLDOWN_SECONDS - (now_ms - prev) / 1000) + 1
+                outcome["why"] = f"this motor changed moments ago; wait {wait}s"
+                return meta
+            day = farm_day(now_ms / 1000)
+            if int(((meta.get(daily_key) or {}).get(day) or {}).get(motor) or 0) >= DAILY_CAP:
+                outcome["why"] = f"{DAILY_CAP} changes today already; the limit protects the motor"
+                return meta
         claimed = dict(sorted(claimed.items(), key=lambda kv: kv[1])[-50:])
         claimed[cmd_id] = now_ms
         meta["claimed"] = claimed
@@ -304,18 +328,19 @@ def claim(store, root: str, cmd_id: str, motor: str, now_s: float, action: str =
         raise Refused(why or "could not claim the command")
 
 
-def record_sent(store, root: str, motor: str, now_s: float) -> None:
+def record_sent(store, root: str, motor: str, now_s: float, action: str = "on") -> None:
     """Spend the cooldown and today's count: a command went out."""
     day = farm_day(now_s)
+    last_key, daily_key = ("lastZoneByMotor", "dailyZones") if action == "zone" else ("lastByMotor", "daily")
 
     def txn(meta):
         meta = dict(meta or {})
-        by_motor = dict(meta.get("lastByMotor") or {})
+        by_motor = dict(meta.get(last_key) or {})
         by_motor[motor] = now_s * 1000
-        meta["lastByMotor"] = by_motor
-        today = dict((meta.get("daily") or {}).get(day) or {})
+        meta[last_key] = by_motor
+        today = dict((meta.get(daily_key) or {}).get(day) or {})
         today[motor] = int(today.get(motor) or 0) + 1
-        meta["daily"] = {day: today}            # only today is kept
+        meta[daily_key] = {day: today}          # only today is kept
         return meta
     store.reference(f"{root}/{META}").transaction(txn)
 
@@ -432,23 +457,32 @@ class NiagaraMotor:
             raise Refused(f"Niagara did not take the command (HTTP {r.status_code})")
         return "sent to the controller"
 
-    def _change_from_id(self) -> int:
-        """The CHANGE FROM item of the drip menu, found by name each time."""
+    def change_from_id(self) -> int:
+        """The CHANGE FROM item of the drip menu, found by name each time and
+        matched against the capture (template 128, the CHANGEFROM keyword)."""
         body = self._client._get(f"user/{self._user}/subuser/0/controller/{self._id}/menu/92/settings")
         items = body.get("data") if isinstance(body, dict) else None
         found = [i for i in (items or []) if isinstance(i, dict)
                  and str(i.get("menuItem") or "").strip().upper() == "CHANGE FROM"]
         if len(found) != 1 or not str(found[0].get("menuSettingId", "")).isdigit():
             raise Refused("the controller offers no single CHANGE FROM setting")
-        return int(found[0]["menuSettingId"])
+        item = found[0]
+        fmt = item.get("smsFormat")
+        try:
+            fmt = json.loads(fmt) if isinstance(fmt, str) else fmt
+        except ValueError:
+            fmt = None
+        if str(item.get("templateType")) != "128" or fmt != {"D001": "CHANGEFROM"}:
+            raise Refused("the CHANGE FROM setting is not the one SNOF knows")
+        return int(item["menuSettingId"])
 
-    def send_zone(self, zone: int) -> str:
-        """CHANGE FROM zone N, exactly as the Niagara app sends it."""
+    def send_zone(self, zone: int, setting: int) -> str:
+        """CHANGE FROM zone N, exactly as the Niagara app sends it. The
+        setting id is looked up before this, so only the POST is a send."""
         if self._id is None:
             raise Refused("the motor was not read before sending")
         if zone not in ZONES:
             raise Refused("zone must be 1-8")
-        setting = self._change_from_id()
         requests = self._http or water._http()
         body = {"menuSettingId": setting,
                 "sendData": json.dumps({"changeFromValue": str(zone), "type": "128",
@@ -494,7 +528,13 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, motor_factory,
             claimed = True
             m = motor_factory(motor)
             before = m.read()
+            setting = None
             if action == "zone":
+                check_zone(zone, before, now())
+                setting = m.change_from_id()
+                # Read again right before the send: the program may have ended
+                # during the lookup, and a stopped controller never gets one.
+                before = m.read()
                 check_zone(zone, before, now())
             else:
                 check_before(action, before, now())
@@ -502,13 +542,15 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, motor_factory,
             if not armed(store.reference(f"{root}/{META}").get(), motor, action):
                 raise Refused("motor control was switched off")
             sent_attempted = True
-            message = m.send_zone(zone) if action == "zone" else m.send(action)
-            record_sent(store, root, motor, now())
+            sent_s = now()
+            message = m.send_zone(zone, setting) if action == "zone" else m.send(action)
+            record_sent(store, root, motor, now(), action)
             _count(store, root, "sent")
             result.update(ok=True, confirming=True, message=message)
             result_ref.set({**result, "at": SERVER_TIMESTAMP})
             if action == "zone":
-                verified, last = _confirm_with(m, lambda s: confirmed_zone(zone, before.get("program"), s), now, sleep)
+                verified, last = _confirm_with(m, lambda s: confirmed_zone(zone, before.get("program"), s, sent_s),
+                                               now, sleep)
                 result["message"] = (f"confirmed: the controller is on zone {zone}" if verified
                                      else _zone_surprise(zone, before, last))
             else:

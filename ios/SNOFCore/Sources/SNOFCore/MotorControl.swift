@@ -14,6 +14,8 @@ public struct MotorControl: Hashable, Sendable {
     public var zones: [String: Bool] = [:]
     /// meta/motorControl/lastByMotor/<key>: when it last changed (server ms).
     public var lastByMotor: [String: Double] = [:]
+    /// meta/motorControl/lastZoneByMotor/<key>: zone changes keep their own cooldown.
+    public var lastZoneByMotor: [String: Double] = [:]
     /// meta/motorControl/lock/until: no motor may change before (server ms).
     public var lockUntil: Double?
     public init() {}
@@ -30,25 +32,36 @@ public struct MotorControl: Hashable, Sendable {
                             pending: Bool, confirming: Bool, online: Bool = true, nowMs: Double) -> String? {
         if !zonesArmed(key) { return "Zone changes are turned off for this motor." }
         if let why = refusal(key, motor: motor, current: current, isAdmin: isAdmin, pending: pending,
-                             confirming: confirming, online: online, nowMs: nowMs) { return why }
+                             confirming: confirming, online: online, nowMs: nowMs, action: "zone") { return why }
         guard let m = motor, m.running == true, m.program != nil, let now = m.zone else {
             return "No program is running, so there is no zone to change."
         }
+        // As the function: heard from in the last 90 s, and 5+ minutes left on
+        // the current zone, or a natural advance could read as success.
+        guard let live = m.liveAt, nowMs - live.timeIntervalSince1970 * 1000 <= 90_000 else {
+            return "The controller has not reported in the last 90 s. Refresh first."
+        }
+        let parts = (m.zoneLeft ?? "").split(separator: ":").compactMap { Int($0) }
+        let left = parts.count == 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : nil
+        if left == nil || left! < 300 { return "The current zone ends in under 5 minutes. Change it after the program moves on." }
         if !(1...8).contains(zone) { return "Zones are 1 to 8." }
         if now == zone { return "It is already on zone \(zone)." }
         return nil
     }
 
     /// Seconds left of this motor's cooldown, or nil.
-    public func cooldownLeft(_ key: String, nowMs: Double) -> Int? {
-        guard let last = lastByMotor[key], nowMs - last < Self.cooldownMs else { return nil }
+    public func cooldownLeft(_ key: String, nowMs: Double, action: String = "on") -> Int? {
+        // Stopping is never held back by the cooldown; zones keep their own.
+        if action == "off" { return nil }
+        guard let last = (action == "zone" ? lastZoneByMotor : lastByMotor)[key], nowMs - last < Self.cooldownMs else { return nil }
         return Int(((Self.cooldownMs - (nowMs - last)) / 1000).rounded(.up))
     }
 
     /// Why a switch cannot be pressed now, or nil. `current`: the motor's
     /// reading says what it is doing now (WaterState.isCurrent).
     public func refusal(_ key: String, motor: WaterMotor?, current: Bool, isAdmin: Bool,
-                        pending: Bool, confirming: Bool, online: Bool = true, nowMs: Double) -> String? {
+                        pending: Bool, confirming: Bool, online: Bool = true, nowMs: Double,
+                        action: String = "on") -> String? {
         if !isAdmin { return "Only farm admins can switch motors." }
         if !armed(key) { return "Switching this motor is turned off at the farm." }
         if pending { return confirming ? "Sent once. Waiting for the motor to confirm…" : "Sending…" }
@@ -56,7 +69,7 @@ public struct MotorControl: Hashable, Sendable {
         // A write queued offline would reach the farm late (the rules and the
         // function refuse it by its press time too).
         if !online { return "Offline. Motors are switched only over a live connection." }
-        if let s = cooldownLeft(key, nowMs: nowMs) { return "This motor changed moments ago. Wait \(s)s." }
+        if let s = cooldownLeft(key, nowMs: nowMs, action: action) { return "This motor changed moments ago. Wait \(s)s." }
         guard let motor else { return "No reading from this motor." }
         if !current { return "The reading is not current. Refresh before switching." }
         if motor.running == nil { return "The motor's state is unknown." }

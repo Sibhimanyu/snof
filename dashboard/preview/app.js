@@ -2265,14 +2265,15 @@ let dbConnected = true;
 const MOTOR_COOLDOWN_MS = 120000;
 const motorArmed = (key) => isAdmin && state.meta?.motorControl?.enabled === true && state.meta.motorControl.motors?.[key] === true;
 const zonesArmed = (key) => motorArmed(key) && state.meta.motorControl.zones?.[key] === true;
-function motorRefusal(key) {
+function motorRefusal(key, action = 'on') {
   const mc = state.meta?.motorControl || {};
   if (!isAdmin) return 'Only farm admins can switch motors.';
   if (!motorArmed(key)) return 'Switching this motor is turned off at the farm.';
   if (motorCmd) return motorCmdConfirming ? 'Sent once. Waiting for the motor to confirm…' : 'Sending…';
   if ((mc.lock?.until || 0) > serverNow()) return 'The last motor change is still being confirmed.';
   if (!dbConnected) return 'Offline. Motors are switched only over a live connection.';
-  const last = mc.lastByMotor?.[key];
+  // Stopping is never held back by the cooldown; zones keep their own.
+  const last = action === 'off' ? null : (action === 'zone' ? mc.lastZoneByMotor : mc.lastByMotor)?.[key];
   if (last && serverNow() - last < MOTOR_COOLDOWN_MS) {
     return `This motor changed moments ago. Wait ${Math.ceil((MOTOR_COOLDOWN_MS - (serverNow() - last)) / 1000)}s.`;
   }
@@ -2285,7 +2286,7 @@ function motorByKey(key) {
 function confirmMotor(key, action) {
   const m = motorByKey(key);
   if (!m) return;
-  const why = motorRefusal(key) || (!waterCurrent(m) ? 'The reading is not current. Refresh before switching a motor.' : '');
+  const why = motorRefusal(key, action) || (!waterCurrent(m) ? 'The reading is not current. Refresh before switching a motor.' : '');
   if (why) { toast('err', why); render(); return; }
   if (action === 'on' ? m.running !== false : m.running !== true) { toast('err', 'The motor is not in the state that button was for.'); render(); return; }
   const name = m.name || 'the motor';
@@ -2297,7 +2298,7 @@ function confirmMotor(key, action) {
   sendMotor(key, action);
 }
 function sendMotor(key, action, zone = null) {
-  const why = motorRefusal(key);
+  const why = motorRefusal(key, action);
   if (why) { toast('err', why); render(); return; }
   const ref = firebase.database().ref(`farms/${FARM}/motor_commands`).push();
   motorCmd = ref.key; motorCmdKey = key; motorCmdConfirming = false;
@@ -2339,20 +2340,32 @@ function settleMotor(results) {
 function confirmZone(key, zone) {
   const m = motorByKey(key);
   if (!m || !zonesArmed(key)) return;
-  const why = motorRefusal(key) || (!waterCurrent(m) ? 'The reading is not current. Refresh before changing zones.' : '')
-    || (m.running !== true || !m.program || m.zone == null ? 'No program is running, so there is no zone to change.' : '')
-    || (m.zone === zone ? `It is already on zone ${zone}.` : '');
+  const why = zoneRefusal({ ...m, key }) || (m.zone === zone ? `It is already on zone ${zone}.` : '');
   if (why) { toast('err', why); render(); return; }
   if (!window.confirm(`Move ${m.name || 'the motor'} from zone ${m.zone} to zone ${zone}?\n\nThe controller continues ${m.program} from zone ${zone}. SNOF sends it once and waits for the controller to confirm (up to 2½ minutes).`)) return;
   sendMotor(key, 'zone', zone);
 }
+/** Why no zone may be picked now, or ''. As the function: a program running,
+ *  the controller heard from in the last 90 s, and 5+ minutes left on the
+ *  current zone (or a natural advance could read as success). */
+function zoneRefusal(m) {
+  const liveAt = Date.parse(m.liveAt || '');
+  const [h, mi, se] = String(m.zoneLeft || '').split(':').map(Number);
+  const left = [h, mi, se].every(Number.isFinite) ? h * 3600 + mi * 60 + se : null;
+  return motorRefusal(m.key, 'zone') || (!waterCurrent(m) ? 'The reading is not current. Refresh before changing zones.' : '')
+    || (m.running !== true || !m.program || m.zone == null ? 'No program is running, so there is no zone to change.' : '')
+    || (!Number.isFinite(liveAt) || serverNow() - liveAt > 90000 ? 'The controller has not reported in the last 90 s. Refresh first.' : '')
+    || (left == null || left < 300 ? 'The current zone ends in under 5 minutes. Change it after the program moves on.' : '');
+}
 function zoneControls(m) {
   const key = m.key;
   if (!key || !zonesArmed(key) || m.running !== true || !m.program || m.zone == null) return '';
-  const closed = !!(motorRefusal(key) || !waterCurrent(m));
+  const why = zoneRefusal(m);
+  const closed = !!why;
   const chips = [1, 2, 3, 4, 5, 6, 7, 8].map((z) => `<button class="zchip${z === m.zone ? ' is-now' : ''}" data-act="motor-zone"` +
     ` data-motor="${escapeHtml(key)}" data-zone="${z}" aria-pressed="${z === m.zone}"${z === m.zone || closed ? ' disabled' : ''}>${z}</button>`).join('');
-  return `<div class="wzones"><span class="wzones-label">Zone · ${escapeHtml(m.program)}</span><div class="zchips">${chips}</div></div>`;
+  return `<div class="wzones"><span class="wzones-label">Zone · ${escapeHtml(m.program)}</span><div class="zchips">${chips}</div>` +
+    (why ? `<p class="more-note">${escapeHtml(why)}</p>` : '') + `</div>`;
 }
 
 /** The on/off control on a motor's card: only for an armed motor. */
@@ -2360,9 +2373,9 @@ function motorControls(m) {
   const key = m.key;
   if (!key || !motorArmed(key)) return '';
   const busy = motorCmd && motorCmdKey === key;
-  const why = motorRefusal(key) || (!waterCurrent(m) ? 'The reading is not current. Refresh before switching.' : '')
-    || (m.running == null ? "The motor's state is unknown." : '');
   const action = m.running ? 'off' : 'on';
+  const why = motorRefusal(key, action) || (!waterCurrent(m) ? 'The reading is not current. Refresh before switching.' : '')
+    || (m.running == null ? "The motor's state is unknown." : '');
   const label = busy ? (motorCmdConfirming ? 'Confirming…' : 'Sending…') : action === 'on' ? 'Turn on' : 'Turn off';
   return `<div class="now-actions wmotor-actions"><button class="btn ${action === 'on' ? 'btn-primary' : 'btn-danger'}" data-act="motor-cmd"` +
     ` data-motor="${escapeHtml(key)}" data-action="${action}"${why ? ' disabled' : ''}>${label}</button></div>` +

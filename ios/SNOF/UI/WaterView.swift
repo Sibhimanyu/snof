@@ -188,6 +188,7 @@ struct ZoneSwitch: View {
                         .accessibilityLabel(z == now ? "Zone \(z), current" : "Move to zone \(z)")
                     }
                 }
+                if let why = store.zoneRefusal(key, motor: motor, zone: now % 8 + 1) { Note(text: why) }
             }
             .padding(.top, 4)
             .confirmationDialog("Move \(motor.name) from zone \(now) to zone \(picked ?? 0)?",

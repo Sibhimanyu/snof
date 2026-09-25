@@ -708,7 +708,7 @@ final class FarmStore {
         let nowMs = Date().timeIntervalSince1970 * 1000 + skewMs
         return meta.motorControl.refusal(key, motor: motor, current: water.isCurrent(motor, now: Date()),
                                          isAdmin: isAdmin, pending: motorPending != nil, confirming: motorConfirming,
-                                         online: connected, nowMs: nowMs)
+                                         online: connected, nowMs: nowMs, action: motor?.running == true ? "off" : "on")
     }
 
     func zoneRefusal(_ key: String, motor: WaterMotor?, zone: Int) -> String? {
