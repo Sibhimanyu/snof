@@ -145,6 +145,7 @@ struct MotorSwitch: View {
                 .buttonStyle(TileButtonStyle())
                 .disabled(why != nil)
                 if let why { Note(text: why, tone: busy ? .plain : .warn) }
+                ZoneSwitch(key: key, motor: motor)
             }
             .confirmationDialog(MotorControl.question(motor, action: action), isPresented: $asking, titleVisibility: .visible) {
                 Button(action == "on" ? "Turn on" : "Turn off", role: action == "off" ? .destructive : nil) {
@@ -153,6 +154,52 @@ struct MotorSwitch: View {
                 }
             } message: {
                 Text("SNOF sends it once and waits for the motor to confirm (up to 2½ minutes).")
+            }
+        }
+    }
+}
+
+/// Continue the running program from another zone (the zoned Niagara
+/// controller). Only while it runs a program; the current zone is marked.
+struct ZoneSwitch: View {
+    @Environment(FarmStore.self) private var store
+    let key: String
+    let motor: WaterMotor
+    @State private var picked: Int?
+
+    var body: some View {
+        if store.meta.motorControl.zonesArmed(key), motor.running == true, let program = motor.program, let now = motor.zone {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Zone · \(program)").eyebrowStyle()
+                HStack(spacing: 6) {
+                    ForEach(1...8, id: \.self) { z in
+                        let closed = z == now || store.zoneRefusal(key, motor: motor, zone: z) != nil
+                        Button { picked = z } label: {
+                            Text("\(z)").font(Theme.font(15, .bold, relativeTo: .body).monospacedDigit())
+                                .frame(maxWidth: .infinity, minHeight: Theme.hit)
+                                .foregroundStyle(z == now ? Color.white : closed ? Theme.muted : Theme.text)
+                                .background(z == now ? Theme.brand : closed ? Theme.panel2 : Theme.panel,
+                                            in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous)
+                                    .strokeBorder(z == now ? Color.clear : Theme.line2, lineWidth: 1))
+                        }
+                        .buttonStyle(TileButtonStyle())
+                        .disabled(closed)
+                        .accessibilityLabel(z == now ? "Zone \(z), current" : "Move to zone \(z)")
+                    }
+                }
+            }
+            .padding(.top, 4)
+            .confirmationDialog("Move \(motor.name) from zone \(now) to zone \(picked ?? 0)?",
+                                isPresented: Binding(get: { picked != nil }, set: { if !$0 { picked = nil } }),
+                                titleVisibility: .visible) {
+                Button("Move to zone \(picked ?? 0)") {
+                    let z = picked ?? 0
+                    Haptics.warn()
+                    Task { await store.changeZone(key, to: z) }
+                }
+            } message: {
+                Text("The controller continues \(program) from there. SNOF sends it once and waits for the controller to confirm (up to 2½ minutes).")
             }
         }
     }

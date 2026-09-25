@@ -35,7 +35,16 @@ Gates, every one of which must pass:
    only echoes the request). Confirmed: the lock is released. Not confirmed:
    the lock is left to expire, so nobody fires a second command blind.
 
-Only two commands exist per vendor. Nothing here can send auto-start
+Zone change (owner, 2026-09-25): on the zoned Niagara controller, "continue
+the running program from zone N" — the settings menu's CHANGE FROM, sent
+exactly as its app sends it (`CHANGEFROM00N`). Only while that motor is
+running a program (so it can never start a motor), zones 1-8, never the
+current zone, armed separately (meta/motorControl/zones/<motor>), and
+confirmed only when the controller reports that zone with the motor still
+running. Its meaning is inferred from one capture; the confirmation says
+plainly if the controller did something else.
+
+Only these commands exist. Nothing here can send auto-start
 (Livesky's AUTOON starts a stopped motor on its own), timers, settings or
 programs. Nothing automatic can reach this module: the only caller is the
 motor_command trigger, and tests/test_motor_control.py checks that no other
@@ -47,6 +56,7 @@ tested with no network and nothing installed.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import re
 import time
 from typing import Any
@@ -57,7 +67,8 @@ QUEUE = "motor_commands"
 RESULTS = "motor_command_results"
 META = "meta/motorControl"
 
-ACTIONS = ("on", "off")
+ACTIONS = ("on", "off", "zone")
+ZONES = range(1, 9)                       # the zoned controller's 8 zones
 MAX_AGE_SECONDS = 60.0
 # The press itself (clientAt, the phone's clock corrected to the server's) and
 # its arrival (at, the server's own time) must be this close: a write queued
@@ -108,7 +119,7 @@ def validate(cmd: Any, now: float) -> tuple[str, str]:
     """(motor, action) for a command worth considering, else Refused."""
     if not isinstance(cmd, dict):
         raise Refused("not an object")
-    extra = set(cmd) - {"motor", "action", "uid", "at", "clientAt"}
+    extra = set(cmd) - {"motor", "action", "uid", "at", "clientAt", "zone"}
     if extra:
         raise Refused(f"unexpected fields {sorted(extra)}")
     motor, action = cmd.get("motor"), cmd.get("action")
@@ -116,6 +127,12 @@ def validate(cmd: Any, now: float) -> tuple[str, str]:
         raise Refused("unknown motor")
     if action not in ACTIONS:
         raise Refused("unknown action")
+    zone = cmd.get("zone")
+    if action == "zone":
+        if not isinstance(zone, int) or isinstance(zone, bool) or zone not in ZONES:
+            raise Refused("zone must be 1-8")
+    elif zone is not None:
+        raise Refused("a zone only goes with a zone change")
     if not isinstance(cmd.get("uid"), str) or not cmd["uid"]:
         raise Refused("no user")
     at = cmd.get("at")
@@ -132,12 +149,18 @@ def validate(cmd: Any, now: float) -> tuple[str, str]:
     return motor, action
 
 
-def armed(meta: Any, motor: str) -> bool:
-    """meta/motorControl: switched on, and this motor switched on."""
+def armed(meta: Any, motor: str, action: str = "on") -> bool:
+    """meta/motorControl: switched on, this motor switched on, and for a
+    zone change its zones switched on too."""
     if not isinstance(meta, dict) or meta.get("enabled") is not True:
         return False
     motors = meta.get("motors")
-    return isinstance(motors, dict) and motors.get(motor) is True
+    if not (isinstance(motors, dict) and motors.get(motor) is True):
+        return False
+    if action == "zone":
+        zones = meta.get("zones")
+        return isinstance(zones, dict) and zones.get(motor) is True
+    return True
 
 
 def lock_live(lock: Any, now_ms: float) -> bool:
@@ -146,6 +169,34 @@ def lock_live(lock: Any, now_ms: float) -> bool:
 
 def farm_day(now_s: float) -> str:
     return _dt.datetime.fromtimestamp(now_s, water.FARM_TZ).strftime("%Y-%m-%d")
+
+
+def check_zone(zone: int, state: dict, now_s: float) -> None:
+    """A zone change: only on the zoned Niagara controller, running a
+    program right now, reporting live, and to another zone."""
+    if not state:
+        raise Refused("could not read the controller")
+    if state.get("vendor") != "niagara" or not state.get("liveAt"):
+        raise Refused("this motor has no zones to change")
+    at = _iso_seconds(state.get("liveAt"))
+    if at is None or now_s - at > NIAGARA_LIVE_STALE_SECONDS:
+        raise Refused("the controller has not reported recently")
+    if state.get("pending"):
+        raise Refused("a change is still on its way to this motor")
+    if state.get("requested") is not None and state.get("requested") != state.get("running"):
+        raise Refused("the controller has not caught up with the last request")
+    if state.get("running") is not True:
+        raise Refused("the motor is not running; a zone change never starts it")
+    if not state.get("program") or not isinstance(state.get("zone"), int):
+        raise Refused("no program is running")
+    if state["zone"] == zone:
+        raise Refused(f"it is already on zone {zone}")
+
+
+def confirmed_zone(zone: int, program: str, state: dict) -> bool:
+    """The controller's own report: that zone, same program, still running."""
+    return bool(state) and state.get("running") is True and state.get("zone") == zone \
+        and state.get("program") == program
 
 
 def check_before(action: str, state: dict, now_s: float) -> None:
@@ -200,7 +251,7 @@ def _iso_seconds(value: Any) -> float | None:
         return None
 
 
-def claim_txn(cmd_id: str, motor: str, now_ms: float, outcome: dict):
+def claim_txn(cmd_id: str, motor: str, now_ms: float, outcome: dict, action: str = "on"):
     """One transaction on meta/motorControl decides everything that could
     race: still armed, once only, no change in flight (the lock lives here),
     the 15 s gap, this motor's cooldown and today's cap. It takes the lock.
@@ -213,8 +264,9 @@ def claim_txn(cmd_id: str, motor: str, now_ms: float, outcome: dict):
         if cmd_id in claimed:
             outcome["why"] = "duplicate"
             return meta
-        if not armed(meta, motor):
-            outcome["why"] = "motor control is switched off for this motor"
+        if not armed(meta, motor, action):
+            outcome["why"] = ("zone changes are switched off for this motor" if action == "zone"
+                              else "motor control is switched off for this motor")
             return meta
         if lock_live(meta.get("lock"), now_ms):
             outcome["why"] = "the last motor change is still being confirmed"
@@ -242,9 +294,9 @@ def claim_txn(cmd_id: str, motor: str, now_ms: float, outcome: dict):
     return txn
 
 
-def claim(store, root: str, cmd_id: str, motor: str, now_s: float) -> None:
+def claim(store, root: str, cmd_id: str, motor: str, now_s: float, action: str = "on") -> None:
     outcome: dict[str, str] = {}
-    store.reference(f"{root}/{META}").transaction(claim_txn(cmd_id, motor, now_s * 1000, outcome))
+    store.reference(f"{root}/{META}").transaction(claim_txn(cmd_id, motor, now_s * 1000, outcome, action))
     why = outcome.get("why")
     if why == "duplicate":
         raise _Duplicate()
@@ -380,6 +432,38 @@ class NiagaraMotor:
             raise Refused(f"Niagara did not take the command (HTTP {r.status_code})")
         return "sent to the controller"
 
+    def _change_from_id(self) -> int:
+        """The CHANGE FROM item of the drip menu, found by name each time."""
+        body = self._client._get(f"user/{self._user}/subuser/0/controller/{self._id}/menu/92/settings")
+        items = body.get("data") if isinstance(body, dict) else None
+        found = [i for i in (items or []) if isinstance(i, dict)
+                 and str(i.get("menuItem") or "").strip().upper() == "CHANGE FROM"]
+        if len(found) != 1 or not str(found[0].get("menuSettingId", "")).isdigit():
+            raise Refused("the controller offers no single CHANGE FROM setting")
+        return int(found[0]["menuSettingId"])
+
+    def send_zone(self, zone: int) -> str:
+        """CHANGE FROM zone N, exactly as the Niagara app sends it."""
+        if self._id is None:
+            raise Refused("the motor was not read before sending")
+        if zone not in ZONES:
+            raise Refused("zone must be 1-8")
+        setting = self._change_from_id()
+        requests = self._http or water._http()
+        body = {"menuSettingId": setting,
+                "sendData": json.dumps({"changeFromValue": str(zone), "type": "128",
+                                        "placeHolderString": "Change From"}, separators=(",", ":")),
+                "sentSms": f"CHANGEFROM{zone:03d}", "receivedData": ""}
+        r = requests.post(f"{self._base}/user/{self._user}/subuser/0/controller/{self._id}/menu/92/settings",
+                          json=body, headers={"deviceType": "web"}, timeout=water.TIMEOUT)
+        try:
+            answer = r.json()
+        except ValueError:
+            answer = {}
+        if r.status_code != 200 or not isinstance(answer, dict) or answer.get("code") != 200:
+            raise Refused(f"Niagara did not take the zone change (HTTP {r.status_code})")
+        return "sent to the controller"
+
 
 # ---- one command ---------------------------------------------------------------
 
@@ -403,23 +487,34 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, motor_factory,
     try:
         try:
             motor, action = validate(cmd, now())
-            claim(store, root, cmd_id, motor, now())
+            zone = cmd.get("zone") if action == "zone" else None
+            if zone is not None:
+                result["zone"] = zone
+            claim(store, root, cmd_id, motor, now(), action)
             claimed = True
             m = motor_factory(motor)
             before = m.read()
-            check_before(action, before, now())
+            if action == "zone":
+                check_zone(zone, before, now())
+            else:
+                check_before(action, before, now())
             # Disarming during a slow read stops it here, before the send.
-            if not armed(store.reference(f"{root}/{META}").get(), motor):
+            if not armed(store.reference(f"{root}/{META}").get(), motor, action):
                 raise Refused("motor control was switched off")
             sent_attempted = True
-            message = m.send(action)
+            message = m.send_zone(zone) if action == "zone" else m.send(action)
             record_sent(store, root, motor, now())
             _count(store, root, "sent")
             result.update(ok=True, confirming=True, message=message)
             result_ref.set({**result, "at": SERVER_TIMESTAMP})
-            verified, last = _confirm(m, action, now, sleep)
-            result["message"] = ("confirmed by the motor" if verified
-                                 else "sent, but the motor has not confirmed it — check before trying again")
+            if action == "zone":
+                verified, last = _confirm_with(m, lambda s: confirmed_zone(zone, before.get("program"), s), now, sleep)
+                result["message"] = (f"confirmed: the controller is on zone {zone}" if verified
+                                     else _zone_surprise(zone, before, last))
+            else:
+                verified, last = _confirm(m, action, now, sleep)
+                result["message"] = ("confirmed by the motor" if verified
+                                     else "sent, but the motor has not confirmed it — check before trying again")
             if last:
                 _mirror(store, root, motor, last)
         except _Duplicate:
@@ -452,7 +547,20 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, motor_factory,
         queue_ref.delete()
 
 
+def _zone_surprise(zone: int, before: dict, last: dict) -> str:
+    """What the controller did instead, said plainly."""
+    if last and last.get("running") is False:
+        return "sent, but the motor has stopped — check it at the farm"
+    if last and last.get("program") != before.get("program"):
+        return f"sent, but the controller changed program ({last.get('program') or 'none'}) — check it"
+    return f"sent, but the controller has not reported zone {zone} — check before trying again"
+
+
 def _confirm(m, action: str, now, sleep) -> tuple[bool, dict]:
+    return _confirm_with(m, lambda s: confirmed(action, s), now, sleep)
+
+
+def _confirm_with(m, ok, now, sleep) -> tuple[bool, dict]:
     """Read the motor every 10 s until its own report shows the change, for
     at most 150 s (the captures settled in 20-40 s). A failed or odd read is
     just another try. Never resends."""
@@ -468,7 +576,7 @@ def _confirm(m, action: str, now, sleep) -> tuple[bool, dict]:
             last = m.read() or last
         except Exception:                 # noqa: BLE001 — incl. Refused: one read is not a verdict
             continue
-        if confirmed(action, last):
+        if ok(last):
             return True, last
 
 

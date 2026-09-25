@@ -398,14 +398,133 @@ def test_niagara_request_echo_is_not_the_state():
 
 # ---- nothing else can reach a motor ------------------------------------------
 
-def test_only_two_commands_exist():
+def test_only_known_commands_exist():
     assert MC.LIVESKY_KEYWORD == {"on": "MOTORON", "off": "MOTOROFF"}
     assert set(MC.NIAGARA_BODY) == {"on", "off"}
     src = (HERE / "motor_control.py").read_text()
-    for forbidden in ("AUTOON", "AUTOOFF", "CYCLIC", "menu/9", "settings", "CHANGEFROM"):
-        code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
-        body = code.split('"""', 2)[2]      # past the module docstring
-        assert forbidden not in body.replace("# ", ""), forbidden
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    body = code.split('"""', 2)[2]      # past the module docstring
+    for forbidden in ("AUTOON", "AUTOOFF", "CYCLIC", "menu/91", "menu/93", "PROGSTART", "MANUALON",
+                      "MANUALSWITCH", "VALVEON", "SKIPDAY", "DRYRUN"):
+        assert forbidden not in body, forbidden
+    # The one settings write: CHANGE FROM on the drip menu, nothing else.
+    assert body.count("menu/92/settings") == 2, "one read of the menu, one write"
+    assert body.count("CHANGEFROM") == 1
+
+
+class FakeZoned(FakeMotor):
+    """The zoned Niagara controller: running program P1 on a zone."""
+    vendor = "niagara"
+
+    def __init__(self, clock, zone=3, running=True, program="P1", moves=True, stops=False, **kw):
+        super().__init__(clock, running=running, **kw)
+        self.zone, self.program, self.moves, self.stops, self.zone_sends = zone, program, moves, stops, []
+
+    def read(self):
+        self.reads += 1
+        return {"vendor": "niagara", "running": self.running, "requested": self.running, "power": True,
+                "liveAt": iso(self.clock.now() - 5), "program": self.program, "zone": self.zone}
+
+    def send_zone(self, zone):
+        self.zone_sends.append(zone)
+        if self.stops:
+            self.running = False
+        elif self.moves:
+            self.zone = zone
+        return "sent to the controller"
+
+
+def zone_store(zones=True):
+    store = armed_store()
+    mc = store.data["farms"]["snof"]["meta"]["motorControl"]
+    mc["motors"]["well-motor"] = True
+    if zones:
+        mc["zones"] = {"well-motor": True}
+    return store
+
+
+def zcmd(zone=5, **kw):
+    c = cmd("zone", motor="well-motor", **kw)
+    c["zone"] = zone
+    return c
+
+
+def test_zone_change_is_sent_once_and_confirmed_by_the_controller():
+    clock, store = Clock(), zone_store()
+    m = FakeZoned(clock)
+    r = run(store, zcmd(5), m, clock)
+    assert r["ok"] and r["verified"] and "zone 5" in r["message"], r
+    assert m.zone_sends == [5] and m.sends == [], "one zone change, no motor command"
+    assert lock(store) is None
+
+
+def test_zone_change_refusals():
+    cases = [
+        (dict(running=False), "never starts it"),
+        (dict(program=None), "no program"),
+        (dict(zone=5), "already on zone 5"),
+    ]
+    for state, words in cases:
+        clock, store = Clock(), zone_store()
+        m = FakeZoned(clock, **state)
+        r = run(store, zcmd(5), m, clock)
+        assert words in r["message"] and m.zone_sends == [], (state, r)
+    clock, store = Clock(), zone_store(zones=False)          # motor armed, zones not
+    m = FakeZoned(clock)
+    r = run(store, zcmd(5), m, clock)
+    assert "zone changes are switched off" in r["message"] and m.reads == 0
+    clock, store = Clock(), zone_store()                       # the river has no zones
+    store.data["farms"]["snof"]["meta"]["motorControl"]["zones"]["river"] = True
+    r = run(store, cmd("zone", motor="river") | {"zone": 2}, FakeMotor(clock), clock)
+    assert "no zones" in r["message"], r
+    for bad in (0, 9, "3", 2.5, True, None):
+        clock, store = Clock(), zone_store()
+        r = run(store, zcmd(bad), FakeZoned(clock), clock)
+        assert "zone must be 1-8" in r["message"], (bad, r)
+    r = run(zone_store(), cmd("on", motor="well-motor") | {"zone": 3}, FakeZoned(Clock(), running=False), Clock())
+    assert "only goes with a zone change" in r["message"]
+
+
+def test_a_zone_change_the_controller_answers_differently_is_said_plainly():
+    clock, store = Clock(), zone_store()
+    r = run(store, zcmd(5), FakeZoned(clock, stops=True), clock)
+    assert not r["verified"] and "motor has stopped" in r["message"] and lock(store), r
+    clock, store = Clock(), zone_store()
+    r = run(store, zcmd(5), FakeZoned(clock, moves=False), clock)
+    assert not r["verified"] and "has not reported zone 5" in r["message"], r
+
+
+def test_zone_request_matches_the_capture():
+    """docs/niagara-app.md: POST …/menu/92/settings {menuSettingId, sendData,
+    sentSms: "CHANGEFROM003", receivedData: ""}, found by the item's name."""
+    import json as _json
+
+    class Resp:
+        def __init__(self, body): self.status_code, self._b = 200, body
+        def json(self): return self._b
+
+    class Http:
+        def __init__(self): self.posts = []
+        def post(self, url, json=None, headers=None, timeout=None):
+            self.posts.append((url, json, headers)); return Resp({"code": 200, "message": "SUCCESS"})
+
+    http = Http()
+    m = MC.NiagaraMotor("http://h:8080/api/v1", "7", "well-motor", http=http)
+    m._id = 42
+    m._client._get = lambda path: {"code": 200, "data": [{"menuItem": "DRIP COMMON SETTINGS", "menuSettingId": 1},
+                                                         {"menuItem": "CHANGE FROM", "menuSettingId": 486}]}
+    assert m.send_zone(3) == "sent to the controller"
+    url, body, headers = http.posts[0]
+    assert url == "http://h:8080/api/v1/user/7/subuser/0/controller/42/menu/92/settings"
+    assert body == {"menuSettingId": 486, "sentSms": "CHANGEFROM003", "receivedData": "",
+                    "sendData": '{"changeFromValue":"3","type":"128","placeHolderString":"Change From"}'}, body
+    assert headers == {"deviceType": "web"}
+    m._client._get = lambda path: {"code": 200, "data": []}
+    try:
+        m.send_zone(3); assert False
+    except MC.Refused as e:
+        assert "CHANGE FROM" in str(e)
+    assert len(http.posts) == 1, "nothing sent without the setting"
 
 
 def test_no_other_code_can_command_a_motor():

@@ -61,6 +61,25 @@ motor_command (onCreate only) ── gates, live read, lock, ONE send, confirm
    so nobody fires a second command blind. Livesky has left a command
    unapplied before; its own app then sent it again. SNOF does not.
 
+## Zone change (the zoned Niagara controller)
+
+Added 2026-09-25 at the owner's request. `action: "zone"` with `zone` 1-8
+moves the **Well motor**'s running program to that zone, using the settings
+menu's CHANGE FROM exactly as the Niagara app sends it (`POST
+…/controller/<id>/menu/92/settings`, `sentSms: "CHANGEFROM00N"`, the item's
+`menuSettingId` looked up by name each time). Its meaning ("continue the
+program from zone N") is **inferred from one capture**, so it is fenced in:
+
+- armed separately: `meta/motorControl/zones/<motor>` as well as the motor;
+- only while that motor is **running a program** — it can never start one;
+- only a zoned controller reporting live packets (15 min), never the
+  current zone, never while a change is on its way;
+- the same lock, claim, rate limits (2 min per motor, 12 a day, counted
+  with on/off), one send, never retried;
+- confirmed only when the controller reports **that zone, the same program,
+  still running**. If it stops, changes program or does not move, the result
+  says exactly that and the lock stays until it expires.
+
 ## What can never be sent
 
 Only the two commands per vendor exist in code: Livesky `MOTORON`/`MOTOROFF`
@@ -85,6 +104,7 @@ Off by default. Arm one motor at a time, with someone able to see it:
 ```bash
 firebase database:update /farms/snof/meta/motorControl '{"enabled": true}' --project snof-live
 firebase database:update /farms/snof/meta/motorControl/motors '{"river": true}' --project snof-live
+firebase database:update /farms/snof/meta/motorControl/zones '{"well-motor": true}' --project snof-live   # zone changes
 # disarm everything at once:
 firebase database:update /farms/snof/meta/motorControl '{"enabled": false}' --project snof-live
 ```

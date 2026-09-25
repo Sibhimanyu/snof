@@ -203,9 +203,10 @@ final class FirebaseBackend: FarmBackend {
         return try await push("farms/\(Farm.slug)/irrigation_commands", node)
     }
 
-    func sendMotor(motor: String, action: String, uid: String, clientAt: Double) async throws -> String {
-        try await push("farms/\(Farm.slug)/motor_commands",
-                       ["motor": motor, "action": action, "uid": uid, "at": ServerValue.timestamp(), "clientAt": clientAt])
+    func sendMotor(motor: String, action: String, zone: Int?, uid: String, clientAt: Double) async throws -> String {
+        var node: [String: Any] = ["motor": motor, "action": action, "uid": uid, "at": ServerValue.timestamp(), "clientAt": clientAt]
+        if action == "zone", let zone { node["zone"] = zone }
+        return try await push("farms/\(Farm.slug)/motor_commands", node)
     }
 
     func saveMobitechSession(_ session: Mobitech.Session, mobileLast4: String, uid: String) async throws {

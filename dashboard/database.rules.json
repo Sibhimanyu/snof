@@ -91,10 +91,13 @@
         // vendor as text: the two commands are fixed in the function.
         "motor_commands": {
           "$cmd": {
-            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['motor','action','uid','at']) && root.child('farms').child($farm).child('meta/motorControl/enabled').val() === true && newData.child('motor').isString() && newData.child('motor').val().matches(/^[a-z0-9-]{1,40}$/) && root.child('farms').child($farm).child('meta/motorControl/motors').child(newData.child('motor').val()).val() === true && (!root.child('farms').child($farm).child('meta/motorControl/lock').exists() || root.child('farms').child($farm).child('meta/motorControl/lock/until').val() < now) && newData.child('clientAt').isNumber() && newData.child('clientAt').val() > now - 30000 && newData.child('clientAt').val() < now + 30000",
+            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['motor','action','uid','at']) && root.child('farms').child($farm).child('meta/motorControl/enabled').val() === true && newData.child('motor').isString() && newData.child('motor').val().matches(/^[a-z0-9-]{1,40}$/) && root.child('farms').child($farm).child('meta/motorControl/motors').child(newData.child('motor').val()).val() === true && (!root.child('farms').child($farm).child('meta/motorControl/lock').exists() || root.child('farms').child($farm).child('meta/motorControl/lock/until').val() < now) && newData.child('clientAt').isNumber() && newData.child('clientAt').val() > now - 30000 && newData.child('clientAt').val() < now + 30000 && (newData.child('action').val() !== 'zone' || (newData.child('zone').exists() && root.child('farms').child($farm).child('meta/motorControl/zones').child(newData.child('motor').val()).val() === true)) && (newData.child('action').val() === 'zone' || !newData.child('zone').exists())",
             "clientAt": { ".validate": "newData.isNumber()" },
+            // A zone change: continue the running program from zone 1-8 (the
+            // zoned Niagara controller). Also needs meta/motorControl/zones/<motor>.
+            "zone": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 8 && newData.val() % 1 === 0" },
             "motor": { ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9-]{1,40}$/)" },
-            "action": { ".validate": "newData.isString() && newData.val().matches(/^(on|off)$/)" },
+            "action": { ".validate": "newData.isString() && newData.val().matches(/^(on|off|zone)$/)" },
             "uid": { ".validate": "newData.val() === auth.uid" },
             "at": { ".validate": "newData.val() === now" },
             "$other": { ".validate": false }

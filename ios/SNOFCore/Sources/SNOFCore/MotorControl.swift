@@ -10,6 +10,8 @@ public struct MotorControl: Hashable, Sendable {
     public var enabled = false
     /// meta/motorControl/motors/<key>: each motor armed on its own.
     public var motors: [String: Bool] = [:]
+    /// meta/motorControl/zones/<key>: zone changes armed on their own.
+    public var zones: [String: Bool] = [:]
     /// meta/motorControl/lastByMotor/<key>: when it last changed (server ms).
     public var lastByMotor: [String: Double] = [:]
     /// meta/motorControl/lock/until: no motor may change before (server ms).
@@ -20,6 +22,22 @@ public struct MotorControl: Hashable, Sendable {
     public static let cooldownMs: Double = 120_000
 
     public func armed(_ key: String) -> Bool { enabled && motors[key] == true }
+    public func zonesArmed(_ key: String) -> Bool { armed(key) && zones[key] == true }
+
+    /// Why a zone change cannot be pressed now, or nil: the motor rules plus a
+    /// program running (so it can never start a motor) and another zone.
+    public func zoneRefusal(_ key: String, motor: WaterMotor?, zone: Int, current: Bool, isAdmin: Bool,
+                            pending: Bool, confirming: Bool, online: Bool = true, nowMs: Double) -> String? {
+        if !zonesArmed(key) { return "Zone changes are turned off for this motor." }
+        if let why = refusal(key, motor: motor, current: current, isAdmin: isAdmin, pending: pending,
+                             confirming: confirming, online: online, nowMs: nowMs) { return why }
+        guard let m = motor, m.running == true, m.program != nil, let now = m.zone else {
+            return "No program is running, so there is no zone to change."
+        }
+        if !(1...8).contains(zone) { return "Zones are 1 to 8." }
+        if now == zone { return "It is already on zone \(zone)." }
+        return nil
+    }
 
     /// Seconds left of this motor's cooldown, or nil.
     public func cooldownLeft(_ key: String, nowMs: Double) -> Int? {

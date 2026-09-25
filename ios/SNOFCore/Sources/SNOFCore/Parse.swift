@@ -76,6 +76,7 @@ public enum Parse {
         m.motorControl.motors = (mc?["motors"] as? [String: Any] ?? [:]).compactMapValues { $0 as? Bool }
         m.motorControl.lastByMotor = (mc?["lastByMotor"] as? [String: Any] ?? [:]).compactMapValues { double($0) }
         m.motorControl.lockUntil = double((mc?["lock"] as? [String: Any])?["until"])
+        m.motorControl.zones = (mc?["zones"] as? [String: Any] ?? [:]).compactMapValues { $0 as? Bool }
         return m
     }
 

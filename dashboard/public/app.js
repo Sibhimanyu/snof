@@ -2264,6 +2264,7 @@ let motorCmd = null, motorCmdKey = null, motorCmdConfirming = false, motorCmdTim
 let dbConnected = true;
 const MOTOR_COOLDOWN_MS = 120000;
 const motorArmed = (key) => isAdmin && state.meta?.motorControl?.enabled === true && state.meta.motorControl.motors?.[key] === true;
+const zonesArmed = (key) => motorArmed(key) && state.meta.motorControl.zones?.[key] === true;
 function motorRefusal(key) {
   const mc = state.meta?.motorControl || {};
   if (!isAdmin) return 'Only farm admins can switch motors.';
@@ -2295,7 +2296,7 @@ function confirmMotor(key, action) {
   if (!window.confirm(`${what}\n\nSNOF sends it once and waits for the motor to confirm (up to 2½ minutes).`)) return;
   sendMotor(key, action);
 }
-function sendMotor(key, action) {
+function sendMotor(key, action, zone = null) {
   const why = motorRefusal(key);
   if (why) { toast('err', why); render(); return; }
   const ref = firebase.database().ref(`farms/${FARM}/motor_commands`).push();
@@ -2310,7 +2311,9 @@ function sendMotor(key, action) {
   }, 240000);
   // clientAt: the press, on the server's clock; a write that arrives more
   // than 30 s later (queued offline) is refused by the rules and the function.
-  ref.set({ motor: key, action, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP, clientAt: serverNow() }, (err) => {
+  const node = { motor: key, action, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP, clientAt: serverNow() };
+  if (action === 'zone') node.zone = zone;
+  ref.set(node, (err) => {
     if (!err) return;
     motorCmd = null; clearTimeout(motorCmdTimer);
     toast('err', err.code === 'PERMISSION_DENIED' ? 'The database refused that (switched off, or a change is in flight).' : `Could not send: ${err.message}`);
@@ -2324,11 +2327,34 @@ function settleMotor(results) {
   if (node.ok && node.confirming === true) { motorCmdConfirming = true; return; }
   motorCmd = null; motorCmdConfirming = false; clearTimeout(motorCmdTimer);
   const name = motorByKey(node.motor)?.name || 'The motor';
-  if (node.ok && node.verified === true) toast('ok', `Confirmed: ${name} is ${node.action === 'on' ? 'running' : 'off'}.`);
+  if (node.ok && node.verified === true) {
+    toast('ok', node.action === 'zone' ? `Confirmed: ${name} is on zone ${node.zone}.` : `Confirmed: ${name} is ${node.action === 'on' ? 'running' : 'off'}.`);
+  } else if (node.ok && node.action === 'zone') toast('err', `Sent once. ${cap(node.message || 'The controller has not confirmed it.')}`);
   else if (node.ok) toast('err', 'Sent once, but the motor has not confirmed it. Check it before trying again.');
   else toast('err', node.message ? `Not sent: ${node.message}` : 'The farm refused that.');
   requestWater(true);
 }
+/** Continue the running program from another zone (the zoned Niagara
+ *  controller): only while it runs a program, never the current zone. */
+function confirmZone(key, zone) {
+  const m = motorByKey(key);
+  if (!m || !zonesArmed(key)) return;
+  const why = motorRefusal(key) || (!waterCurrent(m) ? 'The reading is not current. Refresh before changing zones.' : '')
+    || (m.running !== true || !m.program || m.zone == null ? 'No program is running, so there is no zone to change.' : '')
+    || (m.zone === zone ? `It is already on zone ${zone}.` : '');
+  if (why) { toast('err', why); render(); return; }
+  if (!window.confirm(`Move ${m.name || 'the motor'} from zone ${m.zone} to zone ${zone}?\n\nThe controller continues ${m.program} from zone ${zone}. SNOF sends it once and waits for the controller to confirm (up to 2½ minutes).`)) return;
+  sendMotor(key, 'zone', zone);
+}
+function zoneControls(m) {
+  const key = m.key;
+  if (!key || !zonesArmed(key) || m.running !== true || !m.program || m.zone == null) return '';
+  const closed = !!(motorRefusal(key) || !waterCurrent(m));
+  const chips = [1, 2, 3, 4, 5, 6, 7, 8].map((z) => `<button class="zchip${z === m.zone ? ' is-now' : ''}" data-act="motor-zone"` +
+    ` data-motor="${escapeHtml(key)}" data-zone="${z}" aria-pressed="${z === m.zone}"${z === m.zone || closed ? ' disabled' : ''}>${z}</button>`).join('');
+  return `<div class="wzones"><span class="wzones-label">Zone · ${escapeHtml(m.program)}</span><div class="zchips">${chips}</div></div>`;
+}
+
 /** The on/off control on a motor's card: only for an armed motor. */
 function motorControls(m) {
   const key = m.key;
@@ -2757,7 +2783,7 @@ function waterMotorCard(m, vendorErr) {
       return `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(main)}</strong>${asOf ? `<em class="as-of">as of ${escapeHtml(asOf)}</em>` : ''}</div>`;
     }).join('')}</div>` : ''}
     ${notes.join('')}
-    ${motorControls(m)}
+    ${motorControls(m)}${zoneControls(m)}
     <details class="wdetails"><summary>${when ? `Reported ${escapeHtml(agoText(when))}` : 'Details'}</summary>
       <div class="mb-facts">${details.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></details>
   </article>`;
@@ -3469,6 +3495,9 @@ function wire(all) {
   });
   view.querySelectorAll('[data-act="motor-cmd"]').forEach((btn) => {
     btn.onclick = () => confirmMotor(btn.dataset.motor, btn.dataset.action);
+  });
+  view.querySelectorAll('[data-act="motor-zone"]').forEach((btn) => {
+    btn.onclick = () => confirmZone(btn.dataset.motor, Number(btn.dataset.zone));
   });
   view.querySelectorAll('[data-act="run-open"]').forEach((btn) => {
     btn.onclick = () => { runOpen = true; runPick = []; render(); };
