@@ -28,6 +28,7 @@ struct WaterView: View {
             if water.niagara.ok == false, !water.niagara.error.isEmpty {
                 Note(text: "\(water.niagara.error) Showing the last readings.", tone: .warn)
             }
+            FlowMap()
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
                 ForEach(store.waterMotorList) { m in
                     NavigationLink(value: MotorRoute(key: m.id)) { MotorTile(motor: m) }.buttonStyle(TileButtonStyle())
@@ -49,6 +50,105 @@ struct WaterView: View {
         guard water.enabled else { return nil }
         let store = store
         return { await store.refreshWater(force: true) }
+    }
+}
+
+/// The water's path, drawn (owner, 2026-09-25): River → River Motor → Thoppu
+/// → Wellmotor75HP → Farm → SibhiSump → the valves, with the Well motor
+/// branching to Thoppu's drip zones. Every motor is the same size and opens
+/// its own page; a pipe flows only while its motor runs on a current
+/// reading. Same layout as waterFlowMap() in app.js (a 360 × 560 plan).
+struct FlowMap: View {
+    @Environment(FarmStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        let w = store.water
+        let river = w.river, supply = w.supply.first, drip = w.motors.first { $0.role == "drip" }
+        let c = store.irrigation
+        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
+        let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: store.now) }
+        let word = { (m: WaterMotor?) -> String in
+            guard let m else { return "No reading" }
+            let cur = w.isCurrent(m, now: store.now)
+            return m.running == true ? (cur ? "Running" : "Was running") : m.running == false ? (cur ? "Off" : "Was off") : "Unknown"
+        }
+        let onRiver = live(river), onSupply = live(supply), onDrip = live(drip), onFarm = say.running
+        let zone = drip?.program.map { p in p + (drip?.zone.map { " · zone \($0)" } ?? "") }
+        GeometryReader { g in
+            let k = g.size.width / 360
+            ZStack(alignment: .topLeading) {
+                pipe([(180, 42), (180, 78)], onRiver, k)
+                pipe([(180, 167), (180, 194)], onRiver, k)
+                pipe([(180, 222), (180, 238), (95, 238), (95, 262)], onSupply, k)
+                pipe([(180, 222), (180, 238), (265, 238), (265, 262)], onDrip, k)
+                pipe([(95, 353), (95, 379)], onSupply, k)
+                pipe([(265, 353), (265, 377)], onDrip, k)
+                pipe([(95, 406), (95, 430)], onFarm, k)
+                pipe([(95, 521), (95, 535)], onFarm, k)
+                place("River", nil, at: (180, 30), k)
+                place("Thoppu", nil, at: (180, 208), k)
+                place("Farm", nil, at: (95, 392), k)
+                place("Thoppu drip", zone, at: (265, 392), k)
+                place("Valves", onFarm ? say.title : "closed", at: (95, 548), k)
+                node(key: river?.id ?? "river", name: river?.name ?? "River Motor", word: word(river), on: onRiver, at: (180, 105), k)
+                node(key: supply?.id ?? "wellmotor75hp", name: supply?.name ?? "7.5 HP motor", word: word(supply), on: onSupply, at: (95, 289), k)
+                node(key: drip?.id ?? "well-motor", name: drip?.name ?? "Well motor", word: word(drip), on: onDrip, at: (265, 289), k)
+                node(key: FarmStore.dconKey, name: store.dconName, word: onFarm ? "Watering" : "Not watering", on: onFarm, at: (95, 457), k)
+            }
+        }
+        .aspectRatio(360.0 / 572.0, contentMode: .fit)
+        .padding(.horizontal, 8).padding(.vertical, 12)
+        .modifier(Panel(padding: 0))
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { phase = -18 }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Where the water goes")
+    }
+
+    private func pipe(_ pts: [(CGFloat, CGFloat)], _ on: Bool, _ k: CGFloat) -> some View {
+        Path { p in
+            p.move(to: CGPoint(x: pts[0].0 * k, y: pts[0].1 * k))
+            for q in pts.dropFirst() { p.addLine(to: CGPoint(x: q.0 * k, y: q.1 * k)) }
+        }
+        .stroke(on ? Theme.brand : Theme.line2,
+                style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round,
+                                   dash: on && !reduceMotion ? [10, 8] : [], dashPhase: on ? phase : 0))
+        .accessibilityHidden(true)
+    }
+
+    private func place(_ name: String, _ sub: String?, at pt: (CGFloat, CGFloat), _ k: CGFloat) -> some View {
+        VStack(spacing: 1) {
+            Text(name).font(Theme.font(10.5, .bold, relativeTo: .caption2)).tracking(0.9).textCase(.uppercase)
+                .foregroundStyle(Theme.faint)
+            if let sub, !sub.isEmpty { Text(sub).font(Theme.font(10.5, .regular, relativeTo: .caption2)).foregroundStyle(Theme.muted) }
+        }
+        .lineLimit(1).fixedSize()
+        .position(x: pt.0 * k, y: (pt.1 + (sub == nil ? 0 : 5)) * k)
+        .accessibilityHidden(true)
+    }
+
+    private func node(key: String, name: String, word: String, on: Bool, at pt: (CGFloat, CGFloat), _ k: CGFloat) -> some View {
+        NavigationLink(value: MotorRoute(key: key)) {
+            VStack(spacing: 2) {
+                Image(on ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 34 * k, height: 34 * k)
+                    .frame(width: 54 * k, height: 54 * k)
+                    .background(Theme.panel2, in: Circle())
+                    .overlay(Circle().strokeBorder(on ? Theme.brand : Theme.line2, lineWidth: on ? 3 : 2))
+                    .background(Circle().fill(on ? Theme.brand.opacity(0.18) : .clear).padding(-6))
+                Text(name).font(Theme.font(12, .bold, relativeTo: .caption)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(word).font(Theme.font(10.5, on ? .semibold : .regular, relativeTo: .caption2))
+                    .foregroundStyle(on ? Theme.on : Theme.muted).lineLimit(1)
+            }
+            .fixedSize()
+        }
+        .buttonStyle(TileButtonStyle())
+        // Circle centre on the plan point: the stack's centre sits ~16 below it.
+        .position(x: pt.0 * k, y: (pt.1 + 16) * k)
+        .accessibilityLabel("\(name): \(word)")
     }
 }
 

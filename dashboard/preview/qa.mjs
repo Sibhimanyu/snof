@@ -531,6 +531,27 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await c.close();
 }
 {
+  // The water's path, drawn: four equal motor nodes, each opening its page;
+  // a pipe flows only while its motor runs on a current reading.
+  const [p,c]=await open('?live=1#/water');
+  await p.waitForSelector('#view .fm');
+  const r=await p.evaluate(()=>{const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
+    state.meta=Object.assign({},state.meta,{water:{enabled:true,livesky:{ok:true,at:now-5000,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true,at:now-5000}}});
+    state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,connected:true,reportedAt:iso(now-20e3)},
+      motors:{wellmotor75hp:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:false},
+              'well-motor':{name:'Well motor',vendor:'niagara',role:'drip',running:true,program:'P1',zone:3}}};
+    render();
+    const nodes=[...document.querySelectorAll('#view .fm-node')];
+    const radii=new Set(nodes.map(n=>n.querySelector('circle').getAttribute('r')));
+    const flowing=[...document.querySelectorAll('#view .fm-pipe.is-on')].length;
+    state.water.river.reportedAt=iso(now-3600e3); render();
+    const staleFlow=[...document.querySelectorAll('#view .fm-pipe.is-on')].length;
+    return {hrefs:nodes.map(n=>n.getAttribute('href')), radii:[...radii], flowing, staleFlow};});
+  check('the flow map draws all four motors alike, each opening its page', r.hrefs.length===4&&r.radii.length===1&&r.hrefs.includes('#/motor/dcon'), JSON.stringify(r));
+  check('pipes flow for running motors and stop on a stale reading', r.flowing===4&&r.staleFlow===2, `${r.flowing} → ${r.staleFlow}`);
+  await c.close();
+}
+{
   // Motor control (docs/motor-control.md): nothing until a motor is armed;
   // then one control that matches the motor's current state, closed on a
   // stale reading, during a change and in the cooldown; one press, one

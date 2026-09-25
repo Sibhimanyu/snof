@@ -1319,3 +1319,21 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .mtile-state{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:8px}
 .mtile-state em{font-style:normal;font-size:12px;color:var(--faint)}
 .mtile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* The water's path (waterFlowMap): equal motor nodes, place labels, pipes
+ * that flow only while their motor runs on a current reading. */
+.wflowmap{padding:12px 8px;margin-bottom:12px;display:flex;justify-content:center}
+.fm{width:100%;max-width:420px;height:auto;overflow:visible}
+.fm-pipe{fill:none;stroke:var(--line-2);stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+.fm-pipe.is-on{stroke:var(--brand);stroke-dasharray:10 8;animation:fm-flow .9s linear infinite}
+@keyframes fm-flow{to{stroke-dashoffset:-18}}
+@media (prefers-reduced-motion:reduce){.fm-pipe.is-on{animation:none;stroke-dasharray:none}}
+.fm-node circle{fill:var(--panel-2);stroke:var(--line-2);stroke-width:2;transition:stroke .2s}
+.fm-node.is-on circle{stroke:var(--brand);stroke-width:3;filter:drop-shadow(0 0 6px var(--accent-glow, rgba(1,136,67,.35)))}
+.fm-node:hover circle,.fm-node:focus-visible circle{stroke:var(--accent)}
+.fm-node:focus-visible{outline:none}
+.fm-node-name{font-size:12.5px;font-weight:700;fill:var(--text);text-anchor:middle}
+.fm-node-word{font-size:11px;fill:var(--muted);text-anchor:middle}
+.fm-node.is-on .fm-node-word{fill:var(--accent);font-weight:650}
+.fm-place-name{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;fill:var(--faint);text-anchor:middle}
+.fm-place-sub{font-size:11px;fill:var(--muted);text-anchor:middle}
