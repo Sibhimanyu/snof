@@ -16,7 +16,7 @@ public enum FarmSystemID: String, CaseIterable, Sendable, Hashable, Identifiable
     public var title: String {
         switch self {
         case .security: return "Security"
-        case .solar: return "Solar"
+        case .solar: return "Power"
         case .switches: return "Lights & switches"
         case .climate: return "Climate"
         case .media: return "TVs"
@@ -436,11 +436,14 @@ public enum Attention {
                 out.append(.init(.warn, "\(down.count) cameras offline", down.map(\.name).joined(separator: ", "), .system(.security)))
             }
         }
-        if let solar = i.systems[.solar] {
+        if i.systems[.solar] != nil {
+            // Per inverter: one down while the other generates is still a look.
             var cal = Calendar(identifier: .gregorian); cal.timeZone = zone
             let h = cal.component(.hour, from: i.now)
-            if h >= 7, h < 18, Systems.summary(solar).state == .offline {
-                out.append(.init(.warn, "Solar inverter offline", "during daylight", .system(.solar)))
+            if h >= 7, h < 18 {
+                for l in Power.build(systems: i.systems, irrigation: c, now: i.now) where l.inverter?.offline == true {
+                    out.append(.init(.warn, "\(l.spec.brand) inverter offline", "\(l.spec.title) line · during daylight", .system(.solar)))
+                }
             }
         }
         if let sw = i.systems[.switches] {

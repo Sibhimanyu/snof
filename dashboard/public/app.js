@@ -353,6 +353,12 @@ function tidyNames(ents) {
     if (tidy && tidy !== raw) renamedDevices.set(id, { raw, tidy });
   }
   for (const e of ents) {
+    // "Solar Solar Power": a device named "Solar" with the integration's own
+    // "Solar Power" sensor. Say the device once.
+    const own = state.devices?.[e.device]?.name;
+    if (own && typeof e.name === 'string' && e.name.startsWith(`${own} ${own}`) && [undefined, ' '].includes(e.name[own.length * 2 + 1])) {
+      e.name = e.name.slice(own.length + 1);
+    }
     const d = renamedDevices.get(e.device);
     if (d && typeof e.name === 'string' && e.name.startsWith(d.raw) && [undefined, ' '].includes(e.name[d.raw.length])) {
       // "T8400P202040124D Goats" is the station's own entity: "Goats", not "Goats Goats".
@@ -811,7 +817,7 @@ function switchTiles(all) {
  * printer that were simply off.) */
 const SYSTEMS = {
   security: { title: 'Security', icon: 'i-shield', offline: 'bad' },
-  solar: { title: 'Solar', icon: 'i-sun', offline: 'warn' },
+  solar: { title: 'Power', icon: 'i-sun', offline: 'warn' },
   switches: { title: 'Lights & switches', icon: 'i-light', offline: 'warn' },
   climate: { title: 'Climate', icon: 'i-climate', offline: 'none' },
   media: { title: 'TVs', icon: 'i-media_player', offline: 'none' },
@@ -940,6 +946,163 @@ function systemSummary(sys) {
   }
 }
 
+/* ---- power: the farm's three EB lines ----
+ * Owner, 2026-09-25: three separate supplies from the electricity board.
+ * Home and the sheds are on a single-phase line with the GoodWe inverter; a
+ * three-phase line with the V-Guard inverter (a FoxESS unit) charges the XEV
+ * 9e; and a second three-phase line, free for agriculture, runs the main farm
+ * motor. Which inverter is on which line is a fact about this farm that Home
+ * Assistant does not hold, so it is written here. The inverters themselves
+ * are recognised by what their integrations report, not by typed names.
+ * Mirrors Power.swift in SNOFCore; keep the two in step. */
+const POWER_LINES = [
+  { id: 'home', title: 'Home & sheds', phase: 'Single phase', short: '1-phase', inverter: 'goodwe', brand: 'GoodWe', use: 'The house and the sheds' },
+  { id: 'ev', title: 'EV charging', phase: 'Three phase', short: '3-phase', inverter: 'foxess', brand: 'V-Guard', use: 'Charges the XEV 9e' },
+  { id: 'farm', title: 'Farm motor', phase: 'Three phase', short: '3-phase', inverter: null, brand: '', use: 'Free agricultural supply' },
+];
+
+/** 'goodwe' | 'foxess' | null, from the entities the integration makes. */
+function inverterKind(d) {
+  const has = (re) => d.ents.some((e) => re.test(lname(e)));
+  if (has(/on-grid l1 (voltage|power)$/)) return 'goodwe';
+  if (has(/feed-in power$/) && has(/\br power$/)) return 'foxess';
+  return null;
+}
+
+/** One inverter's readings. `watts` is PV input, as the old Solar card had it. */
+function inverterReading(d) {
+  const f = (re) => d.ents.find((e) => re.test(lname(e)) && !isBad(e));
+  const pv = f(/\bpv power$/) || f(/solar power$/);
+  let w = numOf(pv);
+  if (w != null && unitOf(pv).toLowerCase() === 'kw') w *= 1000;
+  const offline = deviceOffline(d) || w == null;
+  return {
+    offline, watts: offline ? null : w,
+    kwh: numOf(f(/(today's pv generation|energy generated today)$/)),
+    total: numOf(f(/(total pv generation|energy generated total)$/)),
+    grid: numOf(f(/(on-grid l1 voltage|\br voltage)$/)),
+    temp: numOf(f(/inverter temperature$/)),
+    mode: f(/work mode$/)?.state || null,
+  };
+}
+const fmtKwh = (k) => `${+k.toFixed(1)} kWh`;
+
+/** The three lines, each with what is known about it right now. */
+function powerLines(systems) {
+  const inverters = (systems.solar?.devices || []).map((d) => ({ d, kind: inverterKind(d) }));
+  return POWER_LINES.map((l) => {
+    if (l.inverter) {
+      const hit = inverters.find((i) => i.kind === l.inverter);
+      return { ...l, dev: hit?.d || null, inv: hit ? inverterReading(hit.d) : null };
+    }
+    const rows = irrig().electricity || [];
+    const val = (re) => rows.find((r) => re.test(String(r.label || '').toLowerCase()))?.value || null;
+    const c = irrig();
+    const checkedAt = c.program?.at || c.meta?.lastUpdated || 0;
+    return { ...l, supply: irrSupply(), supplyToday: val(/^supply today/), pumpToday: val(/^pump today/),
+             current: checkedAt > 0 && serverNow() - checkedAt < 60 * 60000 };
+  });
+}
+
+/** { state, figure, unit, sub } for one line, as the Home panel says it. */
+function lineStatus(l) {
+  if (l.inverter) {
+    const i = l.inv;
+    if (!i) return { state: 'off', figure: 'No inverter', unit: '', sub: `${l.brand} not reporting to Home Assistant` };
+    if (i.offline) return { state: 'offline', figure: 'Inverter offline', unit: '', sub: i.kwh ? `${fmtKwh(i.kwh)} today` : '' };
+    const [v, u] = fmtPower(i.watts).split(' ');
+    return { state: i.watts > 0 ? 'on' : 'rest', figure: v, unit: u,
+             sub: i.kwh != null ? `${fmtKwh(i.kwh)} today` : 'solar' };
+  }
+  const sp = l.supply;
+  if (!sp || !sp.v.length) return { state: 'off', figure: 'No reading', unit: '', sub: 'from the irrigation controller' };
+  const at = sp.at ? ` · ${sp.at}` : '';
+  // Free agricultural power comes and goes on the board's schedule, so a
+  // line with no power is "off now", not a fault; a missing phase is.
+  if (!sp.live) return { state: 'rest', figure: 'Power off', unit: '', sub: `${l.supplyToday ? `${l.supplyToday} today` : 'no supply'}${at}` };
+  if (sp.missing) return { state: 'bad', figure: `${sp.live} of 3`, unit: 'phases', sub: `phase missing${at}` };
+  return { state: 'on', figure: '3', unit: 'phases', sub: `${sp.drawing ? 'pump running' : 'pump off'}${at}` };
+}
+
+const lineArt = (id) => id === 'home' ? artImg('house', 'flow-art')
+  : id === 'farm' ? artImg('motor-on', 'flow-art')
+  : `<svg viewBox="0 0 24 24" class="ico pw-ico" aria-hidden="true"><use href="#i-car"/></svg>`;
+
+/* Home: the three lines side by side, what each is doing now. */
+function powerPanel(systems) {
+  const lines = powerLines(systems);
+  if (!lines.some((l) => l.dev || (l.supply && l.supply.v.length))) return '';
+  const solarW = lines.reduce((t, l) => t + (l.inv?.watts || 0), 0);
+  return `<section class="panel power" aria-label="Power">
+    <div class="flow-head"><h2 class="panel-title">Power</h2>
+      ${solarW > 0 ? `<span class="card-age">${escapeHtml(fmtPower(solarW))} solar now</span>` : ''}
+      <a class="panel-link" href="#/sys/solar">Details${arrow()}</a></div>
+    <div class="pw-row">${lines.map((l) => {
+      const st = lineStatus(l);
+      const stale = !l.inverter && !l.current;
+      return `<a class="pw-line is-${st.state}${stale ? ' is-stale' : ''}" href="#/sys/solar">
+        <span class="flow-disc">${lineArt(l.id)}</span>
+        <span class="pw-title">${escapeHtml(l.title)}</span>
+        <span class="pw-phase">${escapeHtml(l.short)} · ${escapeHtml(l.brand || 'free')}</span>
+        <strong class="pw-fig">${escapeHtml(st.figure)}${st.unit ? `<small>${escapeHtml(st.unit)}</small>` : ''}</strong>
+        ${st.sub ? `<span class="pw-sub">${escapeHtml(st.sub)}</span>` : ''}</a>`;
+    }).join('')}</div></section>`;
+}
+
+/** Three phase bars against 0–300 V; out of 200–260 V or missing reads warm. */
+function phaseBars(v) {
+  return `<div class="phases" role="img" aria-label="Phase voltages ${v.map(Math.round).join(', ')} volts">` +
+    v.map((x, i) => `<div class="phase${x < 120 ? ' dead' : x < 200 || x > 260 ? ' warn' : ''}"><span class="phase-bar"><i style="height:${Math.min(100, x / 300 * 100).toFixed(1)}%"></i></span>` +
+      `<strong>${Math.round(x)}</strong><small>L${i + 1}</small></div>`).join('') + `</div>`;
+}
+
+/* The Power page: one panel per line. */
+function powerPage(systems) {
+  const lines = powerLines(systems);
+  const facts = (list) => `<div class="mb-facts">${list.map(([k, v]) => `<div><span>${k}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div>`;
+  const solarW = lines.reduce((t, l) => t + (l.inv?.watts || 0), 0);
+  const solarKwh = lines.reduce((t, l) => t + (l.inv?.kwh || 0), 0);
+  const top = `<section class="panel sys-hero solar is-${solarW > 0 ? 'on' : 'rest'}"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>` +
+    [0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('') + `</svg></span>` +
+    `<div class="sys-hero-body"><h2 class="sys-hero-title">${solarW > 0 ? `${escapeHtml(fmtPower(solarW))} solar` : 'No solar right now'}</h2>` +
+    `<p class="sys-hero-sub">${escapeHtml(`${fmtKwh(solarKwh)} today from both inverters`)}</p></div></section>`;
+  return top + lines.map((l) => {
+    const st = lineStatus(l);
+    let body = '';
+    if (l.inverter) {
+      const i = l.inv;
+      if (i) {
+        const f = (re) => l.dev.ents.find((e) => re.test(lname(e)) && !isBad(e));
+        const list = [
+          ['Solar now', i.watts != null ? fmtPower(i.watts) : '—'],
+          ['Today', i.kwh != null ? fmtKwh(i.kwh) : '—'],
+          ['Lifetime', i.total != null ? `${Math.round(i.total).toLocaleString('en-IN')} kWh` : '—'],
+          ['Grid', i.grid != null ? `${Math.round(i.grid)} V` : '—'],
+          ['Inverter', i.temp != null ? `${i.temp} °C` : '—'],
+        ];
+        if (i.mode) list.push(['Mode', i.mode]);
+        const sw = f(/export limit switch$/), pct = numOf(f(/grid export limit$/));
+        if (sw) list.push(['Export limit', `${sw.state === 'on' ? 'On' : 'Off'}${pct != null ? ` (limit ${pct}%)` : ''}`]);
+        body = facts(list);
+      } else body = `<p class="more-note">The ${escapeHtml(l.brand)} inverter is not reporting to Home Assistant.</p>`;
+    } else {
+      const sp = l.supply;
+      const list = [['Supply today', l.supplyToday || '—'], ['Pump today', l.pumpToday || '—']];
+      if (sp && sp.a.length) list.push(['Current', `${sp.a.map((x) => x.toFixed(1)).join(' / ')} A`]);
+      if (sp && sp.imbalance != null) list.push(['Imbalance', `${sp.imbalance}%`]);
+      if (sp && sp.at) list.push(['Read at', sp.at]);
+      body = (sp && sp.v.length ? phaseBars(sp.v) : '') + facts(list) +
+        `<a class="panel-link pw-more" href="#/irrigation">Pump & irrigation${arrow()}</a>`;
+    }
+    return `<section class="panel pw-sec is-${st.state}" aria-label="${escapeHtml(l.title)}">
+      <div class="pw-sec-head"><span class="flow-disc">${lineArt(l.id)}</span>
+        <div><h2 class="panel-title">${escapeHtml(l.title)}</h2>
+          <p class="pw-sec-sub">${escapeHtml([l.phase, l.inverter && `${l.brand} solar`, l.use].filter(Boolean).join(' · '))}</p></div>
+        <strong class="pw-fig">${escapeHtml(st.figure)}${st.unit ? `<small>${escapeHtml(st.unit)}</small>` : ''}</strong></div>
+      ${body}</section>`;
+  }).join('');
+}
+
 /* ---- needs a look ----
  * Everything across every system that deserves a look, worst first, each
  * with where to go about it. Appliances switched off never appear here. */
@@ -996,8 +1159,11 @@ function attentionItems(all, systems) {
       continue;
     }
     if (id === 'solar') {
+      // Per inverter: one down while the other generates is still a look.
       const h = new Date(serverNow() + 330 * 60000).getUTCHours();
-      if (h >= 7 && h < 18 && systemSummary(sys).state === 'offline') add('warn', 'Solar inverter offline', 'during daylight', '#/sys/solar');
+      if (h >= 7 && h < 18) for (const l of powerLines(systems)) {
+        if (l.inv?.offline) add('warn', `${l.brand} inverter offline`, `${l.title} line · during daylight`, '#/sys/solar');
+      }
       continue;
     }
     const down = sys.devices.filter((d) => deviceOffline(d) && !isAppliance(d));
@@ -1049,20 +1215,6 @@ function securityCard(systems) {
   </a>`;
 }
 
-function solarCard(systems) {
-  const sys = systems.solar;
-  if (!sys) return '';
-  const s = systemSummary(sys);
-  const [v, u] = s.watts > 0 ? fmtPower(s.watts).split(' ') : [s.line, ''];
-  return `<a class="panel vcard solar is-${s.state}" href="#/sys/solar">
-    <span class="vcard-label">Solar</span>
-    <div class="vcard-body"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>
-      ${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('')}</svg></span>
-      <div class="vcard-text"><strong class="${s.watts > 0 ? 'big' : ''}">${escapeHtml(v)}${u ? `<small>${escapeHtml(u)}</small>` : ''}</strong>
-        <span>${escapeHtml(s.watts > 0 ? `now · ${s.sub}` : s.sub || '')}</span></div></div>
-  </a>`;
-}
-
 /* The rest of the farm, one tile each: what it is, and one word on how it is. */
 function systemsGrid(systems) {
   // Switches have their own tiles (and an "All" link) right above.
@@ -1086,8 +1238,8 @@ function overviewView(all) {
   const pill = `<span id="head-bridge" class="pill pill-head ${b.cls}" role="status"><span class="dot"></span><span id="head-bridge-text">${escapeHtml(b.long)}</span></span>`;
   // Nothing is "all clear" until the farm has actually been heard from.
   const heard = !!(state.meta && (state.meta.bridge || state.meta.updatedAt));
-  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() +
-    `<div class="vcards">${irrigationCard()}${solarCard(systems)}${securityCard(systems)}</div>` +
+  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + flowHero() + powerPanel(systems) +
+    `<div class="vcards">${irrigationCard()}${securityCard(systems)}</div>` +
     switchTiles(all) + systemsGrid(systems);
 }
 
@@ -1101,21 +1253,7 @@ function systemView(all, id) {
   const devices = sys.devices.slice().sort((a, b) => (deviceOffline(a) - deviceOffline(b)) || a.name.localeCompare(b.name, undefined, NATURAL));
   let top = '';
   if (id === 'solar') {
-    const f = (test) => sys.ents.find((e) => test(lname(e)) && !isBad(e));
-    const facts = [
-      ['Now', s.watts != null ? fmtPower(s.watts) : '—'],
-      ['Today', s.kwh != null ? `${s.kwh} kWh` : '—'],
-      ['Lifetime', (() => { const t = numOf(f((n) => n.includes('total pv generation'))); return t != null ? `${Math.round(t).toLocaleString('en-IN')} kWh` : '—'; })()],
-      ['Mode', f((n) => n.endsWith('work mode'))?.state || '—'],
-      ['Inverter', (() => { const t = numOf(f((n) => n.endsWith('inverter temperature'))); return t != null ? `${t} °C` : '—'; })()],
-      ['Grid', (() => { const v = numOf(f((n) => n.includes('on-grid l1 voltage'))); return v != null ? `${Math.round(v)} V` : '—'; })()],
-      ['Export limit', (() => { const sw = f((n) => n.includes('export limit switch')); const pct = numOf(f((n) => n.endsWith('grid export limit')));
-        return sw ? `${sw.state === 'on' ? 'On' : 'Off'}${pct != null ? ` (limit ${pct}%)` : ''}` : '—'; })()],
-    ];
-    top = `<section class="panel sys-hero solar is-${s.state}"><span class="sun" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/>` +
-      [0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('') + `</svg></span>` +
-      `<div class="sys-hero-body"><h2 class="sys-hero-title">${escapeHtml(s.line)}</h2>${s.sub ? `<p class="sys-hero-sub">${escapeHtml(s.sub)}</p>` : ''}` +
-      `<div class="mb-facts">${facts.map(([k, v]) => `<div><span>${k}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></div></section>`;
+    top = powerPage(systems);
   } else if (id === 'security') {
     const cams = sys.ents.filter((e) => e.domain === 'camera');
     top = `<section class="panel sys-hero sec ${s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : ''}"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
@@ -2406,11 +2544,7 @@ function irrCropsModule() {
 function irrSupplyModule() {
   const s = irrSupply(), p = irrPressure();
   if (!s && !p) return '';
-  // Three phases as three bars against a 0–300 V scale; a phase that is out
-  // of the 200–260 V band, or missing, reads in warning colours.
-  const bars = s && s.v.length ? `<div class="phases" role="img" aria-label="Phase voltages ${s.v.map(Math.round).join(', ')} volts">` +
-    s.v.map((x, i) => `<div class="phase${x < 120 ? ' dead' : x < 200 || x > 260 ? ' warn' : ''}"><span class="phase-bar"><i style="height:${Math.min(100, x / 300 * 100).toFixed(1)}%"></i></span>` +
-      `<strong>${Math.round(x)}</strong><small>L${i + 1}</small></div>`).join('') + `</div>` : '';
+  const bars = s && s.v.length ? phaseBars(s.v) : '';
   const tags = [];
   if (s && s.v.length) {
     if (!s.live) tags.push(`<span class="tag tag-bad">No power</span>`);

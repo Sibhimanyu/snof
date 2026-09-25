@@ -471,7 +471,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,reportedAt:iso(now-3600e3)},
       motors:{s:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:true,reportedAt:iso(now-3600e3)}}};
     const f=()=>{render();return {pipes:[...document.querySelectorAll('#view .flow-pipe')].map(x=>x.classList.contains('is-on')),
-      ages:[...document.querySelectorAll('#view .flow-age')].map(x=>x.textContent),head:document.querySelector('#view .flow-head .card-age')?.textContent||''};};
+      ages:[...document.querySelectorAll('#view .flow-age')].map(x=>x.textContent),head:document.querySelector('#view .flow .flow-head .card-age')?.textContent||''};};
     const stale=f();
     state.water.river.reportedAt=iso(now-20e3); const fresh=f();
     state.meta.water.livesky.expires=now-60e3; const expired=f();
@@ -557,6 +557,26 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     if(w>0) wide.push(`${r} +${w}px`);
   }
   check(`no page is wider than a 320px phone (${hasReplay?'replay':'mock'})`, wide.length===0, wide.join(', '));
+  await c.close();
+}
+{
+  // Power: three EB lines, each inverter on its own line (owner, 2026-09-25).
+  const [p,c]=await open('?live=1#/');
+  await p.waitForSelector('.power');
+  const lines=await p.evaluate(()=>[...document.querySelectorAll('.pw-line')].map(l=>({t:l.querySelector('.pw-title').textContent,f:l.querySelector('.pw-fig').textContent,cls:l.className})));
+  check('Power shows the three lines in order', lines.map(l=>l.t).join('|')==='Home & sheds|EV charging|Farm motor', JSON.stringify(lines));
+  check('each inverter reads its own figure', /W$/.test(lines[0].f)&&/^1\.04kW$/.test(lines[1].f.replace(/\s/g,'')), lines.map(l=>l.f).join(' | '));
+  check('the Solar card is gone from Home', !(await p.$('.vcard.solar')));
+  // One inverter down in daylight: named, on its line, and the other still counts.
+  const r=await p.evaluate(()=>{for(const e of Object.values(state.entities.sensor||{}))if((e.entity_id||'').startsWith('sensor.sibhi_orchards_'))e.state='unavailable';
+    const skew=clockSkewMs; const d=new Date(); d.setUTCHours(6,0,0,0); clockSkewMs=d.getTime()-Date.now(); attnOpen=true; render();
+    const out={attn:[...document.querySelectorAll('.attn-row strong')].map(t=>t.textContent),ev:document.querySelectorAll('.pw-line')[1].className,home:document.querySelectorAll('.pw-line')[0].className};
+    clockSkewMs=skew; return out;});
+  check('an inverter offline in daylight is named in Needs a look', r.attn.includes('V-Guard inverter offline'), r.attn.join(' | '));
+  check('and only its line reads offline', /is-offline/.test(r.ev)&&!/is-offline/.test(r.home), `${r.home} / ${r.ev}`);
+  await p.goto(p.url().replace('#/','#/sys/solar')); await p.waitForTimeout(400);
+  const secs=await p.evaluate(()=>[...document.querySelectorAll('.pw-sec .panel-title')].map(t=>t.textContent));
+  check('the Power page has a panel per line', secs.length===3, secs.join(', '));
   await c.close();
 }
 await b.close();

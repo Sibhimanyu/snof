@@ -53,8 +53,14 @@ public enum DeviceNames {
             let t = tidy(r, objectIds: objectIds)
             if t != r { names[id] = t; renamed[id] = (r, t) }
         }
-        guard !renamed.isEmpty else { return (entities, names) }
-        let out = entities.map { e -> Entity in
+        let out = entities.map { e0 -> Entity in
+            var e = e0
+            // "Solar Solar Power": a device named "Solar" with the integration's
+            // own "Solar Power" sensor. Say the device once.
+            if let d = e.device, let own = raw[d], e.name.hasPrefix("\(own) \(own)") {
+                let after = e.name.dropFirst(own.count * 2 + 1)
+                if after.isEmpty || after.hasPrefix(" ") { e = e.renamed(String(e.name.dropFirst(own.count + 1))) }
+            }
             guard let d = e.device, let r = renamed[d], e.name.hasPrefix(r.raw) else { return e }
             let after = e.name.dropFirst(r.raw.count)
             guard after.isEmpty || after.hasPrefix(" ") else { return e }

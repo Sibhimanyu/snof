@@ -6,7 +6,7 @@ Start here. Everything below links to a document that goes deeper.
 
 | Piece | Status |
 |---|---|
-| Dashboard | **Live** at https://snof-live.web.app. Four tabs: Home (Needs a look, the water chain drawn from current readings only, the irrigation ring, Solar, Security, switches, the farm's systems with their own pages), Irrigation (Now with Run/Stop for admins, Pump & power, Watered by crop, reports), Water (read-only), Rooms. |
+| Dashboard | **Live** at https://snof-live.web.app. Four tabs: Home (Needs a look, the water chain drawn from current readings only, Power (the three EB lines), the irrigation ring, Security, switches, the farm's systems with their own pages), Irrigation (Now with Run/Stop for admins, Pump & power, Watered by crop, reports), Water (read-only), Rooms. |
 | iOS app | **0.10.0** on SideStore (https://snof-ios.web.app), the same screens and rules as the web (SNOFCore holds the shared logic and its tests). |
 | RTDB rules | **Live**, with the two write paths `/commands` and `/irrigation_commands`. |
 | Add-on | **0.10.5** on the NUC (image tag checked 2026-09-25 02:30, up since the 23:41 reboot): Home Assistant bridge, switch control, valve control, and the DCON read relay (`dcon_relay`). |
@@ -28,6 +28,19 @@ it, each written down where it lives:
   *Needs a look* starts **collapsed** (owner, 2026-09-25): the count and the
   worst item stay on top, a tap opens the list (web `attnOpen`, iOS
   `AttentionCard.open`).
+- **Power: three EB lines** (owner, 2026-09-25). *Home & sheds* is single
+  phase with the GoodWe (GW3000-XS, store room); *EV charging* is three phase
+  with the V-Guard inverter — a FoxESS unit in HA (FoxESS Cloud, device
+  "Solar", storage shed) — and charges the Mahindra XEV 9e; *Farm motor* is
+  the second three-phase line, free agricultural supply, read from the
+  Mobitech controller (phases, supply/pump hours). The line ↔ inverter map
+  is written in `POWER_LINES` (app.js) / `Power.lines` (SNOFCore), since HA
+  does not know it; inverters are recognised by their integration's
+  entities. Home shows the three side by side; `#/sys/solar` is the Power
+  page. Needs a look names an inverter offline in daylight per line. No
+  car or charger entity exists in HA, so the EV line shows only its
+  inverter. Free-line power off reads as "Power off" (the board's schedule),
+  not a fault; a missing phase is.
 - Appliances off at the wall (ACs, TVs, the printer, a fan) are "Off", never
   red; offline vs off is decided per device, everywhere.
 - Nothing stale looks live: ages everywhere from one formatter; water is
