@@ -20,12 +20,15 @@ struct IrrigationView: View {
 
     @State private var building = false
     @State private var account = false
+    /// The Irrigation tab, or the main farm controller's own page (Water).
+    var title = "Irrigation"
+    var subtitle: String? = nil
 
     /// Everything irrigation, as modules (owner, 2026-09-25): what the
     /// controller is doing with Run / Stop, the valves, the last day, the
     /// supply, and the reports. Mirrors irrigationView() in app.js.
     var body: some View {
-        Page(title: "Irrigation", refresh: store.irrigationPull) {
+        Page(title: title, subtitle: subtitle, refresh: store.irrigationPull) {
             IrrigationNowCard()
             PumpPowerCard()
             WateredCard()
@@ -54,7 +57,7 @@ struct IrrigationView: View {
                     .padding(.top, 10)
             }
         }
-        .navigationTitle("Irrigation")
+        .navigationTitle(title)
         // Again once meta arrives: before it the gate is closed.
         .task(id: store.metaLoaded) { await store.autoRefreshIrrigationIfStale() }
         .sheet(item: $opened) { open in

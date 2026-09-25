@@ -66,6 +66,7 @@ struct MainTabs: View {
         .onAppear {
             if let id = Snapshot.value("-area") { store.selectedTab = .areas; areasPath.append(AreaRoute(id: id)) }
             if let raw = Snapshot.value("-system"), let id = FarmSystemID(rawValue: raw) { store.selectedTab = .overview; overviewPath.append(SystemRoute(id: id)) }
+            if let key = Snapshot.value("-motor") { store.selectedTab = .water; waterPath.append(MotorRoute(key: key)) }
             if Snapshot.args.contains("-account") { account = true }
         }
         #endif
@@ -83,6 +84,7 @@ struct MainTabs: View {
             content()
                 .navigationDestination(for: AreaRoute.self) { AreaDetailView(areaId: $0.id) }
                 .navigationDestination(for: SystemRoute.self) { SystemView(id: $0.id) }
+                .navigationDestination(for: MotorRoute.self) { MotorDetailView(key: $0.key) }
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar(removing: .title)
                 .toolbar { barItems }

@@ -1,39 +1,42 @@
 import SwiftUI
 import SNOFCore
 
-/* The water chain, top to bottom the way the water goes: the river motor
- * (Livesky) pumps to the other farm, whose two Niagara motors send water on
- * to the main farm and run that farm's own drip zones; the main farm's valves
- * are the Irrigation tab. Read-only, like waterView() in app.js. */
+/* Water: every motor alike (owner, 2026-09-25: "a plain visual of all the
+ * motors, and when we click a motor the controls and reports and related
+ * data of that one motor shows up … don't be biased"). Four equal tiles —
+ * the river motor (Livesky), the other farm's two motors (Niagara) and the
+ * main farm's controller (Mobitech DCON) — each opening its own page.
+ * Mirrors waterView() / motorView() in app.js. */
+struct MotorRoute: Hashable { let key: String }
+
+extension FarmStore {
+    /// The main farm's controller, as one of the motors.
+    static let dconKey = "dcon"
+    var waterMotorList: [WaterMotor] { [water.river].compactMap { $0 } + water.motors }
+    var dconName: String { irrigation.device ?? "Mobitech DCON" }
+}
+
 struct WaterView: View {
     @Environment(FarmStore.self) private var store
-
     private var water: WaterState { store.water }
-    @State private var account = false
 
     var body: some View {
-        Page(title: "Water", subtitle: pulledLine, refresh: refresh) {
+        Page(title: "Water", subtitle: water.pulledAt.map { "Read \(Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now))" } ?? "Not read yet",
+             refresh: refresh) {
             if let why = store.waterGateWhy { Note(text: why, tone: .warn) }
-            Stage(n: 1, title: "River", lead: "") { river }
-            Flow(text: "To the other farm")
-            Stage(n: 2, title: "Other farm", lead: "") { otherFarm }
-            Flow(text: "7.5 HP motor to the main farm")
-            Stage(n: 3, title: "Main farm", lead: "") { mainFarm }
-            if store.isAdmin {
-                AccountRow(title: "Livesky account", problem: store.liveskyProblem) { account = true }
-                    .padding(.top, 10)
+            if store.isAdmin, let problem = store.liveskyProblem { Note(text: problem, tone: .warn) }
+            if water.niagara.ok == false, !water.niagara.error.isEmpty {
+                Note(text: "\(water.niagara.error) Showing the last readings.", tone: .warn)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                ForEach(store.waterMotorList) { m in
+                    NavigationLink(value: MotorRoute(key: m.id)) { MotorTile(motor: m) }.buttonStyle(TileButtonStyle())
+                }
+                NavigationLink(value: MotorRoute(key: FarmStore.dconKey)) { DconTile() }.buttonStyle(TileButtonStyle())
             }
         }
-        .sheet(isPresented: $account) {
-            NavigationStack {
-                Form { Section { LiveskySignIn() } }
-                    .navigationTitle("Livesky account").navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { account = false } } }
-            }
-            .environment(store)
-        }
-        // Ask now, and every 30 s while this tab is on screen; SwiftUI
-        // cancels the task when the tab goes away.
+        .navigationTitle("Water")
+        // Ask now, and every 30 s while this tab is on screen.
         .task {
             while !Task.isCancelled {
                 await store.refreshWater()
@@ -42,69 +45,116 @@ struct WaterView: View {
         }
     }
 
-    /// Swipe down to read again; not offered while readings are switched off.
     private var refresh: (@MainActor () async -> Void)? {
         guard water.enabled else { return nil }
         let store = store
         return { await store.refreshWater(force: true) }
     }
+}
 
-    /// When it was read, and that it only reads: the owner asked why these
-    /// motors cannot be switched from here (2026-09-24).
-    private var pulledLine: String {
-        let canSwitch = store.isAdmin && store.meta.motorControl.enabled && store.meta.motorControl.motors.values.contains(true)
-        return (water.pulledAt.map { "Read \(ago(ms: $0))" } ?? "Not read yet") + (canSwitch ? "" : " · read-only")
-    }
+/// One motor as a tile: picture, name, what it does, state, and age when
+/// the reading is not current. All tiles alike.
+private struct TileBody: View {
+    let name: String
+    let sub: String
+    let word: String
+    let on: Bool
+    let age: String?
 
-    @ViewBuilder private var river: some View {
-        if store.isAdmin, let problem = store.liveskyProblem {
-            Note(text: problem, tone: .warn)
-        }
-        if let r = water.river {
-            // Said once: the account note above already carries the session problem.
-            let noted = store.isAdmin && store.liveskyProblem != nil
-            MotorCard(motor: r, now: store.now,
-                      vendorError: !noted && water.livesky.status.ok == false ? water.livesky.status.error : nil,
-                      current: water.isCurrent(r, now: store.now), key: "river")
-        } else {
-            EmptyBlock(title: "No reading from the river motor",
-                       message: water.livesky.status.error.isEmpty ? "It appears after the first pull." : water.livesky.status.error,
-                       symbol: "drop")
-        }
-    }
-
-    @ViewBuilder private var otherFarm: some View {
-        if water.motors.isEmpty {
-            EmptyBlock(title: "No reading from the other farm",
-                       message: water.niagara.error.isEmpty ? "It appears after the first pull." : water.niagara.error,
-                       symbol: "drop")
-        } else {
-            ForEach(water.motors) { m in MotorCard(motor: m, now: store.now, current: water.isCurrent(m, now: store.now), key: m.id) }
-            if water.niagara.ok == false, !water.niagara.error.isEmpty {
-                Note(text: "\(water.niagara.error) Showing the last readings.", tone: .warn)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(on ? "art-motor-on" : "art-motor-off").resizable().scaledToFit().frame(width: 44, height: 44)
+                .padding(.bottom, 6)
+            Text(name).font(Theme.font(15.5, .bold, relativeTo: .headline)).foregroundStyle(Theme.text).lineLimit(2)
+            Text(sub).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(2)
+            Spacer(minLength: 8)
+            HStack(spacing: 8) {
+                Tag(text: word, kind: on ? .on : .plain)
+                if let age { Text(age).font(Theme.small).foregroundStyle(Theme.faint) }
             }
         }
+        .frame(maxWidth: .infinity, minHeight: 168, alignment: .topLeading)
+        .padding(16)
+        .modifier(Panel(padding: 0))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
+}
 
-    private var mainFarm: some View {
-        Button { store.selectedTab = .irrigation } label: {
-            HStack(spacing: 14) {
-                Image("art-kulam").resizable().scaledToFit().frame(width: 44, height: 44)
-                    .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(store.irrigation.device ?? "Mobitech DCON").font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    Text("Valves, programs and reports are on the Irrigation tab.").font(Theme.meta).foregroundStyle(Theme.muted)
+struct MotorTile: View {
+    @Environment(FarmStore.self) private var store
+    let motor: WaterMotor
+    var body: some View {
+        let w = store.water
+        let current = w.isCurrent(motor, now: store.now)
+        let on = motor.running == true && current
+        let word = motor.running == true ? (current ? "Running" : "Was running") : motor.running == false ? (current ? "Off" : "Was off") : "Unknown"
+        let age: String? = current ? nil : w.readingDate(motor).map { Water.ago($0, now: store.now) }
+        TileBody(name: motor.name, sub: [motor.vendor == "livesky" ? "Livesky" : "Niagara", motor.roleText].filter { !$0.isEmpty }.joined(separator: " · "),
+                 word: word, on: on, age: age)
+    }
+}
+
+struct DconTile: View {
+    @Environment(FarmStore.self) private var store
+    var body: some View {
+        let c = store.irrigation
+        let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
+        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
+        TileBody(name: store.dconName, sub: "Mobitech · main farm valves", word: say.running ? "Watering" : "Not watering",
+                 on: say.running, age: checked)
+    }
+}
+
+/// One motor's own page: its controls, readings and reports.
+struct MotorDetailView: View {
+    @Environment(FarmStore.self) private var store
+    let key: String
+    @State private var account = false
+
+    var body: some View {
+        if key == FarmStore.dconKey {
+            // The controller's page is the Irrigation view itself, named for it.
+            IrrigationView(title: store.dconName, subtitle: "Mobitech · main farm valves")
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar(removing: .title)
+        } else if let m = store.waterMotorList.first(where: { $0.id == key }) {
+            let w = store.water
+            let river = key == "river"
+            let noted = river && store.isAdmin && store.liveskyProblem != nil
+            let vendorError: String? = river ? (!noted && w.livesky.status.ok == false ? w.livesky.status.error : nil)
+                : (w.niagara.ok == false ? w.niagara.error : nil)
+            Page(title: m.name, subtitle: [m.vendor == "livesky" ? "Livesky" : "Niagara", m.roleText].filter { !$0.isEmpty }.joined(separator: " · "),
+                 refresh: { await store.refreshWater(force: true) }) {
+                if noted, let problem = store.liveskyProblem { Note(text: problem, tone: .warn) }
+                MotorCard(motor: m, now: store.now, vendorError: vendorError, current: w.isCurrent(m, now: store.now),
+                          key: key, onPage: true)
+                if river, store.isAdmin {
+                    AccountRow(title: "Livesky account", problem: store.liveskyProblem) { account = true }.padding(.top, 10)
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").foregroundStyle(Theme.faint)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .panel(padding: 16)
+            .navigationTitle(m.name)
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar(removing: .title)
+            .sheet(isPresented: $account) {
+                NavigationStack {
+                    Form { Section { LiveskySignIn() } }
+                        .navigationTitle("Livesky account").navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { account = false } } }
+                }
+                .environment(store)
+            }
+            .task {
+                while !Task.isCancelled {
+                    await store.refreshWater()
+                    try? await Task.sleep(for: .seconds(30))
+                }
+            }
+        } else {
+            EmptyBlock(title: "No reading from this motor", message: "It appears after the next water pull.", symbol: "drop")
+                .padding(16)
         }
-        .buttonStyle(.plain)
     }
-
-    private func ago(ms: Double) -> String { Water.ago(Date(timeIntervalSince1970: ms / 1000), now: store.now) }
 }
 
 enum Water {
@@ -206,40 +256,6 @@ struct ZoneSwitch: View {
     }
 }
 
-private struct Stage<Content: View>: View {
-    let n: Int
-    let title: String
-    let lead: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Text("\(n)").font(Theme.font(14, .bold, relativeTo: .subheadline).monospacedDigit())
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: 30, height: 30).background(Theme.panel3, in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Theme.font(19, .bold, relativeTo: .title3)).foregroundStyle(Theme.text)
-                        .accessibilityAddTraits(.isHeader)
-                    if !lead.isEmpty { Text(lead).font(Theme.meta).foregroundStyle(Theme.muted) }
-                }
-            }
-            content
-        }
-    }
-}
-
-private struct Flow: View {
-    let text: String
-    var body: some View {
-        HStack(spacing: 12) {
-            Capsule().fill(Theme.line2).frame(width: 2, height: 34).padding(.leading, 14)
-            Text(text).eyebrowStyle()
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 struct MotorCard: View {
     let motor: WaterMotor
     let now: Date
@@ -250,6 +266,8 @@ struct MotorCard: View {
     /// The motor_command key ("river", or the Niagara slug): shows the switch
     /// when the motor is armed.
     var key: String? = nil
+    /// On the motor's own page, whose title already names it.
+    var onPage = false
     @State private var showDetails = false
 
     private static let headlineKeys: Set<String> = ["Running for", "Off for", "Program", "Zone time left"]
@@ -289,11 +307,13 @@ struct MotorCard: View {
                 Image(m.running == true && current ? "art-motor-on" : "art-motor-off").resizable().scaledToFit()
                     .frame(width: 44, height: 44)
                     .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(m.name).font(Theme.panelTitle).foregroundStyle(Theme.text)
-                    Text([m.vendor == "livesky" ? "Livesky" : "Niagara", m.roleText].filter { !$0.isEmpty }
-                        .joined(separator: " · "))
-                        .font(Theme.meta).foregroundStyle(Theme.muted)
+                if !onPage {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(m.name).font(Theme.panelTitle).foregroundStyle(Theme.text)
+                        Text([m.vendor == "livesky" ? "Livesky" : "Niagara", m.roleText].filter { !$0.isEmpty }
+                            .joined(separator: " · "))
+                            .font(Theme.meta).foregroundStyle(Theme.muted)
+                    }
                 }
                 Spacer(minLength: 8)
                 Tag(text: m.running == true ? (current ? "Running" : "Was running") : m.running == false ? (current ? "Off" : "Was off") : "Unknown",
