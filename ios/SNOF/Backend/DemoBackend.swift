@@ -320,6 +320,23 @@ final class DemoBackend: FarmBackend {
         let objectId = String(c.entityId.dropFirst(c.domain.count + 1))
         guard var node = domain[objectId] as? [String: Any] else { return }
         var attrs = node["attrs"] as? [String: Any] ?? [:]
+        if c.domain == "climate" {
+            switch c.service {
+            case "turn_off": node["state"] = "off"
+            case "turn_on": node["state"] = "cool"
+            case "set_temperature": attrs["temperature"] = c.temperature
+            case "set_hvac_mode": node["state"] = c.words["hvac_mode"]
+            case "set_fan_mode": attrs["fan_mode"] = c.words["fan_mode"]
+            case "set_preset_mode": attrs["preset_mode"] = c.words["preset_mode"]
+            default: return
+            }
+            node["attrs"] = attrs
+            domain[objectId] = node
+            ents[c.domain] = domain
+            tree["entities"] = ents
+            handler?(.entities(ents))
+            return
+        }
         switch c.service {
         case "turn_off": node["state"] = "off"
         case "turn_on":

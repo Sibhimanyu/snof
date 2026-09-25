@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -36,12 +37,46 @@ ALLOWED_SERVICES = {
     "light": {"turn_on", "turn_off", "toggle"},
     "fan": {"turn_on", "turn_off", "toggle", "set_percentage"},
     "input_boolean": {"turn_on", "turn_off", "toggle"},
+    # The ACs (owner, 2026-09-25): power, target temperature, mode, fan speed
+    # and preset. Nothing else — no swing, no humidity, no scheduling.
+    "climate": {"turn_on", "turn_off", "set_temperature", "set_hvac_mode",
+                "set_fan_mode", "set_preset_mode"},
 }
 
 # Service-data keys we forward, with the range Home Assistant expects.
 ALLOWED_DATA = {
     "brightness": (0, 255),
     "percentage": (0, 100),
+    # °C. Home Assistant also refuses anything outside the AC's own
+    # min_temp/max_temp (16–30 on the farm's Samsungs); this is the outer fence.
+    "temperature": (10, 35),
+}
+
+# Service-data keys that are words, each with what a word may be. hvac_mode is
+# Home Assistant's fixed set; fan and preset names are the AC's own, so they
+# are held to a plain token here and Home Assistant refuses one the AC lacks.
+HVAC_MODES = frozenset({"off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"})
+_TOKEN = re.compile(r"^[a-z0-9_]{1,32}$")
+ALLOWED_WORDS = {
+    "hvac_mode": HVAC_MODES.__contains__,
+    "fan_mode": lambda v: bool(_TOKEN.match(v)),
+    "preset_mode": lambda v: bool(_TOKEN.match(v)),
+}
+
+# Which data keys each domain may carry at all: brightness is for lights,
+# percentage for fans, the rest for ACs.
+DOMAIN_DATA = {
+    "light": {"brightness"},
+    "fan": {"percentage"},
+    "climate": {"temperature", "hvac_mode", "fan_mode", "preset_mode"},
+}
+
+# A climate service carries exactly its one value, and nothing else.
+SERVICE_DATA = {
+    ("climate", "set_temperature"): "temperature",
+    ("climate", "set_hvac_mode"): "hvac_mode",
+    ("climate", "set_fan_mode"): "fan_mode",
+    ("climate", "set_preset_mode"): "preset_mode",
 }
 
 STREAM_RETRY_SECONDS = 5.0
@@ -114,17 +149,35 @@ class CommandConsumer:
 
         data: dict = {}
         raw = cmd.get("data") or {}
-        if isinstance(raw, dict):
-            for key, value in raw.items():
-                bounds = ALLOWED_DATA.get(key)
-                if bounds is None or not isinstance(value, (int, float)) or isinstance(value, bool):
-                    self._reject(cmd_id, f"unexpected data key {key!r}", cmd)
+        if not isinstance(raw, dict):
+            self._reject(cmd_id, "data is not an object", cmd)
+            return None
+        for key, value in raw.items():
+            if key not in DOMAIN_DATA.get(domain, ()):
+                self._reject(cmd_id, f"unexpected data key {key!r} for {domain}", cmd)
+                return None
+            if key in ALLOWED_WORDS:
+                if not isinstance(value, str) or not ALLOWED_WORDS[key](value):
+                    self._reject(cmd_id, f"{key}={value!r} is not allowed", cmd)
+                    return None
+            else:
+                bounds = ALLOWED_DATA[key]
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    self._reject(cmd_id, f"{key} is not a number", cmd)
                     return None
                 low, high = bounds
                 if not (low <= value <= high):
                     self._reject(cmd_id, f"{key}={value} out of range", cmd)
                     return None
-                data[key] = value
+            data[key] = value
+
+        need = SERVICE_DATA.get((domain, service))
+        if need is not None and set(data) != {need}:
+            self._reject(cmd_id, f"{service} takes {need} and nothing else", cmd)
+            return None
+        if domain == "climate" and need is None and data:
+            self._reject(cmd_id, f"{service} takes no data", cmd)
+            return None
 
         return domain, service, data
 

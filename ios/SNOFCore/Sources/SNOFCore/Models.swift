@@ -14,6 +14,18 @@ public struct Attrs: Hashable, Sendable {
     public var brightness: Double?
     /// Fans, 0–100.
     public var percentage: Double?
+    /// An AC (climate): what it is set to, what the room is, and what it can
+    /// be set to. The choices come from bridge 0.10.6; older bridges send none.
+    public var temperature: Double?
+    public var currentTemperature: Double?
+    public var minTemp: Double?
+    public var maxTemp: Double?
+    public var tempStep: Double?
+    public var hvacModes: [String] = []
+    public var fanModes: [String] = []
+    public var presetModes: [String] = []
+    public var fanMode: String?
+    public var presetMode: String?
 
     public init(unit: String? = nil, deviceClass: String? = nil, batteryLevel: Double? = nil,
                 brightness: Double? = nil, percentage: Double? = nil) {

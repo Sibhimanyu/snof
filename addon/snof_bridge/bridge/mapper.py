@@ -17,6 +17,8 @@ ALLOWED_ATTRS = frozenset({
     # climate
     "current_temperature", "temperature", "target_temp_high", "target_temp_low",
     "hvac_action", "preset_mode", "fan_mode", "swing_mode",
+    # what an AC can be set to, so the app offers only those (2026-09-25)
+    "hvac_modes", "fan_modes", "min_temp", "max_temp", "target_temp_step",
     # sensors / environment
     "humidity", "pressure", "battery_level", "illuminance", "moisture",
     # cover / fan / valve

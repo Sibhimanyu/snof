@@ -335,3 +335,34 @@ final class ValveArtTests: XCTestCase {
         XCTAssertEqual(Systems.shortName(bare, deviceName: nil, roomName: "Car Shed"), "Car Shed")
     }
 }
+
+final class ACCommandTests: XCTestCase {
+    private func ac(_ state: String = "cool") -> Entity {
+        Entity(domain: "climate", objectId: "guest_ac", entityId: "climate.guest_ac", name: "AC", state: state,
+               area: "guest_room", device: "d", attrs: Attrs(), lastChanged: nil)
+    }
+
+    func testTheCommandsTheCardSends() {
+        XCTAssertEqual(Command.acPower(ac(), on: false)?.service, "turn_off")
+        XCTAssertEqual(Command.acTemperature(ac(), 24)?.dataJSON["temperature"] as? Double, 24)
+        XCTAssertEqual(Command.acMode(ac(), field: "hvac_mode", value: "dry")?.service, "set_hvac_mode")
+        XCTAssertEqual(Command.acMode(ac(), field: "fan_mode", value: "turbo")?.dataJSON["fan_mode"] as? String, "turbo")
+        XCTAssertEqual(Command.acMode(ac(), field: "preset_mode", value: "wind_free")?.words, ["preset_mode": "wind_free"])
+    }
+
+    func testWhatItRefuses() {
+        XCTAssertNil(Command.acTemperature(ac(), 60))
+        XCTAssertNil(Command.acMode(ac(), field: "hvac_mode", value: "eco"))
+        XCTAssertNil(Command.acMode(ac(), field: "fan_mode", value: "high; drop"))
+        XCTAssertNil(Command.acMode(ac(), field: "swing_mode", value: "on"))
+        let sw = Entity(domain: "switch", objectId: "p", entityId: "switch.p", name: "P", state: "on",
+                        area: "a", device: "d", attrs: Attrs(), lastChanged: nil)
+        XCTAssertNil(Command.acPower(sw, on: true))
+    }
+
+    func testAnACIsOnByItsMode() {
+        XCTAssertTrue(ac("cool").acOn)
+        XCTAssertFalse(ac("off").acOn)
+        XCTAssertFalse(ac("unavailable").acOn)
+    }
+}

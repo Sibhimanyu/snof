@@ -403,8 +403,13 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     check('searching "offline" finds what is not reporting', found>0, `${found} devices`);
     await p.fill('#search',''); await p.goto(p.url().split('#')[0]+'#/area/family_room'); await p.waitForTimeout(400);
     const room=await p.evaluate(()=>({rows:document.querySelectorAll('.row').length, units:[...document.querySelectorAll('.dev-state, .row-state')].map(x=>x.textContent).filter(t=>/unavailable\s*\S/.test(t)).length,
-      note:[...document.querySelectorAll('.more-note')].map(n=>n.textContent).join(' | ')}));
-    check('a room collapses wholly offline devices into one line', room.rows<40&&/Switched off|Offline/.test(room.note), `${room.rows} rows · ${room.note.slice(0,80)}`);
+      note:[...document.querySelectorAll('.more-note')].map(n=>n.textContent).join(' | '),
+      faded:[...document.querySelectorAll('.area-sec')].map(n=>n.classList.contains('is-faded')),
+      tags:[...document.querySelectorAll('.is-faded .panel-head .tag')].map(n=>n.textContent)}));
+    // Since 2026-09-25 (owner): an off device is drawn like the rest, faded, at
+    // the end — still without its dozens of dead readings.
+    const lastFaded=room.faded.indexOf(true)>=0&&room.faded.slice(room.faded.indexOf(true)).every(Boolean);
+    check('a room draws wholly offline devices faded, last, without their dead readings', room.rows<40&&lastFaded&&room.tags.every(t=>/Switched off|Offline/.test(t)), `${room.rows} rows · ${room.tags.join(', ')}`);
     check('"unavailable" never carries a unit', room.units===0, `${room.units}`);
   } else console.log('  skip  replay regressions (no replay.local.json)');
   await c.close();

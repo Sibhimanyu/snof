@@ -79,11 +79,9 @@ struct AreaDetailView: View {
                     }
                 }
                 if search.isEmpty {
-                    let deadDevices = devices.filter(\.isOffline)
-                    let faults = deadDevices.filter { Systems.offlineIsFault($0, system: index[$0.id]) }
-                    let off = deadDevices.filter { !Systems.offlineIsFault($0, system: index[$0.id]) }
-                    if !faults.isEmpty { Note(text: "Offline: " + faults.map(\.name).joined(separator: ", "), tone: .warn) }
-                    if !off.isEmpty { Note(text: "Switched off: " + off.map(\.name).joined(separator: ", ")) }
+                    // Drawn like the rest, faded, at the end (owner, 2026-09-25).
+                    OffPanels(devices: devices.filter(\.isOffline).sorted { Sorting.natural($0.name, $1.name) },
+                              isFault: { Systems.offlineIsFault($0, system: index[$0.id]) })
                 }
             }
         }

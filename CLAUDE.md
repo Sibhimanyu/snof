@@ -70,7 +70,9 @@ Architecture and data shape are in README.md.
   Everything else still denies client writes. Three gates, all of which must
   keep holding:
     1. RTDB rules — only `acl/controllers/<uid> === true` may append, only the
-       four domains, only the four services, `at` must equal server `now`.
+       five domains (climate — the ACs — added 2026-09-25, owner's request),
+       only the listed services (the AC `set_*` ones for climate only), `at`
+       must equal server `now`.
     2. `bridge/commands.py` — re-checks the same things against its own
        allow-list, drops commands older than `control_max_age_seconds`, and
        deletes every node whether it ran or was refused.
@@ -375,3 +377,10 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   Mobitech account live on the controller's page. Don't bring back a
   dedicated tab or give one motor more room than the others.
 
+- **ACs are operable and off devices are faded** (owner, 2026-09-25; add-on
+  0.10.6, web, iOS 0.11.14). A `climate` entity is an AC card (power, set
+  temperature, mode, fan, preset; docs/device-control.md "The ACs"). A device
+  that is off or offline is drawn like the rest, faded and with nothing to
+  press, after them on system and room pages (`offPanels()` / `OffPanels`),
+  in place of the old "Switched off: …" line. An AC or TV shows only itself
+  there, never its setting switches.
