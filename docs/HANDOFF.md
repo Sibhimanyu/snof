@@ -41,6 +41,9 @@ it, each written down where it lives:
   car or charger entity exists in HA, so the EV line shows only its
   inverter. Free-line power off reads as "Power off" (the board's schedule),
   not a fault; a missing phase is.
+- **Place names** (owner, 2026-09-25): the other farm is **Thoppu**, the
+  main farm is **Farm** — in every label (water chain, motor roles, Needs a
+  look, confirm prompts). Code keeps its role keys (`main-farm`, `drip`).
 - **Words say only what the data shows** (owner, 2026-09-25). Names are
   nouns, not actions ("EV charger line", never "EV charging"). A reading
   from a moment is said as one: "pump on at 08:16", "Was running · 41m ago",

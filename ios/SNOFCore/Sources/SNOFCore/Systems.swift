@@ -415,7 +415,7 @@ public enum Attention {
             else if w.livesky.status.ok == false, !w.livesky.status.error.isEmpty {
                 out.append(.init(.warn, "River motor not read", w.livesky.status.error, .water))
             }
-            if w.niagara.ok == false, !w.niagara.error.isEmpty { out.append(.init(.warn, "Other farm not read", w.niagara.error, .water)) }
+            if w.niagara.ok == false, !w.niagara.error.isEmpty { out.append(.init(.warn, "Thoppu not read", w.niagara.error, .water)) }
             if let t = w.pulledAt, i.now.timeIntervalSince1970 * 1000 - t > 30 * 60_000 {
                 out.append(.init(.warn, "Water readings are old",
                                  "last read \(Format.age(max(0, i.now.timeIntervalSince1970 - t / 1000))) ago", .water))

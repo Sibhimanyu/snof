@@ -101,7 +101,7 @@ struct DconTile: View {
         let c = store.irrigation
         let say = WaterNow.say(cache: c, zone: FarmTime.zone(c.timeZone), now: store.now)
         let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
-        TileBody(name: store.dconName, sub: "Mobitech · main farm valves", word: say.running ? "Watering" : "Not watering",
+        TileBody(name: store.dconName, sub: "Mobitech · Farm valves", word: say.running ? "Watering" : "Not watering",
                  on: say.running, age: checked)
     }
 }
@@ -115,7 +115,7 @@ struct MotorDetailView: View {
     var body: some View {
         if key == FarmStore.dconKey {
             // The controller's page is the Irrigation view itself, named for it.
-            IrrigationView(title: store.dconName, subtitle: "Mobitech · main farm valves")
+            IrrigationView(title: store.dconName, subtitle: "Mobitech · Farm valves")
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar(removing: .title)
         } else if let m = store.waterMotorList.first(where: { $0.id == key }) {
