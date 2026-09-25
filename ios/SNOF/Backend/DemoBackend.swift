@@ -478,6 +478,54 @@ final class DemoBackend: FarmBackend {
 
     func cancelUnsentWrites() {}
 
+    /* ---- people and access (in memory) ---- */
+
+    private var acl: [String: Any] = [
+        "admins": ["demo": true],
+        "controllers": ["demo": true, "u-ravi": true],
+        "viewers": ["demo": true, "u-ravi": true, "u-meena": true],
+        "directory": ["demo": ["email": "operator@example.com", "name": "Demo operator"],
+                      "u-ravi": ["email": "ravi@example.com", "name": "Ravi"],
+                      "u-meena": ["email": "meena@example.com", "name": "Meena"],
+                      "u-guest": ["email": "guest@example.com"]],
+        "invites": ["new,helper@example,com": ["tier": "view"]],
+    ]
+    private var accessHandler: ((Any?) -> Void)?
+
+    func observeAccess(_ handler: ((Any?) -> Void)?) {
+        accessHandler = handler
+        handler?(acl)
+    }
+
+    private func editACL(_ path: String, _ key: String, _ value: Any?) {
+        var node = acl[path] as? [String: Any] ?? [:]
+        node[key] = value
+        acl[path] = node
+        accessHandler?(acl)
+    }
+
+    func setAccess(uid: String, tier: AccessTier) async throws {
+        if flag("viewer") { throw BackendError.refused }
+        try await Task.sleep(for: .milliseconds(300))
+        switch tier {
+        case .none: editACL("controllers", uid, nil); editACL("viewers", uid, nil)
+        case .view: editACL("controllers", uid, nil); editACL("viewers", uid, true)
+        case .control: editACL("viewers", uid, true); editACL("controllers", uid, true)
+        case .admin: throw BackendError.refused
+        }
+    }
+
+    func invite(key: String, tier: AccessTier) async throws {
+        if flag("viewer") || tier == .admin || tier == .none { throw BackendError.refused }
+        try await Task.sleep(for: .milliseconds(300))
+        editACL("invites", key, ["tier": tier.rawValue])
+    }
+
+    func cancelInvite(key: String) async throws {
+        try await Task.sleep(for: .milliseconds(300))
+        editACL("invites", key, nil)
+    }
+
     /// Same section kinds and row shapes the bridge writes, so what renders
     /// here renders against the NUC.
     private static func canned(type: String, from: String?, to: String?) -> [String: Any] {

@@ -264,6 +264,53 @@ final class FirebaseBackend: FarmBackend {
         db.purgeOutstandingWrites()
     }
 
+    /* ---- people and access ---- */
+
+    private var accessHandle: DatabaseHandle?
+
+    func observeAccess(_ handler: ((Any?) -> Void)?) {
+        let ref = db.reference(withPath: "acl")
+        if let h = accessHandle { ref.removeObserver(withHandle: h); accessHandle = nil }
+        guard let handler else { return }
+        accessHandle = ref.observe(.value, with: { snap in
+            handler(snap.value is NSNull ? nil : snap.value)
+        }, withCancel: { err in
+            NSLog("SNOF: acl listener cancelled: %@", err.localizedDescription)
+        })
+    }
+
+    /// Same order as aclSet() in app.js: control never outruns view (the
+    /// rules refuse controller without viewer).
+    func setAccess(uid: String, tier: AccessTier) async throws {
+        let view = db.reference(withPath: "acl/viewers/\(uid)")
+        let ctl = db.reference(withPath: "acl/controllers/\(uid)")
+        do {
+            switch tier {
+            case .none: try await ctl.removeValue(); try await view.removeValue()
+            case .view: try await ctl.removeValue(); try await view.setValue(true)
+            case .control: try await view.setValue(true); try await ctl.setValue(true)
+            case .admin: throw BackendError.refused
+            }
+        } catch let e as BackendError { throw e } catch { throw Self.mapped(error) }
+    }
+
+    func invite(key: String, tier: AccessTier) async throws {
+        guard tier == .view || tier == .control else { throw BackendError.refused }
+        do {
+            try await db.reference(withPath: "acl/invites/\(key)")
+                .setValue(["tier": tier.rawValue, "at": ServerValue.timestamp()])
+        } catch { throw Self.mapped(error) }
+    }
+
+    func cancelInvite(key: String) async throws {
+        do { try await db.reference(withPath: "acl/invites/\(key)").removeValue() } catch { throw Self.mapped(error) }
+    }
+
+    private static func mapped(_ error: Error) -> BackendError {
+        let text = error.localizedDescription.lowercased()
+        return text.contains("permission") ? .refused : .other(error.localizedDescription)
+    }
+
     @discardableResult
     private func push(_ path: String, _ node: [String: Any]) async throws -> String {
         let ref = db.reference(withPath: path).childByAutoId()

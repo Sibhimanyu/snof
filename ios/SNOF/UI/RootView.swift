@@ -82,6 +82,8 @@ struct MainTabs: View {
             if let raw = Snapshot.value("-system"), let id = FarmSystemID(rawValue: raw) { store.selectedTab = .overview; overviewPath.append(SystemRoute(id: id)) }
             if let key = Snapshot.value("-motor") { store.selectedTab = .water; waterPath.append(MotorRoute(key: key)) }
             if Snapshot.args.contains("-account") { account = true }
+            // -people: the account sheet, opened on People and access.
+            if Snapshot.args.contains("-people") { account = true }
             if Snapshot.args.contains("-squeak-tab") { store.selectedTab = .squeak }
         }
         #endif
@@ -150,9 +152,11 @@ struct AccountSheet: View {
     @Environment(FarmStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @AppStorage("appearance") private var appearance: Appearance = .system
+    @State private var path: [String] = []
+    @State private var detent: PresentationDetent = .medium
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
@@ -162,6 +166,13 @@ struct AccountSheet: View {
                     LabeledContent("Access", value: store.role.rawValue)
                 } footer: {
                     Text(roleNote)
+                }
+                if store.isAdmin {
+                    Section {
+                        NavigationLink("People and access", value: "people")
+                    } footer: {
+                        Text("Add people and grant or revoke view and control.")
+                    }
                 }
                 Section("Bridge") {
                     LabeledContent("Status", value: store.bridgeStatus.label)
@@ -188,15 +199,19 @@ struct AccountSheet: View {
                 }
                 Section {
                     Button("Sign out", role: .destructive) { dismiss(); store.signOut() }
-                } footer: {
-                    Text("Adding people and granting access stays on the web dashboard's Admin page.")
                 }
             }
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: String.self) { _ in PeopleView() }
+            #if DEBUG
+            .onAppear { if Snapshot.args.contains("-people"), store.isAdmin, path.isEmpty { path = ["people"] } }
+            #endif
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
-        .presentationDetents([.medium, .large])
+        // People is a list to work through: full height when it opens.
+        .presentationDetents([.medium, .large], selection: $detent)
+        .onChange(of: path) { _, p in if !p.isEmpty { withAnimation { detent = .large } } }
         .preferredColorScheme(appearance.scheme)
     }
 
@@ -204,7 +219,7 @@ struct AccountSheet: View {
         switch store.role {
         case .viewer: return "You can see the farm. Operating devices and running reports needs the controller tier."
         case .controller: return "You can see the farm, operate lights, switches and fans, and run irrigation reports."
-        case .admin: return "Controller, plus you can grant access from the web dashboard's Admin page."
+        case .admin: return "Controller, plus you can add people and grant access, here or on the web."
         }
     }
 }
@@ -295,7 +310,7 @@ struct GateView: View {
         case .signIn: return "Sign in with the Google account on the farm allowlist."
         case .denied(let email):
             // Surfacing the address turns "access denied" into a one-step fix.
-            return "\(email ?? "This account") is not on the allowlist.\n\nAsk a farm admin to add you from the web dashboard's Admin page."
+            return "\(email ?? "This account") is not on the allowlist.\n\nAsk a farm admin to add you."
         case .message(let why): return why
         }
     }
