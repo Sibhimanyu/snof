@@ -118,33 +118,229 @@ private struct AttentionRowView: View {
     }
 }
 
-/* ---- solar and security cards ---- */
+/* ---- power and security cards ---- */
 
-struct SolarSystemCard: View {
+/// The farm's three EB lines side by side, what each is doing now. Mirrors
+/// powerPanel() on the web.
+struct PowerCard: View {
     @Environment(FarmStore.self) private var store
 
     var body: some View {
-        if let sys = store.systems[.solar] {
-            let s = Systems.summary(sys)
-            let on = s.state == .on
+        let lines = Power.build(systems: store.systems, irrigation: store.irrigation, now: store.now)
+        if lines.contains(where: { $0.device != nil || $0.supply?.hasVoltage == true }) {
+            let solarW = lines.compactMap { $0.inverter?.watts }.reduce(0, +)
             NavigationLink(value: SystemRoute(id: .solar)) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Solar").eyebrowStyle()
-                    Image(systemName: on ? "sun.max.fill" : "sun.max").font(.system(size: 30))
-                        .foregroundStyle(on ? Theme.warn : Theme.faint)
-                        .frame(width: 64, height: 64)
-                        .background((on ? Theme.warn : Theme.faint).opacity(0.12), in: Circle())
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(s.line).font(Theme.font(on ? 26 : 17, .bold, relativeTo: .title2).monospacedDigit())
-                            .tracking(on ? -1 : -0.3).foregroundStyle(Theme.ink).lineLimit(1).minimumScaleFactor(0.7)
-                        if !s.sub.isEmpty { Text(s.sub).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(2) }
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Text("Power").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                        if solarW > 0 { Text("\(Systems.power(solarW)) solar now").font(Theme.small).foregroundStyle(Theme.faint) }
+                        Spacer()
+                        Text("Details").font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.on)
+                        Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.on)
+                    }
+                    HStack(alignment: .top, spacing: 4) {
+                        ForEach(lines) { l in PowerLineCell(line: l) }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(14)
+                .padding(16)
                 .modifier(Panel(padding: 0))
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+/// The disc a line is drawn with: the house, the car, the motor.
+struct LineDisc: View {
+    let id: String
+    var on = false
+    var bad = false
+    var size: CGFloat = 62
+
+    var body: some View {
+        Group {
+            if id == "ev" {
+                Image(systemName: "bolt.car").font(.system(size: size * 0.4, weight: .regular)).foregroundStyle(Theme.ink)
+            } else {
+                Image(id == "home" ? "art-house" : "art-motor-on").resizable().scaledToFit().frame(width: size * 0.61, height: size * 0.61)
+            }
+        }
+        .frame(width: size, height: size)
+        .background(Theme.panel2, in: Circle())
+        .overlay(Circle().strokeBorder(bad ? Theme.bad : on ? Theme.brand : Theme.line, lineWidth: 2))
+        .background(Circle().fill(on ? Theme.brand.opacity(0.22) : .clear).padding(-6))
+    }
+}
+
+private struct PowerLineCell: View {
+    let line: PowerLine
+
+    var body: some View {
+        let st = Power.status(line)
+        let stale = line.spec.inverter == nil && !line.current
+        VStack(spacing: 3) {
+            LineDisc(id: line.id, on: st.state == .on, bad: st.state == .bad).padding(.bottom, 6)
+            Text(line.spec.title).font(Theme.font(13, .bold, relativeTo: .footnote)).foregroundStyle(Theme.text).lineLimit(1).minimumScaleFactor(0.8)
+            Text("\(line.spec.short) · \(line.spec.brand.isEmpty ? "free" : line.spec.brand)")
+                .font(Theme.font(11.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.faint).lineLimit(1).minimumScaleFactor(0.8)
+            LineFigure(status: st, stale: stale, big: 19).padding(.top, 4)
+            if !st.sub.isEmpty {
+                Text(st.sub).font(Theme.font(11.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted)
+                    .multilineTextAlignment(.center).lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// "965 W", "3 phases", "Inverter offline", in the line's tone.
+struct LineFigure: View {
+    let status: LineStatus
+    var stale = false
+    var big: CGFloat = 19
+
+    var body: some View {
+        let words = status.unit.isEmpty && Double(status.figure) == nil
+        let tone: Color = stale ? Theme.muted : Self.tone(status.state)
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(status.figure).font(Theme.font(words ? 15 : big, .bold, relativeTo: .title3).monospacedDigit()).tracking(words ? 0 : -0.6)
+            if !status.unit.isEmpty { Text(status.unit).font(Theme.font(12.5, .semibold, relativeTo: .caption)).foregroundStyle(Theme.muted) }
+        }
+        .foregroundStyle(tone).lineLimit(1).minimumScaleFactor(0.7)
+    }
+
+    static func tone(_ s: LineStatus.State) -> Color {
+        switch s {
+        case .on: return Theme.on
+        case .bad: return Theme.bad
+        case .offline, .off: return Theme.warn
+        case .rest: return Theme.muted
+        }
+    }
+}
+
+/// Three phase bars against 0–300 V; out of 200–260 V or missing reads warm.
+struct PhaseBars: View {
+    let volts: [Double]
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            ForEach(Array(volts.enumerated()), id: \.offset) { i, v in
+                let tone: Color = v < 120 ? Theme.bad : (v < 200 || v > 260) ? Theme.warn : Theme.brand
+                VStack(spacing: 4) {
+                    ZStack(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 6).fill(Theme.panel3)
+                        RoundedRectangle(cornerRadius: 6).fill(tone).frame(height: 72 * min(1, v / 300))
+                    }
+                    .frame(width: 22, height: 72)
+                    Text("\(Int(v.rounded()))").font(Theme.font(14, .bold, relativeTo: .subheadline).monospacedDigit())
+                        .foregroundStyle(tone == Theme.brand ? Theme.ink : tone)
+                    Text("L\(i + 1)").font(Theme.font(10.5, .bold, relativeTo: .caption2)).foregroundStyle(Theme.faint)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Phase voltages " + volts.map { "\(Int($0.rounded()))" }.joined(separator: ", ") + " volts")
+    }
+}
+
+/// The Power page: both inverters together, then one panel per line.
+struct PowerPage: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        let lines = Power.build(systems: store.systems, irrigation: store.irrigation, now: store.now)
+        let solarW = lines.compactMap { $0.inverter?.watts }.reduce(0, +)
+        let solarKwh = lines.compactMap { $0.inverter?.kwh }.reduce(0, +)
+        HStack(spacing: 16) {
+            Image(systemName: solarW > 0 ? "sun.max.fill" : "sun.max").font(.system(size: 28))
+                .foregroundStyle(solarW > 0 ? Theme.warn : Theme.faint)
+                .frame(width: 64, height: 64).background((solarW > 0 ? Theme.warn : Theme.faint).opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(solarW > 0 ? "\(Systems.power(solarW)) solar" : "No solar right now")
+                    .font(Theme.font(22, .bold, relativeTo: .title2)).foregroundStyle(solarW > 0 ? Theme.on : Theme.text)
+                Text("\(Power.kwh(solarKwh)) today from both inverters").font(Theme.meta).foregroundStyle(Theme.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel(padding: 18)
+        ForEach(lines) { l in section(l) }
+    }
+
+    @ViewBuilder private func section(_ l: PowerLine) -> some View {
+        let st = Power.status(l)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                LineDisc(id: l.id, on: st.state == .on, bad: st.state == .bad, size: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(l.spec.title).font(Theme.panelTitle).foregroundStyle(Theme.text)
+                    Text([l.spec.phase, l.spec.inverter != nil ? "\(l.spec.brand) solar" : nil, l.spec.use].compactMap { $0 }.joined(separator: " · "))
+                        .font(Theme.meta).foregroundStyle(Theme.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                LineFigure(status: st, stale: l.spec.inverter == nil && !l.current, big: 22)
+            }
+            if l.spec.inverter != nil {
+                if let i = l.inverter { Facts(items: facts(l, i)) }
+                else { Text("The \(l.spec.brand) inverter is not reporting to Home Assistant.").font(Theme.meta).foregroundStyle(Theme.muted) }
+            } else {
+                if let s = l.supply, s.hasVoltage { PhaseBars(volts: s.phaseV) }
+                Facts(items: supplyFacts(l))
+                Button { store.selectedTab = .irrigation } label: {
+                    HStack(spacing: 4) {
+                        Text("Pump & irrigation").font(Theme.font(13, .bold, relativeTo: .footnote))
+                        Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundStyle(Theme.on)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel(padding: 18)
+    }
+
+    private func facts(_ l: PowerLine, _ i: InverterReading) -> [(String, String)] {
+        var out: [(String, String)] = [
+            ("Solar now", i.watts.map(Systems.power) ?? "—"),
+            ("Today", i.kwh.map(Power.kwh) ?? "—"),
+            ("Lifetime", i.total.map { "\(Int($0.rounded()).formatted()) kWh" } ?? "—"),
+            ("Grid", i.grid.map { "\(Int($0.rounded())) V" } ?? "—"),
+            ("Inverter", i.temp.map { "\(Format.trim($0)) °C" } ?? "—"),
+        ]
+        if let m = i.mode { out.append(("Mode", m)) }
+        let ents = l.device?.entities ?? []
+        func f(_ suffix: String) -> Entity? { ents.first { $0.name.lowercased().hasSuffix(suffix) && !$0.isBad } }
+        if let sw = f("export limit switch") {
+            let pct = f("grid export limit").flatMap { Double($0.state ?? "") }
+            out.append(("Export limit", (sw.state == "on" ? "On" : "Off") + (pct.map { " (limit \(Format.trim($0))%)" } ?? "")))
+        }
+        return out
+    }
+
+    private func supplyFacts(_ l: PowerLine) -> [(String, String)] {
+        var out: [(String, String)] = [("Supply today", l.supplyToday ?? "—"), ("Pump today", l.pumpToday ?? "—")]
+        if let s = l.supply {
+            if !s.currentA.isEmpty { out.append(("Current", s.currentA.map { String(format: "%.1f", $0) }.joined(separator: " / ") + " A")) }
+            if let imb = s.imbalancePct { out.append(("Imbalance", "\(Format.trim(imb))%")) }
+            if let at = s.at { out.append(("Read at", at)) }
+        }
+        return out
+    }
+}
+
+private struct Facts: View {
+    let items: [(String, String)]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], spacing: 12) {
+            ForEach(items, id: \.0) { k, v in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(k).eyebrowStyle()
+                    Text(v).font(Theme.font(15, .semibold, relativeTo: .subheadline).monospacedDigit()).foregroundStyle(Theme.text)
+                }
+            }
         }
     }
 }
@@ -232,7 +428,7 @@ struct SystemView: View {
         Page(title: id.title) {
             if let sys {
                 let s = Systems.summary(sys)
-                hero(sys, s)
+                if id == .solar { PowerPage() } else { hero(sys, s) }
                 if id == .security { cameras(sys) }
                 if [.switches, .other].contains(id) {
                     let ops = sys.entities.filter { $0.isControllable && !$0.isBad }
@@ -285,39 +481,9 @@ struct SystemView: View {
                     if !s.sub.isEmpty { Text(s.sub).font(Theme.meta).foregroundStyle(Theme.muted) }
                 }
             }
-            if id == .solar {
-                let facts = solarFacts(sys, s)
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], spacing: 12) {
-                    ForEach(facts, id: \.0) { k, v in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(k).eyebrowStyle()
-                            Text(v).font(Theme.font(15, .semibold, relativeTo: .subheadline).monospacedDigit()).foregroundStyle(Theme.text)
-                        }
-                    }
-                }
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel(padding: 18)
-    }
-
-    private func solarFacts(_ sys: FarmSystem, _ s: SystemSummary) -> [(String, String)] {
-        func f(_ test: (String) -> Bool) -> Entity? { sys.entities.first { test($0.name.lowercased()) && !$0.isBad } }
-        func num(_ e: Entity?) -> Double? { e.flatMap { Double($0.state ?? "") } }
-        let total = num(f { $0.contains("total pv generation") })
-        let temp = num(f { $0.hasSuffix("inverter temperature") })
-        let grid = num(f { $0.contains("on-grid l1 voltage") })
-        let limitSwitch = f { $0.contains("export limit switch") }
-        let limit = num(f { $0.hasSuffix("grid export limit") })
-        return [
-            ("Now", s.watts.map(Systems.power) ?? "—"),
-            ("Today", s.kwh.map { "\(Format.trim($0)) kWh" } ?? "—"),
-            ("Lifetime", total.map { "\(Int($0.rounded()).formatted()) kWh" } ?? "—"),
-            ("Mode", f { $0.hasSuffix("work mode") }?.state ?? "—"),
-            ("Inverter", temp.map { "\(Format.trim($0)) °C" } ?? "—"),
-            ("Grid", grid.map { "\(Int($0.rounded())) V" } ?? "—"),
-            ("Export limit", limitSwitch.map { ($0.state == "on" ? "On" : "Off") + (limit.map { " · \(Format.trim($0))%" } ?? "") } ?? "—"),
-        ]
     }
 
     @ViewBuilder private func cameras(_ sys: FarmSystem) -> some View {
@@ -477,23 +643,7 @@ struct PumpPowerCard: View {
                 }
                 HStack(alignment: .bottom, spacing: 24) {
                     if let s = supply, s.hasVoltage {
-                        HStack(alignment: .bottom, spacing: 12) {
-                            ForEach(Array(s.phaseV.enumerated()), id: \.offset) { i, v in
-                                let tone: Color = v < 120 ? Theme.bad : (v < 200 || v > 260) ? Theme.warn : Theme.brand
-                                VStack(spacing: 4) {
-                                    ZStack(alignment: .bottom) {
-                                        RoundedRectangle(cornerRadius: 6).fill(Theme.panel3)
-                                        RoundedRectangle(cornerRadius: 6).fill(tone).frame(height: 72 * min(1, v / 300))
-                                    }
-                                    .frame(width: 22, height: 72)
-                                    Text("\(Int(v.rounded()))").font(Theme.font(14, .bold, relativeTo: .subheadline).monospacedDigit())
-                                        .foregroundStyle(tone == Theme.brand ? Theme.ink : tone)
-                                    Text("L\(i + 1)").font(Theme.font(10.5, .bold, relativeTo: .caption2)).foregroundStyle(Theme.faint)
-                                }
-                            }
-                        }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Phase voltages " + s.phaseV.map { "\(Int($0.rounded()))" }.joined(separator: ", ") + " volts")
+                        PhaseBars(volts: s.phaseV)
                     }
                     if let p = pressure {
                         VStack(alignment: .leading, spacing: 3) {

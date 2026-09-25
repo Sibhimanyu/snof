@@ -21,13 +21,13 @@ struct OverviewView: View {
             } else {
                 AttentionCard()
                 FlowHero()
+                PowerCard()
                 if sizeClass == .regular {
-                    HStack(alignment: .top, spacing: 14) { IrrigationRingCard(); SolarSystemCard(); SecurityCard() }
+                    HStack(alignment: .top, spacing: 14) { IrrigationRingCard(); SecurityCard() }
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     IrrigationRingCard()
-                    HStack(alignment: .top, spacing: 12) { SolarSystemCard(); SecurityCard() }
-                        .fixedSize(horizontal: false, vertical: true)
+                    SecurityCard()
                 }
                 SwitchTiles()
                 AroundTheFarm()

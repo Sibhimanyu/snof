@@ -922,6 +922,38 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .flow-branch.is-on{color:var(--accent);font-weight:650}
 .flow-mini{width:24px;height:24px;object-fit:contain}
 
+/* Power: the farm's three EB lines side by side, no pipes between them. */
+.power{padding:20px 22px 18px;margin-bottom:14px}
+.pw-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pw-line{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;padding:6px 4px 8px;border-radius:var(--r-lg);
+  text-align:center;color:inherit;transition:background-color .16s,transform .14s var(--ease)}
+.pw-line:hover{background:var(--panel-2)}
+.pw-line:active{transform:scale(.985)}
+.pw-line .flow-disc{margin-bottom:6px}
+.pw-line.is-on .flow-disc{border-color:var(--brand);box-shadow:0 0 0 6px var(--accent-glow)}
+.pw-line.is-bad .flow-disc{border-color:var(--bad)}
+.pw-ico{width:34px;height:34px;color:var(--ink);stroke-width:1.6}
+.pw-title{font-size:14px;font-weight:700;color:var(--text)}
+.pw-phase{font-size:12px;color:var(--faint)}
+.pw-fig{margin-top:6px;font-size:22px;font-weight:750;letter-spacing:-.03em;line-height:1.1;color:var(--ink);font-variant-numeric:tabular-nums}
+.pw-fig small{margin-left:3px;font-size:12.5px;font-weight:650;letter-spacing:0;color:var(--muted)}
+.pw-line.is-on .pw-fig{color:var(--accent)}
+.pw-line.is-offline .pw-fig,.pw-line.is-off .pw-fig{font-size:15px;color:var(--warn)}
+.pw-line.is-rest .pw-fig{font-size:17px;color:var(--muted)}
+.pw-line.is-bad .pw-fig{color:var(--bad)}
+.pw-line.is-stale .pw-fig{color:var(--muted)}
+.pw-sub{font-size:12px;color:var(--muted);max-width:22ch}
+.pw-sec{padding:18px 22px 20px;margin-bottom:14px;display:flex;flex-direction:column;gap:16px}
+.pw-sec-head{display:flex;align-items:center;gap:14px}
+.pw-sec-head .flow-disc{width:56px;height:56px;flex:none}
+.pw-sec-head > div{flex:1;min-width:0}
+.pw-sec-sub{margin-top:2px;font-size:13px;color:var(--muted)}
+.pw-sec-head .pw-fig{margin:0;font-size:24px;text-align:right}
+.pw-sec.is-on .pw-sec-head .pw-fig{color:var(--accent)}
+.pw-sec.is-offline .pw-sec-head .pw-fig,.pw-sec.is-off .pw-sec-head .pw-fig{font-size:15px;color:var(--warn)}
+.pw-sec.is-rest .pw-sec-head .pw-fig{font-size:17px;color:var(--muted)}
+.pw-sec.is-bad .pw-sec-head .pw-fig{color:var(--bad)}
+.pw-more{align-self:flex-start}
 .vcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:28px}
 .vcard{display:flex;flex-direction:column;gap:12px;padding:18px 20px;color:inherit}
 .vcard:hover{box-shadow:var(--shadow-card-hover)}
@@ -982,6 +1014,17 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   .flow-sub{font-size:11.5px}
   .vcards{grid-template-columns:1fr 1fr;gap:10px}
   .vcards > :first-child{grid-column:1 / -1}
+  .vcards > :last-child:nth-child(2){grid-column:1 / -1}
+  .power{padding:16px 12px}
+  .pw-row{gap:4px}
+  .pw-line .flow-disc{width:58px;height:58px}
+  .pw-ico{width:28px;height:28px}
+  .pw-title{font-size:13px}
+  .pw-phase,.pw-sub{font-size:11.5px}
+  .pw-fig{font-size:19px}
+  .pw-sec{padding:16px}
+  .pw-sec .mb-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .pw-sec-head .flow-disc{width:48px;height:48px}
   .vcard{padding:14px}
   .vcard-body{gap:12px}
   .vcards > :not(:first-child) .vcard-body{flex-direction:column;align-items:flex-start}
