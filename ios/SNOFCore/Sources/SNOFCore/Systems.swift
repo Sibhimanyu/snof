@@ -142,7 +142,7 @@ public enum Systems {
             let p = panels.first { $0.state == "triggered" } ?? panels.first { ($0.state ?? "").hasPrefix("armed") } ?? panels.first
             let st = p?.state ?? ""
             let armed: String = p == nil ? "" : st == "triggered" ? "Alarm triggered" : st == "disarmed" ? "Disarmed"
-                : st.hasPrefix("armed_") ? "Armed · " + firstUpper(st.dropFirst(6).replacingOccurrences(of: "_", with: " ")) : firstUpper(st)
+                : st.hasPrefix("armed_") ? "Armed · " + firstUpper(st.dropFirst(6).replacingOccurrences(of: "_", with: " ")) + " mode" : firstUpper(st)
             let camLine = cams.isEmpty ? "" : "\(camsOn) of \(cams.count) cameras online"
             let state: SystemState = st == "triggered" ? .bad : !active.isEmpty ? .on : camsOn < cams.count ? .warn : .rest
             return SystemSummary(state: state, line: armed.isEmpty ? (camLine.isEmpty ? "No alarm" : camLine) : armed,
@@ -442,7 +442,7 @@ public enum Attention {
             let h = cal.component(.hour, from: i.now)
             if h >= 7, h < 18 {
                 for l in Power.build(systems: i.systems, irrigation: c, now: i.now) where l.inverter?.offline == true {
-                    out.append(.init(.warn, "\(l.spec.brand) inverter offline", "\(l.spec.title) line · during daylight", .system(.solar)))
+                    out.append(.init(.warn, "\(l.spec.brand) inverter offline", "\(l.spec.title) · during daylight", .system(.solar)))
                 }
             }
         }

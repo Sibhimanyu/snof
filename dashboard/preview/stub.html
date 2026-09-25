@@ -208,7 +208,7 @@
   // canned report, so Generate round-trips without vendor credentials.
   const listeners={};
   const fire=(p,val)=>{(listeners[p]||[]).forEach(cb=>{try{cb({val:()=>val});}catch(e){}});};
-  const irrLabels={live_readings:'Power and pressure now',session_log:'Irrigation session log',
+  const irrLabels={live_readings:'Power and pressure reading',session_log:'Irrigation session log',
     performance:'Valve runtime against pressure',controller:'Controller dashboard',
     electricity:'Electricity snapshot',pressure:'Pressure snapshot',valves:'Valve runtime',
     timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range',

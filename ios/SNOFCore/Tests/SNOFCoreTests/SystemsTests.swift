@@ -50,7 +50,7 @@ import Foundation
         let solar = Systems.summary(s[.solar]!)
         #expect(solar.state == .rest && solar.line == "Resting" && solar.sub == "No sun right now")
         let sec = Systems.summary(s[.security]!)
-        #expect(sec.line == "Armed · Home" && sec.cameras == 2 && sec.camerasOnline == 1 && sec.armed)
+        #expect(sec.line == "Armed · Home mode" && sec.cameras == 2 && sec.camerasOnline == 1 && sec.armed)
         #expect(Systems.summary(s[.climate]!).line == "All off")
         #expect(Systems.summary(s[.printer]!).line == "Off")
         let sw = Systems.summary(s[.switches]!)
@@ -225,6 +225,6 @@ import Foundation
     @Test func alarmStatesReadLikeTheWeb() {
         var f = farm
         f[4] = e("alarm_control_panel", "home", "Sibhi Home", "armed_custom_bypass", device: "station")
-        #expect(Systems.summary(Systems.build(f, names: names)[.security]!).line == "Armed · Custom bypass")
+        #expect(Systems.summary(Systems.build(f, names: names)[.security]!).line == "Armed · Custom bypass mode")
     }
 }

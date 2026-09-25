@@ -665,7 +665,10 @@ function skeletonView() {
  * brand green is on / flowing, brick is offline. */
 
 const motorArt = (m) => artImg(m && m.running ? 'motor-on' : 'motor-off', 'flow-art');
-const motorWord = (m) => (!m ? 'No reading' : m.running === true ? 'Running' : m.running === false ? 'Off' : 'Unknown');
+// An old reading says what the motor *was* doing: "Was running", never a
+// bare "Running" with an age beside it (owner, 2026-09-25).
+const motorWord = (m, current = true) => (!m ? 'No reading' : m.running === true ? (current ? 'Running' : 'Was running')
+  : m.running === false ? (current ? 'Off' : 'Was off') : 'Unknown');
 
 /** Whether a motor's reading says what it is doing now: its vendor answered
  *  a recent pull and, for Livesky (the starter reports every few seconds),
@@ -708,7 +711,7 @@ function flowHero() {
     (label ? `<em>${escapeHtml(label)}</em>` : '') + `</div>`;
   const aged = (m) => (m && !waterCurrent(m) ? waterAge(m) : '');
   const drips = drip ? `<a class="flow-branch${live(drip) ? ' is-on' : ''}" href="#/water">${artImg(live(drip) ? 'motor-on' : 'motor-off', 'flow-mini')}` +
-    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}` +
+    `<span>${escapeHtml(drip.name)} · ${escapeHtml(motorWord(drip, waterCurrent(drip)))}${drip.program ? ` · ${escapeHtml(drip.program)} zone ${drip.zone ?? ''}` : ''}` +
     `${aged(drip) ? ` · ${escapeHtml(aged(drip))}` : ''}</span></a>` : '';
   const hasWater = w.river || motors.length;
   // The pull's age only while every reading drawn is current; otherwise the
@@ -720,9 +723,9 @@ function flowHero() {
         : w.pulledAt && allCurrent ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
       <a class="panel-link" href="#/water">Details${arrow()}</a></div>
     <div class="flow-row">
-      ${node('', motorArt(live(w.river) ? w.river : null), 'River', hasWater ? motorWord(w.river) : 'No reading', live(w.river), aged(w.river))}
+      ${node('', motorArt(live(w.river) ? w.river : null), 'River', hasWater ? motorWord(w.river, !w.river || waterCurrent(w.river)) : 'No reading', live(w.river), aged(w.river))}
       ${pipe(live(w.river), '')}
-      ${node('', motorArt(live(supply) ? supply : null), 'Other farm', supply ? `7.5 HP ${motorWord(supply).toLowerCase()}` : 'No reading', live(supply), aged(supply))}
+      ${node('', motorArt(live(supply) ? supply : null), 'Other farm', supply ? `7.5 HP ${motorWord(supply, waterCurrent(supply)).toLowerCase()}` : 'No reading', live(supply), aged(supply))}
       ${pipe(live(supply), '')}
       ${node('farm', artImg('kulam', 'flow-art'), 'Main farm', s.running ? 'Watering' : 'Not watering', s.running)}
     </div>
@@ -909,7 +912,7 @@ function systemSummary(sys) {
       const active = ents.filter((e) => e.domain === 'binary_sensor' && isOn(e) && /(person|motion|pet) detected/.test(lname(e)));
       const p = panels.find((e) => e.state === 'triggered') || panels.find((e) => /^armed/.test(e.state)) || panels[0];
       const armed = !p ? '' : p.state === 'triggered' ? 'Alarm triggered'
-        : p.state === 'disarmed' ? 'Disarmed' : /^armed_/.test(p.state) ? `Armed · ${cap(p.state.replace('armed_', '').replace('_', ' '))}` : cap(p.state);
+        : p.state === 'disarmed' ? 'Disarmed' : /^armed_/.test(p.state) ? `Armed · ${cap(p.state.replace('armed_', '').replace('_', ' '))} mode` : cap(p.state);
       const camLine = cams.length ? `${camsOn} of ${cams.length} cameras online` : '';
       return { state: p?.state === 'triggered' ? 'bad' : active.length ? 'on' : camsOn < cams.length ? 'warn' : 'rest',
                line: armed || camLine || 'No alarm', sub: active.length ? `${active.length} detecting now` : (armed ? camLine : ''),
@@ -956,9 +959,11 @@ function systemSummary(sys) {
  * are recognised by what their integrations report, not by typed names.
  * Mirrors Power.swift in SNOFCore; keep the two in step. */
 const POWER_LINES = [
-  { id: 'home', title: 'Home & sheds', phase: 'Single phase', short: '1-phase', inverter: 'goodwe', brand: 'GoodWe', use: 'The house and the sheds' },
-  { id: 'ev', title: 'EV charging', phase: 'Three phase', short: '3-phase', inverter: 'foxess', brand: 'V-Guard', use: 'Charges the XEV 9e' },
-  { id: 'farm', title: 'Farm motor', phase: 'Three phase', short: '3-phase', inverter: null, brand: '', use: 'Free agricultural supply' },
+  // Titles name the line, never an action: "EV charging" read as the car
+  // charging right now (owner, 2026-09-25).
+  { id: 'home', title: 'Home & sheds line', phase: 'Single phase', short: '1-phase', inverter: 'goodwe', brand: 'GoodWe', use: 'For the house and the sheds' },
+  { id: 'ev', title: 'EV charger line', phase: 'Three phase', short: '3-phase', inverter: 'foxess', brand: 'V-Guard', use: 'For charging the XEV 9e' },
+  { id: 'farm', title: 'Farm motor line', phase: 'Three phase', short: '3-phase', inverter: null, brand: '', use: 'Free agricultural supply, runs the main farm motor' },
 ];
 
 /** 'goodwe' | 'foxess' | null, from the entities the integration makes. */
@@ -1019,9 +1024,12 @@ function lineStatus(l) {
   const at = sp.at ? ` · ${sp.at}` : '';
   // Free agricultural power comes and goes on the board's schedule, so a
   // line with no power is "off now", not a fault; a missing phase is.
-  if (!sp.live) return { state: 'rest', figure: 'Power off', unit: '', sub: `${l.supplyToday ? `${l.supplyToday} today` : 'no supply'}${at}` };
-  if (sp.missing) return { state: 'bad', figure: `${sp.live} of 3`, unit: 'phases', sub: `phase missing${at}` };
-  return { state: 'on', figure: '3', unit: 'phases', sub: `${sp.drawing ? 'pump running' : 'pump off'}${at}` };
+  // The controller's reading is from a moment ("at 08:16"), so it is said as
+  // one, never as what is happening now.
+  const when = sp.at ? ` at ${sp.at}` : '';
+  if (!sp.live) return { state: 'rest', figure: 'No power', unit: '', sub: `${l.supplyToday ? `${l.supplyToday} supply today · ` : ''}read${when || ' last'}` };
+  if (sp.missing) return { state: 'bad', figure: `${sp.live} of 3`, unit: 'phases', sub: `a phase was missing${when}` };
+  return { state: 'on', figure: '3', unit: 'phases', sub: `pump ${sp.drawing ? 'on' : 'off'}${when}` };
 }
 
 const lineArt = (id) => id === 'home' ? artImg('house', 'pw-art')
@@ -1096,11 +1104,11 @@ function powerPage(systems) {
           ['Today', i.kwh != null ? fmtKwh(i.kwh) : '—'],
           ['Lifetime', i.total != null ? `${Math.round(i.total).toLocaleString('en-IN')} kWh` : '—'],
           ['Grid', i.grid != null ? `${Math.round(i.grid)} V` : '—'],
-          ['Inverter', i.temp != null ? `${i.temp} °C` : '—'],
+          ['Inverter temp', i.temp != null ? `${i.temp} °C` : '—'],
         ];
         if (i.mode) list.push(['Mode', i.mode]);
         const sw = f(/export limit switch$/), pct = numOf(f(/grid export limit$/));
-        if (sw) list.push(['Export limit', `${sw.state === 'on' ? 'On' : 'Off'}${pct != null ? ` (limit ${pct}%)` : ''}`]);
+        if (sw) list.push(['Export limit', sw.state === 'on' ? `On, at ${pct != null ? `${pct}%` : 'its set value'}` : `Not in use${pct != null ? ` (set to ${pct}%)` : ''}`]);
         body = facts(list);
       } else body = `<p class="more-note">The ${escapeHtml(l.brand)} inverter is not reporting to Home Assistant.</p>`;
     } else {
@@ -1180,7 +1188,7 @@ function attentionItems(all, systems) {
       // Per inverter: one down while the other generates is still a look.
       const h = new Date(serverNow() + 330 * 60000).getUTCHours();
       if (h >= 7 && h < 18) for (const l of powerLines(systems)) {
-        if (l.inv?.offline) add('warn', `${l.brand} inverter offline`, `${l.title} line · during daylight`, '#/sys/solar');
+        if (l.inv?.offline) add('warn', `${l.brand} inverter offline`, `${l.title} · during daylight`, '#/sys/solar');
       }
       continue;
     }
@@ -1282,7 +1290,7 @@ function systemView(all, id) {
           .map((x) => lname(x).match(/(person|motion|pet|sound) detected/)[1]);
         return `<div class="row ${isBad(e) ? 'is-bad' : ''}"><span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-camera"/></svg></span>
           <span class="row-main"><span class="row-name">${escapeHtml(dev?.name || e.name)}</span><span class="row-meta">${escapeHtml(areaName(e.area))}</span></span>
-          ${isBad(e) ? `<span class="tag tag-bad">Offline</span>` : now.length ? `<span class="tag tag-on">${escapeHtml(cap(now.join(', ')))} now</span>` : `<span class="tag">Watching</span>`}</div>`;
+          ${isBad(e) ? `<span class="tag tag-bad">Offline</span>` : now.length ? `<span class="tag tag-on">${escapeHtml(cap(now.join(', ')))} now</span>` : `<span class="tag">Online</span>`}</div>`;
       }).join('')}</div></section>`;
   } else {
     top = `<section class="panel sys-hero is-${s.state}"><span class="sys-ico big"><svg viewBox="0 0 24 24" class="ico"><use href="#${sys.icon}"/></svg></span>
@@ -1468,7 +1476,7 @@ const IRR_TYPES = [
   // answer a question that spans two of its endpoints — did the line hold
   // while the valves were open, did the motor stop mid-timer — which reading
   // two separate cards left you to work out by eye.
-  { type: 'live_readings', label: 'Power and pressure now', needs: 'live', group: 'Combined' },
+  { type: 'live_readings', label: 'Power and pressure reading', needs: 'live', group: 'Combined' },
   { type: 'session_log', label: 'Irrigation session log', needs: 'range', group: 'Combined' },
   { type: 'performance', label: 'Valve runtime against pressure', needs: 'range', group: 'Combined' },
   { type: 'controller', label: 'Controller dashboard', needs: 'live', group: 'Single endpoint' },
@@ -1931,7 +1939,8 @@ function irrLegacyBody(rep, label) {
 }
 
 function irrReportCard(key, rep, open = true) {
-  const label = rep.label || rep.type || 'Report';
+  // The app's own name for the type first, so a rename reaches old reports too.
+  const label = IRR_TYPES.find((t) => t.type === rep.type)?.label || rep.label || rep.type || 'Report';
   const when = rep.at ? new Date(rep.at).toLocaleString('en-GB',
     { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   const from = rep.params && rep.params.from, to = rep.params && rep.params.to;
@@ -2570,7 +2579,7 @@ function irrSupplyModule() {
     else if (s.imbalance != null && s.imbalance >= 5) tags.push(`<span class="tag tag-warn">${s.imbalance}% phase imbalance</span>`);
     else tags.push(`<span class="tag tag-on">All three phases</span>`);
   }
-  if (s && s.drawing != null) tags.push(`<span class="tag${s.drawing ? ' tag-on' : ''}">${s.drawing ? `Pump running · ${s.a.map((x) => x.toFixed(1)).join(' / ')} A` : 'Pump off'}</span>`);
+  if (s && s.drawing != null) tags.push(`<span class="tag${s.drawing ? ' tag-on' : ''}">${s.drawing ? `Pump on${s.at ? ` at ${s.at}` : ''} · ${s.a.map((x) => x.toFixed(1)).join(' / ')} A` : `Pump off${s.at ? ` at ${s.at}` : ''}`}</span>`);
   const last = (irrig().pressure || []).at(-1);
   const outlet = last && /outlet ([\d.]+ ?bar)/.exec(last.detail || '');
   return `<section class="panel irr-mod" aria-label="Pump and power">` +
@@ -2685,15 +2694,15 @@ const hms = (v) => String(v || '').replace(/^00:/, '').replace(/^0(\d:)/, '$1');
 const joinNums = (list, unit) => (Array.isArray(list) && list.length ? `${list.join(' · ')} ${unit}` : '');
 
 const WATER_ROLE = {
-  'main-farm': 'Sends water to the main farm',
-  drip: "Runs this farm's own drip zones",
+  'main-farm': 'For the main farm\'s water',
+  drip: "For this farm's own drip zones",
 };
 
 /** current: false for a reading that no longer says what the motor is
  *  doing now (waterCurrent): its last state, in grey. */
 function motorStateTag(m, current = true) {
-  if (m.running === true) return current ? `<span class="tag tag-on">Running</span>` : `<span class="tag">Running</span>`;
-  if (m.running === false) return `<span class="tag">Off</span>`;
+  if (m.running === true) return current ? `<span class="tag tag-on">Running</span>` : `<span class="tag">Was running</span>`;
+  if (m.running === false) return `<span class="tag">${current ? 'Off' : 'Was off'}</span>`;
   return `<span class="tag">Unknown</span>`;
 }
 

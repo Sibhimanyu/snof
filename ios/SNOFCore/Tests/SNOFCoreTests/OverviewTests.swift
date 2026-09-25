@@ -143,7 +143,7 @@ final class OverviewTests: XCTestCase {
         XCTAssertEqual(g.sensors.count, 2, "debug flags are not motion")
         XCTAssertEqual(g.activeNow.map(\.objectId), ["p1"])
         XCTAssertEqual(g.latest?.objectId, "p1")
-        XCTAssertEqual(SecurityGlance.alarmLabel("armed_home"), "Armed · home")
+        XCTAssertEqual(SecurityGlance.alarmLabel("armed_home"), "Armed · home mode")
         XCTAssertEqual(SecurityGlance.alarmLabel("disarmed"), "Disarmed")
         XCTAssertEqual(SecurityGlance.sensorKind(ents[5]), "Person")
     }

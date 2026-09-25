@@ -40,7 +40,7 @@ import Foundation
         #expect(Power.status(lines[0]) == LineStatus(state: .on, figure: "985", unit: "W", sub: "0.9 kWh today"))
         #expect(Power.status(lines[1]) == LineStatus(state: .on, figure: "1.04", unit: "kW", sub: "0.7 kWh today"))
         #expect(lines[1].inverter?.grid == 233.8)
-        #expect(Power.status(lines[2]) == LineStatus(state: .on, figure: "3", unit: "phases", sub: "pump running · 08:16"))
+        #expect(Power.status(lines[2]) == LineStatus(state: .on, figure: "3", unit: "phases", sub: "pump on at 08:16"))
         #expect(lines[2].supplyToday == "7h 10m")
     }
 
@@ -61,7 +61,7 @@ import Foundation
         var c = IrrigationCache()
         c.electricity = [["label": "Phase voltage", "value": "0 / 0 / 0", "note": "at 23:10"], ["label": "Supply today", "value": "7h 10m"]]
         let farm = Power.build(systems: [:], irrigation: c)[2]
-        #expect(Power.status(farm) == LineStatus(state: .rest, figure: "Power off", unit: "", sub: "7h 10m today · 23:10"))
+        #expect(Power.status(farm) == LineStatus(state: .rest, figure: "No power", unit: "", sub: "7h 10m supply today · read at 23:10"))
     }
 
     @Test func aDeviceNameIsSaidOnce() {

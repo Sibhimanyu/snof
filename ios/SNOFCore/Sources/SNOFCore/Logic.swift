@@ -363,7 +363,7 @@ public enum IrrigationTypes {
     /// Same order and labels as IRR_TYPES in app.js, and the same allow-list
     /// as the `irrigation_requests/type` rule.
     public static let all: [IrrigationType] = [
-        .init(type: "live_readings", label: "Power and pressure now", needsRange: false, combined: true),
+        .init(type: "live_readings", label: "Power and pressure reading", needsRange: false, combined: true),
         .init(type: "session_log", label: "Irrigation session log", needsRange: true, combined: true),
         .init(type: "performance", label: "Valve runtime against pressure", needsRange: true, combined: true),
         .init(type: "controller", label: "Controller dashboard", needsRange: false, combined: false),

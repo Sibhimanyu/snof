@@ -28,10 +28,10 @@ it, each written down where it lives:
   *Needs a look* starts **collapsed** (owner, 2026-09-25): the count and the
   worst item stay on top, a tap opens the list (web `attnOpen`, iOS
   `AttentionCard.open`).
-- **Power: three EB lines** (owner, 2026-09-25). *Home & sheds* is single
-  phase with the GoodWe (GW3000-XS, store room); *EV charging* is three phase
+- **Power: three EB lines** (owner, 2026-09-25). *Home & sheds line* is single
+  phase with the GoodWe (GW3000-XS, store room); *EV charger line* is three phase
   with the V-Guard inverter — a FoxESS unit in HA (FoxESS Cloud, device
-  "Solar", storage shed) — and charges the Mahindra XEV 9e; *Farm motor* is
+  "Solar", storage shed) — and is for charging the Mahindra XEV 9e; *Farm motor line* is
   the second three-phase line, free agricultural supply, read from the
   Mobitech controller (phases, supply/pump hours). The line ↔ inverter map
   is written in `POWER_LINES` (app.js) / `Power.lines` (SNOFCore), since HA
@@ -41,6 +41,11 @@ it, each written down where it lives:
   car or charger entity exists in HA, so the EV line shows only its
   inverter. Free-line power off reads as "Power off" (the board's schedule),
   not a fault; a missing phase is.
+- **Words say only what the data shows** (owner, 2026-09-25). Names are
+  nouns, not actions ("EV charger line", never "EV charging"). A reading
+  from a moment is said as one: "pump on at 08:16", "Was running · 41m ago",
+  never a bare present tense beside an age. Report names come from the
+  apps' own type labels, so a rename reaches old reports.
 - Appliances off at the wall (ACs, TVs, the printer, a fan) are "Off", never
   red; offline vs off is decided per device, everywhere.
 - Nothing stale looks live: ages everywhere from one formatter; water is

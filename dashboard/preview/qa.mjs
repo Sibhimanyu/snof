@@ -564,7 +564,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const [p,c]=await open('?live=1#/');
   await p.waitForSelector('.power');
   const lines=await p.evaluate(()=>[...document.querySelectorAll('.pw-line')].map(l=>({t:l.querySelector('.pw-title').textContent,f:(l.querySelector('.pw-fig')||l.querySelector('.pw-right')).textContent.trim(),cls:l.className})));
-  check('Power shows the three lines in order', lines.map(l=>l.t).join('|')==='Home & sheds|EV charging|Farm motor', JSON.stringify(lines));
+  check('Power shows the three lines in order', lines.map(l=>l.t).join('|')==='Home & sheds line|EV charger line|Farm motor line', JSON.stringify(lines));
   check('each inverter reads its own figure', /W$/.test(lines[0].f)&&/^1\.04kW$/.test(lines[1].f.replace(/\s/g,'')), lines.map(l=>l.f).join(' | '));
   check('the Solar card is gone from Home', !(await p.$('.vcard.solar')));
   check('Power is rows, not the water chain\'s circles', !(await p.$('.power .flow-disc'))&&(await p.$$('.power .pw-tile')).length===3);
