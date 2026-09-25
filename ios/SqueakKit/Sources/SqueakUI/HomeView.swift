@@ -5,6 +5,7 @@ import SwiftUI
 /// DESIGN.md §8.2: every active session, in attention order.
 struct HomeView: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var router = SqueakRouter.shared
     @State private var confirmingUnpair = false
     /// `-squeak-open <key>` starts inside a session: screenshots of the demo only.
     @State private var path: [String] = {
@@ -52,6 +53,10 @@ struct HomeView: View {
                     }
                 }
             }
+            // A link from a Telegram card: open its session as soon as the
+            // snapshot has it, on a fresh stack so Back leads to the list.
+            .onChange(of: router.pendingSessionId, initial: true) { _, _ in openPending() }
+            .onChange(of: model.snapshot) { _, _ in openPending() }
             .confirmationDialog("Unpair this iPhone?", isPresented: $confirmingUnpair, titleVisibility: .visible) {
                 Button("Unpair", role: .destructive) { model.unpair() }
             } message: {
@@ -59,6 +64,14 @@ struct HomeView: View {
             }
         }
         .foregroundStyle(Theme.ink)
+    }
+
+    private func openPending() {
+        guard let id = router.pendingSessionId,
+              let session = model.snapshot?.sessions.first(where: { $0.conductorSessionId == id })
+        else { return }
+        path = [session.key]
+        router.consume()
     }
 
     private var summary: String {

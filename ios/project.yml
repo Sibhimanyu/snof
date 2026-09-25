@@ -9,7 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.11.15"
+    MARKETING_VERSION: "0.11.16"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -83,6 +83,11 @@ targets:
           - CFBundleURLName: google-signin
             CFBundleURLSchemes:
               - $(GOOGLE_REVERSED_CLIENT_ID)
+          # snof://squeak?s=<session>: a Telegram card's "Open in Squeak"
+          # lands here (owner only; see SqueakAccess.swift).
+          - CFBundleURLName: snof-links
+            CFBundleURLSchemes:
+              - snof
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(SNOF_BUNDLE_ID)
