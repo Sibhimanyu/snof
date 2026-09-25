@@ -78,6 +78,29 @@
           }
         },
 
+        // Motor control: on or off for one water-chain motor (the river motor
+        // on Livesky, the other farm's motors on Niagara). docs/motor-control.md.
+        // Admins only. Refused unless meta/motorControl/enabled AND this motor's
+        // meta/motorControl/motors/<motor> are true — both service account
+        // only, off by default — and while meta/motorControl/lock is live (a change being
+        // confirmed from the motor itself). The motor_command function
+        // clientAt (the press, on the phone's corrected clock) must be within
+        // 30 s of the server's now: a write queued offline is refused.
+        // re-checks everything, reads the motor first, applies the rate
+        // limits, sends once and never retries. Nothing written here reaches a
+        // vendor as text: the two commands are fixed in the function.
+        "motor_commands": {
+          "$cmd": {
+            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['motor','action','uid','at']) && root.child('farms').child($farm).child('meta/motorControl/enabled').val() === true && newData.child('motor').isString() && newData.child('motor').val().matches(/^[a-z0-9-]{1,40}$/) && root.child('farms').child($farm).child('meta/motorControl/motors').child(newData.child('motor').val()).val() === true && (!root.child('farms').child($farm).child('meta/motorControl/lock').exists() || root.child('farms').child($farm).child('meta/motorControl/lock/until').val() < now) && newData.child('clientAt').isNumber() && newData.child('clientAt').val() > now - 30000 && newData.child('clientAt').val() < now + 30000",
+            "clientAt": { ".validate": "newData.isNumber()" },
+            "motor": { ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9-]{1,40}$/)" },
+            "action": { ".validate": "newData.isString() && newData.val().matches(/^(on|off)$/)" },
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "at": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+
         // Who is signed in to Mobitech, for the apps to show. Never the
         // token: that lives in /private/mobitech, which no client can read.
         // Written by the admin who signs in, in the same step as the token.

@@ -168,6 +168,7 @@ final class FarmStore {
         pendingTasks = [:]; reportTasks = [:]
         pending = [:]; waitingReports = []; refreshKeys = []
         irrigationTask?.cancel(); irrigationPending = nil
+        motorTask?.cancel(); motorPending = nil; motorPendingKey = nil; motorConfirming = false
         meta = FarmMeta(); metaLoaded = false; mobitechStatus = nil; mobitechPendingToken = nil; areas = [:]; deviceNames = [:]; rawDeviceNames = [:]; entities = []; received = []; index = [:]
         irrigation = IrrigationCache(); reports = []
         water = WaterState(); rawWater = nil; rawMeta = nil; waterAsked = .distantPast
@@ -210,6 +211,7 @@ final class FarmStore {
                                lastOk: Parse.double(d["lastOk"]), lastRejected: Parse.double(d["lastRejected"])) } }
         case .irrigationLock(let v):
             irrigationLockUntil = Parse.double((v as? [String: Any])?["until"])
+        case .motorResults(let v): settleMotor(v)
         case .controller(let b): canControl = b
         case .admin(let b): isAdmin = b
         case .serverTimeOffset(let s): skewMs = s
@@ -690,6 +692,77 @@ final class FarmStore {
         } catch {
             show(.err, "Could not sign out: \(error.localizedDescription)")
         }
+    }
+
+    /* ---- motor control (docs/motor-control.md) ----
+     * One press, one command; the motor_command function checks, sends once
+     * and reads the motor until it confirms. Here: say why a switch is closed
+     * (MotorControl.refusal), and stay closed until the result lands. */
+
+    private(set) var motorPending: String?
+    private(set) var motorPendingKey: String?
+    private(set) var motorConfirming = false
+    private var motorTask: Task<Void, Never>?
+
+    func motorRefusal(_ key: String, motor: WaterMotor?) -> String? {
+        let nowMs = Date().timeIntervalSince1970 * 1000 + skewMs
+        return meta.motorControl.refusal(key, motor: motor, current: water.isCurrent(motor, now: Date()),
+                                         isAdmin: isAdmin, pending: motorPending != nil, confirming: motorConfirming,
+                                         online: connected, nowMs: nowMs)
+    }
+
+    func switchMotor(_ key: String, action: String) async {
+        let m = key == "river" ? water.river : water.motors.first { $0.id == key }
+        if let why = motorRefusal(key, motor: m) { show(.err, why); return }
+        guard action == "on" ? m?.running == false : m?.running == true else {
+            show(.err, "The motor is not in the state that button was for."); return
+        }
+        guard let uid = user?.uid else { return }
+        // Closed before the send, so a second tap cannot queue a second write.
+        motorPending = "sending"
+        motorPendingKey = key
+        motorConfirming = false
+        do {
+            let pushed = try await backend.sendMotor(motor: key, action: action, uid: uid,
+                                                     clientAt: Date().timeIntervalSince1970 * 1000 + skewMs)
+            motorPending = pushed
+            // Sending plus the function's 150 s of confirmation reads.
+            motorTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(240))
+                guard let self, !Task.isCancelled, self.motorPending == pushed else { return }
+                self.motorPending = nil
+                self.motorConfirming = false
+                self.show(.err, "No answer about the motor. Check it before trying again.")
+            }
+        } catch {
+            motorPending = nil
+            motorPendingKey = nil
+            show(.err, (error as? BackendError) == .refused
+                 ? "The database refused that (switched off, or a change is in flight)."
+                 : "Could not send: \(error.localizedDescription)")
+        }
+    }
+
+    private func settleMotor(_ v: Any?) {
+        guard let key = motorPending, let node = (v as? [String: Any])?[key] as? [String: Any] else { return }
+        let ok = Parse.bool(node["ok"]) ?? false
+        if ok, Parse.bool(node["confirming"]) == true { motorConfirming = true; return }
+        motorPending = nil
+        motorConfirming = false
+        motorTask?.cancel()
+        let motorKey = Parse.string(node["motor"]) ?? ""
+        let name = (motorKey == "river" ? water.river : water.motors.first { $0.id == motorKey })?.name ?? "The motor"
+        let on = Parse.string(node["action"]) == "on"
+        if ok, Parse.bool(node["verified"]) == true {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            show(.ok, "Confirmed: \(name) is \(on ? "running" : "off").")
+        } else if ok {
+            show(.err, "Sent once, but the motor has not confirmed it. Check it before trying again.")
+        } else {
+            let message = Parse.string(node["message"]) ?? ""
+            show(.err, message.isEmpty ? "The farm refused that." : "Not sent: \(message)")
+        }
+        Task { [weak self] in await self?.refreshWater(force: true) }
     }
 
     private(set) var irrigationPending: String?

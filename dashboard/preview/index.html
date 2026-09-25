@@ -355,7 +355,7 @@
     if(params.get('fresh')&&data.meta&&data.meta.bridge) data.meta.bridge.lastSeen=Date.now()-5000;
   }
   const isAdmin=params.get('admin')==='0'?false:!params.get('viewer');
-  const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0};
+  const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0,'.info/connected':!params.get('offline')};
   // A couple of other accounts, so the Admin page has something to list.
   data.acl={
     admins:{u1:true},
@@ -466,6 +466,15 @@
               data.irrigation_reports[k]=rep;
               fire('farms/snof/irrigation_reports',data.irrigation_reports);
               fire(`farms/snof/irrigation_reports/${k}`,rep); },400);
+          }
+          // Stand-in for the motor_command function: confirming, then the
+          // motor's own report confirms it.
+          if(path.endsWith('/motor_commands')){
+            const res=data.motor_command_results=data.motor_command_results||{};
+            setTimeout(()=>{ res[k]={ok:true,confirming:true,verified:false,motor:v.motor,action:v.action};
+              fire('farms/snof/motor_command_results',res); },200);
+            setTimeout(()=>{ res[k]={ok:true,confirming:false,verified:true,motor:v.motor,action:v.action,message:'confirmed by the motor'};
+              fire('farms/snof/motor_command_results',res); },700);
           }
           if(done) setTimeout(()=>done(null),0);
           return Promise.resolve(); }};},

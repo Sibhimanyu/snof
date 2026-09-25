@@ -52,7 +52,8 @@ struct WaterView: View {
     /// When it was read, and that it only reads: the owner asked why these
     /// motors cannot be switched from here (2026-09-24).
     private var pulledLine: String {
-        (water.pulledAt.map { "Read \(ago(ms: $0))" } ?? "Not read yet") + " · read-only"
+        let canSwitch = store.isAdmin && store.meta.motorControl.enabled && store.meta.motorControl.motors.values.contains(true)
+        return (water.pulledAt.map { "Read \(ago(ms: $0))" } ?? "Not read yet") + (canSwitch ? "" : " · read-only")
     }
 
     @ViewBuilder private var river: some View {
@@ -64,7 +65,7 @@ struct WaterView: View {
             let noted = store.isAdmin && store.liveskyProblem != nil
             MotorCard(motor: r, now: store.now,
                       vendorError: !noted && water.livesky.status.ok == false ? water.livesky.status.error : nil,
-                      current: water.isCurrent(r, now: store.now))
+                      current: water.isCurrent(r, now: store.now), key: "river")
         } else {
             EmptyBlock(title: "No reading from the river motor",
                        message: water.livesky.status.error.isEmpty ? "It appears after the first pull." : water.livesky.status.error,
@@ -78,7 +79,7 @@ struct WaterView: View {
                        message: water.niagara.error.isEmpty ? "It appears after the first pull." : water.niagara.error,
                        symbol: "drop")
         } else {
-            ForEach(water.motors) { m in MotorCard(motor: m, now: store.now, current: water.isCurrent(m, now: store.now)) }
+            ForEach(water.motors) { m in MotorCard(motor: m, now: store.now, current: water.isCurrent(m, now: store.now), key: m.id) }
             if water.niagara.ok == false, !water.niagara.error.isEmpty {
                 Note(text: "\(water.niagara.error) Showing the last readings.", tone: .warn)
             }
@@ -113,6 +114,47 @@ enum Water {
     static func ago(_ d: Date, now: Date) -> String {
         let s = max(0, now.timeIntervalSince(d))
         return s < 45 ? "just now" : "\(Format.age(s)) ago"
+    }
+}
+
+/// On or off for an armed motor, confirmed by the motor itself
+/// (docs/motor-control.md). Nothing shows for a motor that is not armed.
+struct MotorSwitch: View {
+    @Environment(FarmStore.self) private var store
+    let key: String
+    let motor: WaterMotor
+    @State private var asking = false
+
+    var body: some View {
+        if store.isAdmin, store.meta.motorControl.armed(key) {
+            let why = store.motorRefusal(key, motor: motor)
+            let busy = store.motorPending != nil && store.motorPendingKey == key
+            let action = motor.running == true ? "off" : "on"
+            VStack(alignment: .leading, spacing: 8) {
+                Button { asking = true } label: {
+                    HStack(spacing: 6) {
+                        if busy { ProgressView().controlSize(.small) }
+                        Text(busy ? (store.motorConfirming ? "Confirming…" : "Sending…") : action == "on" ? "Turn on" : "Turn off")
+                    }
+                    .font(Theme.font(15, .semibold, relativeTo: .body))
+                    .frame(maxWidth: .infinity, minHeight: Theme.hit)
+                    .foregroundStyle(why != nil ? Theme.muted : action == "on" ? Color.white : Theme.bad)
+                    .background(why != nil ? Theme.panel3 : action == "on" ? Theme.brand : Theme.bad.opacity(0.1),
+                                in: RoundedRectangle(cornerRadius: Theme.rSm, style: .continuous))
+                }
+                .buttonStyle(TileButtonStyle())
+                .disabled(why != nil)
+                if let why { Note(text: why, tone: busy ? .plain : .warn) }
+            }
+            .confirmationDialog(MotorControl.question(motor, action: action), isPresented: $asking, titleVisibility: .visible) {
+                Button(action == "on" ? "Turn on" : "Turn off", role: action == "off" ? .destructive : nil) {
+                    Haptics.warn()
+                    Task { await store.switchMotor(key, action: action) }
+                }
+            } message: {
+                Text("SNOF sends it once and waits for the motor to confirm (up to 2½ minutes).")
+            }
+        }
     }
 }
 
@@ -157,6 +199,9 @@ struct MotorCard: View {
     /// The reading says what the motor is doing now (WaterState.isCurrent);
     /// if not, its last state shows in grey, as on Home.
     var current = true
+    /// The motor_command key ("river", or the Niagara slug): shows the switch
+    /// when the motor is armed.
+    var key: String? = nil
     @State private var showDetails = false
 
     private static let headlineKeys: Set<String> = ["Running for", "Off for", "Program", "Zone time left"]
@@ -211,6 +256,7 @@ struct MotorCard: View {
             if !m.trips.isEmpty { Note(text: "Tripped: \(m.trips.joined(separator: ", ")).", tone: .bad) }
             if let z = m.skippedZone { Note(text: "Zone \(z) was skipped: no valve feedback.", tone: .bad) }
             if let e = vendorError, !e.isEmpty { Note(text: "\(e) Showing the last reading.", tone: .warn) }
+            if let key { MotorSwitch(key: key, motor: m) }
             Divider().overlay(Theme.line)
             DisclosureGroup(isExpanded: $showDetails) {
                 factGrid(details).padding(.top, 8)

@@ -94,6 +94,17 @@ Architecture and data shape are in README.md.
   commands (run up to 60 min, stop manual runs) as A8`. `sent` was 0 at
   arming — the owner's first press is the first command this code sends.
   Disarm with `allow_irrigation_control: false` (merge, restart).
+- **Motor control** (added 2026-09-25, owner's request) is a third writable
+  path, `/farms/<slug>/motor_commands`: on/off for the river motor (Livesky)
+  and the other farm's Niagara motors, in the `motor_command` Cloud Function
+  only. Admins only; `meta/motorControl/enabled` **and** the motor's
+  `meta/motorControl/motors/<key>` must be true (service account, off by
+  default); a press older than 30 s (queued offline) is refused; the lock
+  (`meta/motorControl/lock`, taken with the claim) is held until the motor's
+  own report confirms; rate limits (15 s any, 2 min per motor,
+  12/motor/day); a live read before sending; **one send, never retried**; only MOTORON/MOTOROFF and
+  MTRON/MTROF exist in code. Nothing automatic may ever write the queue or
+  name the command endpoints (a test enforces it). docs/motor-control.md.
 - **Unassigned entities do not exist to users** (add-on 0.9.0; since 0.9.2
   the owner's rule is "only devices with assigned rooms" — the entity's
   *device* must be in a room; an entity-level area alone does not count). An

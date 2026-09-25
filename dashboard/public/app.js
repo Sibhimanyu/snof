@@ -120,6 +120,7 @@ function leave() {
   irrWaiters.forEach(({ ref, cb, timer }) => { clearTimeout(timer); ref.off('value', cb); });
   irrWaiters.clear();
   state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, water: {}, acl: {} };
+  motorCmd = null; motorCmdKey = null; motorCmdConfirming = false; clearTimeout(motorCmdTimer);
   lsStep = 'idle'; lsMobile = ''; lsCode = ''; lsError = ''; lsInfo = '';
   canControl = false; isAdmin = false; aclRef = null; currentUser = null; firstSnapshot = false;
   statusFilter = 'all'; domainFilter = null;
@@ -258,6 +259,19 @@ function enter(user) {
   watch('irrigation', 'irrigation');
   watch('water', 'water');
   watch('irrigation_lock', 'irrigationLock');
+  // Motor presses go only over a live connection: a write the SDK queues
+  // offline would reach the farm late (the rules and function refuse it
+  // too, by its press time).
+  {
+    const cRef = db.ref('.info/connected');
+    const cCb = cRef.on('value', (snap) => { dbConnected = snap.val() === true; });
+    refs.push({ ref: cRef, ev: 'value', cb: cCb });
+  }
+  {
+    const mRef = db.ref(`farms/${FARM}/motor_command_results`).limitToLast(10);
+    const mCb = mRef.on('value', (snap) => { settleMotor(snap.val() || {}); render(); }, () => {});
+    refs.push({ ref: mRef, ev: 'value', cb: mCb });
+  }
   {
     const resRef = db.ref(`farms/${FARM}/irrigation_command_results`).limitToLast(10);
     const resCb = resRef.on('value', (snap) => { settleIrrigation(snap.val() || {}); render(); }, () => {});
@@ -2082,6 +2096,97 @@ function stopIrrigation() {
   sendIrrigation({ action: 'stop' });
 }
 
+/* ---- motor control: on and off, confirmed by the motor itself ----
+ * docs/motor-control.md. Admins only, and only for a motor the service
+ * account has armed (meta/motorControl/motors/<key>). A press appends one
+ * command; the motor_command function re-checks everything, reads the motor,
+ * sends once, never retries, and reads the motor until its own report shows
+ * the change. Here the buttons stay closed while any motor change is in
+ * flight (motor_lock), during the per-motor cooldown, and whenever the
+ * reading is not current — nobody switches a motor off a stale picture. */
+let motorCmd = null, motorCmdKey = null, motorCmdConfirming = false, motorCmdTimer = null;
+let dbConnected = true;
+const MOTOR_COOLDOWN_MS = 120000;
+const motorArmed = (key) => isAdmin && state.meta?.motorControl?.enabled === true && state.meta.motorControl.motors?.[key] === true;
+function motorRefusal(key) {
+  const mc = state.meta?.motorControl || {};
+  if (!isAdmin) return 'Only farm admins can switch motors.';
+  if (!motorArmed(key)) return 'Switching this motor is turned off at the farm.';
+  if (motorCmd) return motorCmdConfirming ? 'Sent once. Waiting for the motor to confirm…' : 'Sending…';
+  if ((mc.lock?.until || 0) > serverNow()) return 'The last motor change is still being confirmed.';
+  if (!dbConnected) return 'Offline. Motors are switched only over a live connection.';
+  const last = mc.lastByMotor?.[key];
+  if (last && serverNow() - last < MOTOR_COOLDOWN_MS) {
+    return `This motor changed moments ago. Wait ${Math.ceil((MOTOR_COOLDOWN_MS - (serverNow() - last)) / 1000)}s.`;
+  }
+  return null;
+}
+function motorByKey(key) {
+  const w = state.water || {};
+  return key === 'river' ? w.river : (w.motors || {})[key];
+}
+function confirmMotor(key, action) {
+  const m = motorByKey(key);
+  if (!m) return;
+  const why = motorRefusal(key) || (!waterCurrent(m) ? 'The reading is not current. Refresh before switching a motor.' : '');
+  if (why) { toast('err', why); render(); return; }
+  if (action === 'on' ? m.running !== false : m.running !== true) { toast('err', 'The motor is not in the state that button was for.'); render(); return; }
+  const name = m.name || 'the motor';
+  const what = action === 'off'
+    ? `Stop ${name}?` + (m.vendor === 'livesky' && m.autoStart ? ' Auto-start is on: the starter may start it again when power returns.' : '')
+    : `Start ${name}?` + (m.role === 'drip' || m.program ? ' Its drip program starts with it; the controller picks the zones.'
+      : m.role === 'main-farm' ? ' It sends water to the main farm.' : m.vendor === 'livesky' ? ' It pumps river water to the other farm.' : '');
+  if (!window.confirm(`${what}\n\nSNOF sends it once and waits for the motor to confirm (up to 2½ minutes).`)) return;
+  sendMotor(key, action);
+}
+function sendMotor(key, action) {
+  const why = motorRefusal(key);
+  if (why) { toast('err', why); render(); return; }
+  const ref = firebase.database().ref(`farms/${FARM}/motor_commands`).push();
+  motorCmd = ref.key; motorCmdKey = key; motorCmdConfirming = false;
+  clearTimeout(motorCmdTimer);
+  // Sending plus the function's 150 s of confirmation reads.
+  motorCmdTimer = setTimeout(() => {
+    if (motorCmd !== ref.key) return;
+    motorCmd = null; motorCmdConfirming = false;
+    toast('err', 'No answer about the motor. Check it before trying again.');
+    render();
+  }, 240000);
+  // clientAt: the press, on the server's clock; a write that arrives more
+  // than 30 s later (queued offline) is refused by the rules and the function.
+  ref.set({ motor: key, action, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP, clientAt: serverNow() }, (err) => {
+    if (!err) return;
+    motorCmd = null; clearTimeout(motorCmdTimer);
+    toast('err', err.code === 'PERMISSION_DENIED' ? 'The database refused that (switched off, or a change is in flight).' : `Could not send: ${err.message}`);
+    render();
+  });
+  render();
+}
+function settleMotor(results) {
+  const node = motorCmd && results ? results[motorCmd] : null;
+  if (!node) return;
+  if (node.ok && node.confirming === true) { motorCmdConfirming = true; return; }
+  motorCmd = null; motorCmdConfirming = false; clearTimeout(motorCmdTimer);
+  const name = motorByKey(node.motor)?.name || 'The motor';
+  if (node.ok && node.verified === true) toast('ok', `Confirmed: ${name} is ${node.action === 'on' ? 'running' : 'off'}.`);
+  else if (node.ok) toast('err', 'Sent once, but the motor has not confirmed it. Check it before trying again.');
+  else toast('err', node.message ? `Not sent: ${node.message}` : 'The farm refused that.');
+  requestWater(true);
+}
+/** The on/off control on a motor's card: only for an armed motor. */
+function motorControls(m) {
+  const key = m.key;
+  if (!key || !motorArmed(key)) return '';
+  const busy = motorCmd && motorCmdKey === key;
+  const why = motorRefusal(key) || (!waterCurrent(m) ? 'The reading is not current. Refresh before switching.' : '')
+    || (m.running == null ? "The motor's state is unknown." : '');
+  const action = m.running ? 'off' : 'on';
+  const label = busy ? (motorCmdConfirming ? 'Confirming…' : 'Sending…') : action === 'on' ? 'Turn on' : 'Turn off';
+  return `<div class="now-actions wmotor-actions"><button class="btn ${action === 'on' ? 'btn-primary' : 'btn-danger'}" data-act="motor-cmd"` +
+    ` data-motor="${escapeHtml(key)}" data-action="${action}"${why ? ' disabled' : ''}>${label}</button></div>` +
+    (why ? `<p class="more-note${busy ? '' : ' note-off'}">${escapeHtml(why)}</p>` : '');
+}
+
 /* ---- Refresh: three ordinary report requests ----
  * What the controller is doing now, power and pressure now, and yesterday-
  * and-today's runs. Each is a press, never a poll, so the rules, the kill
@@ -2500,6 +2605,7 @@ function waterMotorCard(m, vendorErr) {
       return `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(main)}</strong>${asOf ? `<em class="as-of">as of ${escapeHtml(asOf)}</em>` : ''}</div>`;
     }).join('')}</div>` : ''}
     ${notes.join('')}
+    ${motorControls(m)}
     <details class="wdetails"><summary>${when ? `Reported ${escapeHtml(agoText(when))}` : 'Details'}</summary>
       <div class="mb-facts">${details.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('')}</div></details>
   </article>`;
@@ -2515,7 +2621,9 @@ function waterView() {
   const gate = waterGate();
   const w = state.water || {};
   const st = state.meta?.water || {};
-  const motors = Object.values(w.motors || {});
+  // Each motor with its key (the function's name for it: "river", or the
+  // slug the water pull gives a Niagara controller).
+  const motors = Object.entries(w.motors || {}).map(([key, m]) => ({ ...m, key }));
   const supply = motors.filter((m) => m.role === 'main-farm');
   const others = motors.filter((m) => m.role !== 'main-farm');
   const liveskyErr = st.livesky && st.livesky.ok === false ? st.livesky.error : '';
@@ -2525,7 +2633,7 @@ function waterView() {
   const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
   // Said once: the account note above the card already carries a session problem.
   const riverBody = w.river
-    ? waterMotorCard(w.river, liveskyErr && livesky.kind === 'ok' ? `${liveskyErr} Showing the last reading.` : '')
+    ? waterMotorCard({ ...w.river, key: 'river' }, liveskyErr && livesky.kind === 'ok' ? `${liveskyErr} Showing the last reading.` : '')
     : emptyBlock('No reading from the river motor', liveskyErr || 'It appears after the first pull.');
   const riverNote = livesky.kind === 'ok' ? ''
     : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`;
@@ -2545,7 +2653,8 @@ function waterView() {
     ? `<details class="acct-sec"${livesky.kind !== 'ok' || lsStep !== 'idle' ? ' open' : ''}><summary>Livesky account</summary>${liveskyPanel()}</details>` : '';
   // When it was read, and that it only reads: the owner asked why these
   // motors cannot be switched from here (2026-09-24).
-  return head('Water', `${w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet'} · read-only`, refresh) +
+  const canSwitch = isAdmin && state.meta?.motorControl?.enabled === true && Object.values(state.meta.motorControl.motors || {}).includes(true);
+  return head('Water', `${w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet'}${canSwitch ? '' : ' · read-only'}`, refresh) +
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
     `<div class="wchain">` +
     waterStage('1', 'River', 'The river motor pumps to the other farm.', riverNote + riverBody) +
@@ -3205,6 +3314,9 @@ function wire(all) {
   });
   view.querySelectorAll('[data-act="irr-builder"]').forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); irrBuilderOpen = !irrBuilderOpen; render(); };
+  });
+  view.querySelectorAll('[data-act="motor-cmd"]').forEach((btn) => {
+    btn.onclick = () => confirmMotor(btn.dataset.motor, btn.dataset.action);
   });
   view.querySelectorAll('[data-act="run-open"]').forEach((btn) => {
     btn.onclick = () => { runOpen = true; runPick = []; render(); };
