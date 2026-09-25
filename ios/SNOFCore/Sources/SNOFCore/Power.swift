@@ -59,7 +59,7 @@ public enum Power {
         // car charging right now (owner, 2026-09-25).
         .init(id: "home", title: "Home & sheds line", phase: "Single phase", short: "1-phase", inverter: .goodwe, brand: "GoodWe", use: "For the house and the sheds"),
         .init(id: "ev", title: "EV charger line", phase: "Three phase", short: "3-phase", inverter: .foxess, brand: "V-Guard", use: "For charging the XEV 9e"),
-        .init(id: "farm", title: "Farm motor line", phase: "Three phase", short: "3-phase", inverter: nil, brand: "", use: "Free agricultural supply, runs the main farm motor"),
+        .init(id: "farm", title: "Farm motor line", phase: "Three phase", short: "3-phase", inverter: nil, brand: "", use: "Free agricultural supply, for the Farm motor"),
     ]
 
     static func m(_ s: String, _ p: String) -> Bool { s.range(of: p, options: .regularExpression) != nil }

@@ -148,10 +148,10 @@ struct FlowHero: View {
                     Station(art: live(w.river) ? "art-motor-on" : "art-motor-off", title: "River",
                             sub: word(w.river, current: w.river.map { w.isCurrent($0, now: store.now) } ?? true), on: live(w.river), age: aged(w.river))
                     Pipe(on: live(w.river)).padding(.top, 28)
-                    Station(art: live(supply) ? "art-motor-on" : "art-motor-off", title: "Other farm",
+                    Station(art: live(supply) ? "art-motor-on" : "art-motor-off", title: "Thoppu",
                             sub: supply.map { "7.5 HP \(word($0, current: w.isCurrent($0, now: store.now)).lowercased())" } ?? "No reading", on: live(supply), age: aged(supply))
                     Pipe(on: live(supply)).padding(.top, 28)
-                    Station(art: "art-kulam", title: "Main farm", sub: say.running ? "Watering" : "Not watering", on: say.running)
+                    Station(art: "art-kulam", title: "Farm", sub: say.running ? "Watering" : "Not watering", on: say.running)
                 }
                 if let drip {
                     HStack(spacing: 8) {

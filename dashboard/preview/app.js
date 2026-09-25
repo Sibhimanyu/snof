@@ -719,7 +719,7 @@ function flowHero() {
   // The pull's age only while every reading drawn is current; otherwise the
   // stale ones carry their own, and "just now" would vouch for them.
   const allCurrent = [w.river, supply].filter(Boolean).every(waterCurrent);
-  return `<section class="panel flow" aria-label="Water from the river to the main farm">
+  return `<section class="panel flow" aria-label="Water from the river through Thoppu to Farm">
     <div class="flow-head"><h2 class="panel-title">Water</h2>
       ${state.meta?.water?.enabled !== true ? '<span class="card-age">readings off</span>'
         : w.pulledAt && allCurrent ? `<span class="card-age">${escapeHtml(agoText(w.pulledAt))}</span>` : ''}
@@ -727,9 +727,9 @@ function flowHero() {
     <div class="flow-row">
       ${node('', motorArt(live(w.river) ? w.river : null), 'River', hasWater ? motorWord(w.river, !w.river || waterCurrent(w.river)) : 'No reading', live(w.river), aged(w.river))}
       ${pipe(live(w.river), '')}
-      ${node('', motorArt(live(supply) ? supply : null), 'Other farm', supply ? `7.5 HP ${motorWord(supply, waterCurrent(supply)).toLowerCase()}` : 'No reading', live(supply), aged(supply))}
+      ${node('', motorArt(live(supply) ? supply : null), 'Thoppu', supply ? `7.5 HP ${motorWord(supply, waterCurrent(supply)).toLowerCase()}` : 'No reading', live(supply), aged(supply))}
       ${pipe(live(supply), '')}
-      ${node('farm', artImg('kulam', 'flow-art'), 'Main farm', s.running ? 'Watering' : 'Not watering', s.running)}
+      ${node('farm', artImg('kulam', 'flow-art'), 'Farm', s.running ? 'Watering' : 'Not watering', s.running)}
     </div>
     ${drips}
   </section>`;
@@ -965,7 +965,7 @@ const POWER_LINES = [
   // charging right now (owner, 2026-09-25).
   { id: 'home', title: 'Home & sheds line', phase: 'Single phase', short: '1-phase', inverter: 'goodwe', brand: 'GoodWe', use: 'For the house and the sheds' },
   { id: 'ev', title: 'EV charger line', phase: 'Three phase', short: '3-phase', inverter: 'foxess', brand: 'V-Guard', use: 'For charging the XEV 9e' },
-  { id: 'farm', title: 'Farm motor line', phase: 'Three phase', short: '3-phase', inverter: null, brand: '', use: 'Free agricultural supply, runs the main farm motor' },
+  { id: 'farm', title: 'Farm motor line', phase: 'Three phase', short: '3-phase', inverter: null, brand: '', use: 'Free agricultural supply, for the Farm motor' },
 ];
 
 /** 'goodwe' | 'foxess' | null, from the entities the integration makes. */
@@ -1169,7 +1169,7 @@ function attentionItems(all, systems) {
   if (ws.enabled === true) {
     if (isAdmin && ['none', 'expired'].includes(liveskyState().kind)) add('warn', 'Livesky sign-in needed', 'the river motor is not being read', '#/water');
     else if (ws.livesky?.ok === false && ws.livesky?.error) add('warn', 'River motor not read', ws.livesky.error, '#/water');
-    if (ws.niagara?.ok === false && ws.niagara?.error) add('warn', 'Other farm not read', ws.niagara.error, '#/water');
+    if (ws.niagara?.ok === false && ws.niagara?.error) add('warn', 'Thoppu not read', ws.niagara.error, '#/water');
     if (w.pulledAt && serverNow() - w.pulledAt > 30 * 60000) add('warn', 'Water readings are old', `last read ${agoText(w.pulledAt)}`, '#/water');
   }
   // Home Assistant systems that should never be offline.
@@ -2304,7 +2304,7 @@ function confirmMotor(key, action) {
   const what = action === 'off'
     ? `Stop ${name}?` + (m.vendor === 'livesky' && m.autoStart ? ' Auto-start is on: the starter may start it again when power returns.' : '')
     : `Start ${name}?` + (m.role === 'drip' || m.program ? ' Its drip program starts with it; the controller picks the zones.'
-      : m.role === 'main-farm' ? ' It sends water to the main farm.' : m.vendor === 'livesky' ? ' It pumps river water to the other farm.' : '');
+      : m.role === 'main-farm' ? ' It sends water to Farm.' : m.vendor === 'livesky' ? ' It pumps river water to Thoppu.' : '');
   if (!window.confirm(`${what}\n\nSNOF sends it once and waits for the motor to confirm (up to 2½ minutes).`)) return;
   sendMotor(key, action);
 }
@@ -2735,8 +2735,8 @@ const hms = (v) => String(v || '').replace(/^00:/, '').replace(/^0(\d:)/, '$1');
 const joinNums = (list, unit) => (Array.isArray(list) && list.length ? `${list.join(' · ')} ${unit}` : '');
 
 const WATER_ROLE = {
-  'main-farm': 'For the main farm\'s water',
-  drip: "For this farm's own drip zones",
+  'main-farm': 'For water to Farm',
+  drip: "For Thoppu's own drip zones",
 };
 
 /** current: false for a reading that no longer says what the motor is
@@ -2833,14 +2833,14 @@ function dconTile() {
   const d = (state.irrigation || {}).dcon || {};
   const s = irrNowState();
   return { key: DCON_KEY, name: d.device || 'Mobitech DCON', vendor: 'mobitech', running: s.running,
-    sub: 'Mobitech · main farm valves', word: s.running ? 'Watering' : 'Not watering', age: irrChecked() };
+    sub: 'Mobitech · Farm valves', word: s.running ? 'Watering' : 'Not watering', age: irrChecked() };
 }
 function motorTile(m) {
   const isDcon = m.key === DCON_KEY;
   const current = isDcon || waterCurrent(m);
   const on = m.running === true && current;
   const sub = isDcon ? m.sub : [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
-  const word = isDcon ? m.word : motorWord(m);
+  const word = isDcon ? m.word : motorWord(m, current);
   const age = isDcon ? m.age : current ? '' : waterAge(m);
   return `<a class="panel mtile${on ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(m.key)}">
     <img class="mtile-art" src="/art/${on ? 'motor-on' : 'motor-off'}.png" alt="" width="48" height="48">

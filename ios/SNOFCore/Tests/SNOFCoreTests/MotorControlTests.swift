@@ -52,7 +52,7 @@ import Foundation
         var drip = WaterMotor(id: "well-motor", name: "Well motor", vendor: "niagara"); drip.role = "drip"
         #expect(MotorControl.question(drip, action: "on").contains("drip program starts with it"))
         var main = WaterMotor(id: "wellmotor75hp", name: "Wellmotor75HP", vendor: "niagara"); main.role = "main-farm"
-        #expect(MotorControl.question(main, action: "on") == "Start Wellmotor75HP? It sends water to the main farm.")
+        #expect(MotorControl.question(main, action: "on") == "Start Wellmotor75HP? It sends water to Farm.")
     }
 
     @Test func zoneChangesNeedTheirOwnSwitchAndARunningProgram() {

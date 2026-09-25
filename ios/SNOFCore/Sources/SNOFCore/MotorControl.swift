@@ -83,8 +83,8 @@ public struct MotorControl: Hashable, Sendable {
                 ? " Auto-start is on: the starter may start it again when power returns." : "")
         }
         let why = m.role == "drip" || m.program != nil ? " Its drip program starts with it; the controller picks the zones."
-            : m.role == "main-farm" ? " It sends water to the main farm."
-            : m.vendor == "livesky" ? " It pumps river water to the other farm." : ""
+            : m.role == "main-farm" ? " It sends water to Farm."
+            : m.vendor == "livesky" ? " It pumps river water to Thoppu." : ""
         return "Start \(m.name)?" + why
     }
 }
