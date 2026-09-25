@@ -199,7 +199,7 @@ def test_real_change_still_produces_a_new_node():
 # ---------------------------------------------------------------- commands
 
 CTL_CFG = types.SimpleNamespace(
-    control_domains=frozenset({"switch", "light", "fan"}),
+    control_domains=frozenset({"switch", "light", "fan", "climate"}),
     control_max_age_seconds=120.0,
     root="farms/snof",
     allow_control=True,
@@ -254,6 +254,49 @@ def test_command_refuses_dangerous_shapes():
     }
     for why, payload in bad.items():
         assert consumer().validate("x", payload) is None, f"accepted a command that is {why}"
+
+
+def _ac(service, data=None):
+    return cmd(entity_id="climate.guest_ac", domain="climate", service=service, data=data or {})
+
+
+def test_ac_commands_the_app_sends():
+    """The ACs (2026-09-25): power, temperature, mode, fan speed, preset."""
+    c = consumer()
+    assert c.validate("a", _ac("turn_on")) == ("climate", "turn_on", {})
+    assert c.validate("a", _ac("turn_off")) == ("climate", "turn_off", {})
+    assert c.validate("a", _ac("set_temperature", {"temperature": 24})) == ("climate", "set_temperature", {"temperature": 24})
+    assert c.validate("a", _ac("set_hvac_mode", {"hvac_mode": "dry"})) == ("climate", "set_hvac_mode", {"hvac_mode": "dry"})
+    assert c.validate("a", _ac("set_fan_mode", {"fan_mode": "turbo"})) == ("climate", "set_fan_mode", {"fan_mode": "turbo"})
+    assert c.validate("a", _ac("set_preset_mode", {"preset_mode": "wind_free"})) == ("climate", "set_preset_mode", {"preset_mode": "wind_free"})
+
+
+def test_ac_commands_refused():
+    bad = {
+        "temperature too hot": _ac("set_temperature", {"temperature": 60}),
+        "temperature as a word": _ac("set_temperature", {"temperature": "24"}),
+        "temperature as a boolean": _ac("set_temperature", {"temperature": True}),
+        "set_temperature with no temperature": _ac("set_temperature"),
+        "set_temperature smuggling a mode": _ac("set_temperature", {"temperature": 24, "hvac_mode": "heat"}),
+        "an hvac mode Home Assistant does not have": _ac("set_hvac_mode", {"hvac_mode": "eco"}),
+        "an hvac mode as a number": _ac("set_hvac_mode", {"hvac_mode": 3}),
+        "a fan mode that is not a token": _ac("set_fan_mode", {"fan_mode": "high; rm -rf"}),
+        "a fan mode on the wrong service": _ac("set_preset_mode", {"fan_mode": "low"}),
+        "turn_on with data": _ac("turn_on", {"temperature": 24}),
+        "a service ACs are not given": _ac("set_humidity", {"humidity": 40}),
+        "toggle, which ACs are not given": _ac("toggle"),
+        "brightness on an AC": _ac("turn_on", {"brightness": 100}),
+        "a temperature on a switch": cmd(data={"temperature": 24}),
+        "percentage on a light": cmd(entity_id="light.a", domain="light", service="turn_on", data={"percentage": 50}),
+    }
+    for why, payload in bad.items():
+        assert consumer().validate("x", payload) is None, f"accepted an AC command with {why}"
+
+
+def test_ac_commands_need_climate_enabled():
+    cfg = types.SimpleNamespace(**{**vars(CTL_CFG), "control_domains": frozenset({"switch"})})
+    c = CommandConsumer(cfg, None, lambda: None, None, is_visible=lambda eid: True)
+    assert c.validate("x", _ac("turn_on")) is None
 
 
 def test_command_booleans_are_not_numbers():

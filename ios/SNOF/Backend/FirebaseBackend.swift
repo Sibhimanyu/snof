@@ -185,7 +185,7 @@ final class FirebaseBackend: FarmBackend {
             "uid": uid,
             "at": ServerValue.timestamp(),
         ]
-        if !command.dataPayload.isEmpty { node["data"] = command.dataPayload }
+        if !command.dataJSON.isEmpty { node["data"] = command.dataJSON }
         try await push("farms/\(Farm.slug)/commands", node)
     }
 

@@ -510,8 +510,9 @@ struct SystemView: View {
                 }
                 if ![.security, .solar, .switches].contains(id) {
                     ForEach(sys.devices.filter { !$0.isOffline }.sorted { Sorting.natural($0.name, $1.name) }) { d in
+                        // An AC's own card leads its panel, then its readings.
                         let rows = d.entities.filter { !$0.isBad && !$0.isControllable && !$0.isBackstage }
-                            .sorted { Sorting.natural($0.name, $1.name) }
+                            .sorted { $0.isAC != $1.isAC ? $0.isAC : Sorting.natural($0.name, $1.name) }
                         TitledPanel(title: d.name) {
                             if rows.isEmpty {
                                 Text(store.areaName(d.area)).font(Theme.meta).foregroundStyle(Theme.muted).padding(14)
@@ -522,12 +523,11 @@ struct SystemView: View {
                     }
                 }
                 // Per device, as on a room page: a fan on the switches page is
-                // switched off, not offline.
-                let off = id == .security ? [] : sys.devices.filter(\.isOffline)
-                let offFault = off.filter { Systems.offlineIsFault($0, system: id) }
-                let offRest = off.filter { !Systems.offlineIsFault($0, system: id) }
-                if !offFault.isEmpty { Note(text: "Offline: " + offFault.map(\.name).joined(separator: ", "), tone: .warn) }
-                if !offRest.isEmpty { Note(text: "Switched off: " + offRest.map(\.name).joined(separator: ", ")) }
+                // switched off, not offline. Both drawn faded, last.
+                if ![.security, .solar].contains(id) {
+                    OffPanels(devices: sys.devices.filter(\.isOffline).sorted { Sorting.natural($0.name, $1.name) },
+                              isFault: { Systems.offlineIsFault($0, system: id) })
+                }
             } else {
                 EmptyBlock(title: "Nothing here", message: "This part of the farm has no devices right now.")
             }
@@ -742,6 +742,49 @@ struct PumpPowerCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .panel(padding: 18)
+        }
+    }
+}
+
+/// A device that is off (or offline) drawn like the others, faded and with
+/// nothing to press, after them (owner, 2026-09-25). Its readings would all
+/// say "unavailable", so it shows what it is: its main controls, disabled.
+/// Mirrors offPanels() in app.js.
+struct OffPanels: View {
+    let devices: [DeviceGroup]
+    let isFault: (DeviceGroup) -> Bool
+
+    private static let primary: Set<String> = ["climate", "media_player", "fan", "light", "switch", "input_boolean", "remote"]
+
+    var body: some View {
+        ForEach(devices) { d in
+            // An AC or TV is its AC or TV: its display-light and sound
+            // switches are settings, not what the device is.
+            let own = d.entities.filter { $0.isAC || $0.domain == "media_player" }
+            let main = Array((own.isEmpty ? d.entities.filter { Self.primary.contains($0.domain) } : own)
+                .sorted { Sorting.natural($0.name, $1.name) }.prefix(4))
+                // A TV whose one reading is itself, "unavailable", is its heading alone.
+                .filter { $0.isAC || $0.isControllable || $0.name != d.name }
+            let fault = isFault(d)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text(d.name).font(Theme.panelTitle).tracking(-0.4).foregroundStyle(Theme.text).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Tag(text: fault ? "Offline" : "Switched off", kind: fault ? .bad : .plain)
+                }
+                .padding(.horizontal, 18).frame(minHeight: 56)
+                if !main.isEmpty {
+                    Rectangle().fill(Theme.line.opacity(0.6)).frame(height: 1)
+                    RowList(items: main, framed: false) { e in
+                        if e.isControllable { DeviceCard(entity: e, showArea: false) } else { DeviceRow(entity: e, device: d.name) }
+                    }
+                }
+            }
+            .card()
+            .opacity(0.5).saturation(0.4)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(fault ? "Offline" : "Switched off")
         }
     }
 }

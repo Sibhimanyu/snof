@@ -26,15 +26,18 @@
             "entity_id": {
               ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().matches(/^[a-z_]+[.][a-z0-9_]+$/)"
             },
-            // Only these four domains, and the domain must be the one the
-            // entity_id names. cover, lock and alarm_control_panel are absent
-            // on purpose - operating a gate or a door lock from a browser tab
-            // is a separate decision, not a config tweak.
+            // Only these five domains, and the domain must be the one the
+            // entity_id names. climate is the ACs (owner, 2026-09-25). cover,
+            // lock and alarm_control_panel are absent on purpose - operating a
+            // gate or a door lock from a browser tab is a separate decision,
+            // not a config tweak.
             "domain": {
-              ".validate": "newData.isString() && newData.val().matches(/^(switch|light|fan|input_boolean)$/) && newData.parent().child('entity_id').val().beginsWith(newData.val() + '.')"
+              ".validate": "newData.isString() && newData.val().matches(/^(switch|light|fan|input_boolean|climate)$/) && newData.parent().child('entity_id').val().beginsWith(newData.val() + '.')"
             },
+            // The set_* AC services only for climate; the bridge also holds
+            // each to its one value.
             "service": {
-              ".validate": "newData.isString() && newData.val().matches(/^(turn_on|turn_off|toggle|set_percentage)$/)"
+              ".validate": "newData.isString() && (newData.val().matches(/^(turn_on|turn_off|toggle|set_percentage)$/) || (newData.val().matches(/^set_(temperature|hvac_mode|fan_mode|preset_mode)$/) && newData.parent().child('domain').val() === 'climate'))"
             },
             "uid": {
               ".validate": "newData.val() === auth.uid"
@@ -47,6 +50,12 @@
             "data": {
               "brightness": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 255" },
               "percentage": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+              // The ACs: °C, Home Assistant's own modes, and the AC's fan and
+              // preset names (Home Assistant refuses one the AC lacks).
+              "temperature": { ".validate": "newData.isNumber() && newData.val() >= 10 && newData.val() <= 35" },
+              "hvac_mode": { ".validate": "newData.isString() && newData.val().matches(/^(off|heat|cool|heat_cool|auto|dry|fan_only)$/)" },
+              "fan_mode": { ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9_]{1,32}$/)" },
+              "preset_mode": { ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9_]{1,32}$/)" },
               "$other": { ".validate": false }
             },
             "$other": { ".validate": false }

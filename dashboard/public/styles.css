@@ -428,7 +428,7 @@ a.att-sub:hover{color:var(--text)}
 .panel .dev-list,.panel .list{border:0;border-radius:0;background:transparent;box-shadow:none}
 /* Separators are inset to where the text starts, as in an iOS list. */
 .dev-card{position:relative;display:flex;flex-direction:column;gap:4px;padding:8px 22px;break-inside:avoid}
-.dev-card + .dev-card::before,.row + .row::before{content:"";position:absolute;top:0;right:0;height:1px;
+.dev-card + .dev-card::before,.row + .row::before,.ac + .row::before,.row + .ac::before,.ac + .ac::before{content:"";position:absolute;top:0;right:0;height:1px;
   left:var(--sep-inset,22px);background:var(--line-soft);pointer-events:none}
 .dev-top{display:flex;align-items:center;gap:14px;min-height:44px}
 .dev-text{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
@@ -552,6 +552,30 @@ input[type=range][disabled]{opacity:.42}
 .seg button[aria-pressed="true"]{background:var(--seg-thumb);color:var(--text);box-shadow:var(--seg-shadow)}
 .seg .n{margin-left:4px;color:var(--faint);font-variant-numeric:tabular-nums}
 .seg button[aria-pressed="true"] .n{color:var(--muted)}
+/* An AC (2026-09-25): power, the set temperature between − and +, then its
+   mode, fan and preset as segmented rows that scroll when they do not fit. */
+.ac{position:relative;display:flex;flex-direction:column;gap:12px;padding:8px 22px 18px;break-inside:avoid}
+.ac-temp{display:flex;align-items:center;justify-content:center;gap:28px;padding:4px 0}
+.ac-step{width:52px;height:52px;border-radius:50%;background:var(--panel-2);color:var(--text);
+  font-size:26px;font-weight:500;line-height:1;display:grid;place-items:center}
+.ac-step:active{transform:scale(.94)}
+.ac-step[disabled]{opacity:.4}
+.ac-set{display:flex;align-items:baseline;gap:3px;min-width:96px;justify-content:center}
+.ac-set b{font-size:44px;font-weight:750;letter-spacing:-.05em;line-height:1;font-variant-numeric:tabular-nums;color:var(--ink,var(--text))}
+.ac-set small{font-size:15px;font-weight:650;color:var(--faint)}
+.ac.is-on .ac-set b{color:var(--accent)}
+.ac-line{display:flex;flex-direction:column;align-items:stretch;gap:6px;min-width:0}
+.ac-seg{display:flex}
+.ac-seg button{flex:1 1 0;min-width:0;padding:7px 2px;text-align:center;justify-content:center;overflow:hidden;text-overflow:ellipsis}
+.ac-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ac-chips button{padding:7px 13px;min-height:36px;border-radius:999px;font-size:13px;font-weight:650;
+  color:var(--muted);background:var(--seg-track)}
+.ac-chips button[aria-pressed="true"]{background:var(--brand);color:#fff}
+.seg button[disabled]{cursor:default}
+/* Off or offline: drawn like the rest, faded, nothing to press. */
+.is-faded{opacity:.5;filter:saturate(.4)}
+.is-faded :is(button,input,a){pointer-events:none}
+.is-faded .panel-head .tag{margin-left:auto}
 .toolbar-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
 
 .more-note{font-size:13px;color:var(--muted);margin:0 0 14px}

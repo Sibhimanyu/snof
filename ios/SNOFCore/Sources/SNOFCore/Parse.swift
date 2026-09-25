@@ -37,6 +37,9 @@ public enum Parse {
         return []
     }
 
+    /// A list of plain strings (an AC's modes); anything else in it is dropped.
+    public static func strings(_ v: Any?) -> [String] { list(v).compactMap { $0 as? String } }
+
     /// A row of display strings. Nested values are dropped: rows are flat by contract.
     public static func row(_ v: Any?) -> ReportRow? {
         guard let d = v as? [String: Any] else { return nil }
@@ -108,6 +111,23 @@ public enum Parse {
             for (objectId, node) in objs {
                 guard let n = node as? [String: Any] else { continue }
                 let a = n["attrs"] as? [String: Any] ?? [:]
+                var attrs = Attrs(unit: string(a["unit_of_measurement"]),
+                                  deviceClass: string(a["device_class"]),
+                                  batteryLevel: double(a["battery_level"]),
+                                  brightness: double(a["brightness"]),
+                                  percentage: double(a["percentage"]))
+                if domain == "climate" {
+                    attrs.temperature = double(a["temperature"])
+                    attrs.currentTemperature = double(a["current_temperature"])
+                    attrs.minTemp = double(a["min_temp"])
+                    attrs.maxTemp = double(a["max_temp"])
+                    attrs.tempStep = double(a["target_temp_step"])
+                    attrs.hvacModes = strings(a["hvac_modes"])
+                    attrs.fanModes = strings(a["fan_modes"])
+                    attrs.presetModes = strings(a["preset_modes"])
+                    attrs.fanMode = string(a["fan_mode"])
+                    attrs.presetMode = string(a["preset_mode"])
+                }
                 out.append(Entity(
                     domain: domain, objectId: objectId,
                     entityId: string(n["entity_id"]),
@@ -115,11 +135,7 @@ public enum Parse {
                     state: string(n["state"]),
                     area: string(n["area"]),
                     device: string(n["device"]),
-                    attrs: Attrs(unit: string(a["unit_of_measurement"]),
-                                 deviceClass: string(a["device_class"]),
-                                 batteryLevel: double(a["battery_level"]),
-                                 brightness: double(a["brightness"]),
-                                 percentage: double(a["percentage"])),
+                    attrs: attrs,
                     lastChanged: string(n["lastChanged"])))
             }
         }

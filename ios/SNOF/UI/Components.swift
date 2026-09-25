@@ -513,6 +513,10 @@ struct DeviceRow: View {
     var device: String? = nil
 
     var body: some View {
+        if entity.isAC { ACCard(entity: entity, bare: device != nil) } else { row }
+    }
+
+    private var row: some View {
         HStack(spacing: 12) {
             DeviceIcon(domain: entity.domain, tone: entity.tone, size: 30)
             VStack(alignment: .leading, spacing: 2) {
@@ -612,6 +616,112 @@ struct UpdateBanner: View {
             }
             .buttonStyle(.plain)
             .panel(padding: 12)
+        }
+    }
+}
+
+
+/* ---- the ACs (owner, 2026-09-25: "change temperature, on off and
+ * everything") ---- Power, the set temperature between − and +, then mode,
+ * fan and preset from what the AC itself offers. Viewers see the same card
+ * with nothing to press. Mirrors acCard() in app.js. */
+
+struct ACCard: View {
+    @Environment(FarmStore.self) private var store
+    let entity: Entity
+    /// Under a heading that already names it: the name goes.
+    var bare = false
+
+    static let hvacWord = ["auto": "Auto", "cool": "Cool", "dry": "Dry", "fan_only": "Fan", "heat": "Heat", "heat_cool": "Heat & cool"]
+    static let presetWord = ["none": "Normal", "wind_free": "Wind-free", "wind_free_sleep": "Wind-free sleep", "dry_comfort": "Dry comfort"]
+    /// 27 -> "27", 26.5 -> "26.5".
+    static func num(_ d: Double) -> String {
+        d.rounded() == d ? String(Int(d)) : String(format: "%.1f", d)
+    }
+    static func word(_ v: String, _ words: [String: String]) -> String {
+        words[v] ?? v.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var body: some View {
+        let a = entity.attrs, v = store.acView(entity), bad = entity.isBad
+        let can = store.canOperateAC(entity)
+        let lo = a.minTemp ?? 16, hi = a.maxTemp ?? 30
+        let status = bad ? "" : !v.on ? "Off"
+            : Self.word(v.mode ?? "", Self.hvacWord) + (a.currentTemperature.map { " · \(ACCard.num($0))° in the room" } ?? "")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(bare ? (status.isEmpty ? "Power" : status) : entity.name)
+                        .font(Theme.font(14.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.text)
+                    if !bare { Text(status.isEmpty ? "Switched off" : status).font(Theme.meta).foregroundStyle(Theme.muted) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if store.canControl {
+                    Toggle(entity.name, isOn: Binding(get: { v.on }, set: { want in
+                        Haptics.toggle(on: want); store.acPower(entity)
+                    }))
+                    .labelsHidden().tint(Theme.brand).disabled(!can)
+                }
+            }
+            .frame(minHeight: Theme.hit)
+            HStack(spacing: 28) {
+                stepButton("minus", label: "Cooler", enabled: can && (v.temperature ?? lo) > lo) { store.acStep(entity, -1) }
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(v.temperature.map { ACCard.num($0) } ?? "—")
+                        .font(Theme.font(44, .bold, relativeTo: .largeTitle).monospacedDigit()).tracking(-2)
+                        .foregroundStyle(v.on && !bad ? Theme.on : Theme.text)
+                        .contentTransition(.numericText())
+                    Text("°C").font(Theme.font(15, .semibold, relativeTo: .headline)).foregroundStyle(Theme.faint)
+                }
+                .frame(minWidth: 96)
+                stepButton("plus", label: "Warmer", enabled: can && (v.temperature ?? hi) < hi) { store.acStep(entity, 1) }
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.snappy, value: v.temperature)
+            let modes = a.hvacModes.filter { $0 != "off" }
+            if !modes.isEmpty { segment("Mode", field: "hvac_mode", options: modes, current: v.on ? v.mode : nil, words: Self.hvacWord, can: can) }
+            if !a.fanModes.isEmpty { segment("Fan", field: "fan_mode", options: a.fanModes, current: v.on ? v.fan : nil, words: [:], can: can) }
+            if a.presetModes.count > 1 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Preset").font(Theme.small).foregroundStyle(Theme.faint)
+                    FlowRow(spacing: 6) {
+                        ForEach(a.presetModes, id: \.self) { p in
+                            let on = v.on && !bad && v.preset == p
+                            Button { Haptics.select(); store.acSet(entity, field: "preset_mode", value: p) } label: {
+                                Text(Self.word(p, Self.presetWord)).font(Theme.font(13, .semibold, relativeTo: .footnote))
+                                    .foregroundStyle(on ? .white : Theme.muted)
+                                    .padding(.horizontal, 13).frame(minHeight: 36)
+                                    .background(on ? Theme.brand : Theme.panel2, in: Capsule())
+                            }
+                            .buttonStyle(.plain).disabled(!can)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func stepButton(_ symbol: String, label: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button { Haptics.tick(); action() } label: {
+            Image(systemName: symbol).font(.system(size: 20, weight: .semibold)).foregroundStyle(Theme.text)
+                .frame(width: 52, height: 52).background(Theme.panel2, in: Circle())
+        }
+        .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.4)
+        .accessibilityLabel(label)
+    }
+
+    private func segment(_ title: String, field: String, options: [String], current: String?,
+                         words: [String: String], can: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(Theme.small).foregroundStyle(Theme.faint)
+            Picker(title, selection: Binding(get: { current ?? "" }, set: { value in
+                Haptics.select(); store.acSet(entity, field: field, value: value)
+            })) {
+                ForEach(options, id: \.self) { Text(Self.word($0, words)).tag($0) }
+            }
+            .pickerStyle(.segmented).disabled(!can)
         }
     }
 }

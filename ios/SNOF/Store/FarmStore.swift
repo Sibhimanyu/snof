@@ -78,6 +78,10 @@ final class FarmStore {
     /// entity key -> the position it was asked to take.
     private(set) var pending: [String: String] = [:]
     private var pendingTasks: [String: Task<Void, Never>] = [:]
+    /// An AC's changes, shown at once and held until it reports them.
+    private(set) var acWants: [String: ACWant] = [:]
+    private var acTasks: [String: Task<Void, Never>] = [:]
+    private var acTempTasks: [String: Task<Void, Never>] = [:]
 
     /// irrigation_requests keys still waiting for a report.
     private(set) var waitingReports: Set<String> = []
@@ -349,6 +353,7 @@ final class FarmStore {
                 // Purged by the timeout below; it has already said so.
             } catch {
                 clearPending(key)
+                clearAC(key)
                 show(.err, (error as? BackendError) == .refused
                      ? "The database refused that command." : "Could not send: \(error.localizedDescription)")
             }
@@ -382,6 +387,96 @@ final class FarmStore {
         for (key, want) in pending {
             if let e = index[key], (want == "on") == e.isOn { clearPending(key) }
         }
+        for (key, w) in acWants {
+            guard let e = index[key] else { continue }
+            var left = w
+            if let p = w.power, p == e.acOn { left.power = nil }
+            if let m = w.hvacMode, m == e.state { left.hvacMode = nil }
+            if let t = w.temperature, t == e.attrs.temperature { left.temperature = nil }
+            if let f = w.fanMode, f == e.attrs.fanMode { left.fanMode = nil }
+            if let p = w.presetMode, p == e.attrs.presetMode { left.presetMode = nil }
+            if left.isEmpty { clearAC(key) } else if left != w { acWants[key] = left }
+        }
+    }
+
+    /* ---- the ACs (owner, 2026-09-25: "change temperature, on off and
+     * everything") ---- Mirrors onAc() in app.js. */
+
+    /// What an AC card shows: the pending value if any, else what it reports.
+    func acView(_ e: Entity) -> ACView {
+        let w = acWants[e.key] ?? ACWant()
+        return ACView(on: w.power ?? e.acOn,
+                      mode: w.hvacMode ?? (e.acOn ? e.state : nil),
+                      temperature: w.temperature ?? e.attrs.temperature,
+                      fan: w.fanMode ?? e.attrs.fanMode,
+                      preset: w.presetMode ?? e.attrs.presetMode,
+                      busy: acWants[e.key] != nil)
+    }
+
+    func canOperateAC(_ e: Entity) -> Bool { canControl && e.isAC && !e.isBad && gate(.control).ok }
+
+    func acPower(_ e: Entity) {
+        if let why = refusal(for: e) { show(.err, why); return }
+        let want = !acView(e).on
+        guard let cmd = Command.acPower(e, on: want) else { return }
+        holdAC(e.key) { $0.power = want }
+        dispatch(cmd, key: e.key)
+    }
+
+    /// One step warmer (+1) or cooler (−1). Taps settle for a moment, so
+    /// 27 → 24 is one command, not three.
+    func acStep(_ e: Entity, _ dir: Int) {
+        if let why = refusal(for: e) { show(.err, why); return }
+        let a = e.attrs
+        let step = a.tempStep ?? 1, lo = a.minTemp ?? 16, hi = a.maxTemp ?? 30
+        let now = acView(e).temperature ?? ((lo + hi) / 2).rounded()
+        let next = min(hi, max(lo, ((now + Double(dir) * step) / step).rounded() * step))
+        guard next != now, Command.acTemperature(e, next) != nil else { return }
+        holdAC(e.key) { $0.temperature = next }
+        acTempTasks[e.key]?.cancel()
+        acTempTasks[e.key] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard let self, !Task.isCancelled, let t = self.acWants[e.key]?.temperature,
+                  let cmd = Command.acTemperature(e, t) else { return }
+            self.acTempTasks[e.key] = nil
+            self.dispatch(cmd, key: e.key)
+        }
+    }
+
+    /// field: "hvac_mode", "fan_mode" or "preset_mode".
+    func acSet(_ e: Entity, field: String, value: String) {
+        if let why = refusal(for: e) { show(.err, why); return }
+        guard let cmd = Command.acMode(e, field: field, value: value) else { return }
+        let wasOff = !acView(e).on
+        holdAC(e.key) { w in
+            switch field {
+            case "hvac_mode": w.hvacMode = value
+                // Picking a mode on an AC that is off turns it on: Home Assistant does.
+                if wasOff { w.power = true }
+            case "fan_mode": w.fanMode = value
+            default: w.presetMode = value
+            }
+        }
+        dispatch(cmd, key: e.key)
+    }
+
+    private func holdAC(_ key: String, _ change: (inout ACWant) -> Void) {
+        var w = acWants[key] ?? ACWant()
+        change(&w)
+        acWants[key] = w
+        acTasks[key]?.cancel()
+        acTasks[key] = Task { [weak self] in
+            try? await Task.sleep(for: Farm.commandTimeout)
+            guard let self, !Task.isCancelled, self.acWants[key] != nil else { return }
+            self.clearAC(key)
+            self.backend.cancelUnsentWrites()
+            self.show(.err, "No response from the farm — the control was reset.")
+        }
+    }
+
+    private func clearAC(_ key: String) {
+        acTasks[key]?.cancel(); acTasks[key] = nil
+        acWants[key] = nil
     }
 
     /* ---- irrigation ---- */
@@ -926,4 +1021,23 @@ extension BackendError: Equatable {
     static func == (a: BackendError, b: BackendError) -> Bool {
         a.localizedDescription == b.localizedDescription
     }
+}
+
+/// An AC's requested changes; nil fields are not waiting on anything.
+struct ACWant: Equatable {
+    var power: Bool?
+    var hvacMode: String?
+    var temperature: Double?
+    var fanMode: String?
+    var presetMode: String?
+    var isEmpty: Bool { power == nil && hvacMode == nil && temperature == nil && fanMode == nil && presetMode == nil }
+}
+
+struct ACView: Equatable {
+    var on: Bool
+    var mode: String?
+    var temperature: Double?
+    var fan: String?
+    var preset: String?
+    var busy: Bool
 }

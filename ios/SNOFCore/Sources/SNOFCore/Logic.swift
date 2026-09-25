@@ -35,6 +35,10 @@ extension Entity {
         return Farm.badStates.contains(s)
     }
     public var isControllable: Bool { Farm.controllable.contains(domain) }
+    /// An AC. Its state is its mode ("cool", "dry", "off"), not on/off.
+    public var isAC: Bool { domain == "climate" }
+    /// An AC that is running: reporting, and not off.
+    public var acOn: Bool { isAC && !isBad && state != "off" }
 
     public var tone: StateTone {
         if isBad { return .unavailable }
@@ -183,8 +187,9 @@ public enum Sorting {
         return Dictionary(grouping: ents, by: \.domain)
             .map { (domain: $0.key, entities: $0.value.sorted(by: byName)) }
             .sorted { a, b in
-                let ca = Farm.controllable.contains(a.domain) ? 0 : 1
-                let cb = Farm.controllable.contains(b.domain) ? 0 : 1
+                // Operable first, the ACs with them (mirrors areaView in app.js).
+                let ca = Farm.controllable.contains(a.domain) || a.domain == "climate" ? 0 : 1
+                let cb = Farm.controllable.contains(b.domain) || b.domain == "climate" ? 0 : 1
                 if ca != cb { return ca < cb }
                 return (rank(a.domain), a.domain) < (rank(b.domain), b.domain)
             }
@@ -310,8 +315,51 @@ public struct Command: Equatable, Sendable {
     public let service: String
     public let brightness: Int?
     public let percentage: Int?
+    /// An AC's set temperature, °C.
+    public let temperature: Double?
+    /// An AC's hvac_mode, fan_mode or preset_mode: one key at most.
+    public let words: [String: String]
+
+    init(entityId: String, domain: String, service: String, brightness: Int? = nil, percentage: Int? = nil,
+         temperature: Double? = nil, words: [String: String] = [:]) {
+        self.entityId = entityId; self.domain = domain; self.service = service
+        self.brightness = brightness; self.percentage = percentage
+        self.temperature = temperature; self.words = words
+    }
 
     static let services: Set<String> = ["turn_on", "turn_off", "toggle", "set_percentage"]
+
+    /// Home Assistant's own modes; fan and preset names are the AC's, held to
+    /// a plain token. The same fences as the RTDB rules and commands.py.
+    static let hvacModes: Set<String> = ["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"]
+    static func isToken(_ s: String) -> Bool { s.range(of: #"^[a-z0-9_]{1,32}$"#, options: .regularExpression) != nil }
+
+    /// An AC's power (owner, 2026-09-25).
+    public static func acPower(_ e: Entity, on: Bool) -> Command? {
+        guard e.isAC, valid(e) else { return nil }
+        return Command(entityId: e.entityId, domain: e.domain, service: on ? "turn_on" : "turn_off")
+    }
+
+    public static func acTemperature(_ e: Entity, _ t: Double) -> Command? {
+        guard e.isAC, valid(e), t >= 10, t <= 35 else { return nil }
+        return Command(entityId: e.entityId, domain: e.domain, service: "set_temperature", temperature: t)
+    }
+
+    /// field: "hvac_mode", "fan_mode" or "preset_mode".
+    public static func acMode(_ e: Entity, field: String, value: String) -> Command? {
+        guard e.isAC, valid(e) else { return nil }
+        switch field {
+        case "hvac_mode": guard hvacModes.contains(value) else { return nil }
+        case "fan_mode", "preset_mode": guard isToken(value) else { return nil }
+        default: return nil
+        }
+        return Command(entityId: e.entityId, domain: e.domain, service: "set_\(field)", words: [field: value])
+    }
+
+    static func valid(_ e: Entity) -> Bool {
+        e.entityId.hasPrefix(e.domain + ".") && e.entityId.count <= 128 &&
+            e.entityId.range(of: #"^[a-z_]+\.[a-z0-9_]+$"#, options: .regularExpression) != nil
+    }
 
     /// The only commands this app will ever build. RTDB rules and
     /// bridge/commands.py re-check all of this; this is the first of three
@@ -345,6 +393,14 @@ public struct Command: Equatable, Sendable {
         var d: [String: Int] = [:]
         if let brightness { d["brightness"] = brightness }
         if let percentage { d["percentage"] = percentage }
+        return d
+    }
+
+    /// Everything under `data`, numbers and words alike, as the backend writes it.
+    public var dataJSON: [String: Any] {
+        var d: [String: Any] = dataPayload
+        if let temperature { d["temperature"] = temperature }
+        for (k, v) in words { d[k] = v }
         return d
     }
 }

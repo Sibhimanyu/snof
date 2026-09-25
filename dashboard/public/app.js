@@ -477,6 +477,90 @@ function onLevel(ent, pct) {
   else sendCommand(ent, 'turn_on', { brightness: Math.round((pct / 100) * 255) });
 }
 
+/* ---- the ACs (owner, 2026-09-25: "change temperature, on off and
+ * everything") ----
+ * Power, target temperature, mode, fan speed and preset: the climate services
+ * the rules and the bridge allow, each carrying its one value. Every change
+ * shows at once and is held until the AC reports it, like a toggle; past
+ * CMD_TIMEOUT_MS the control returns to truth and says so. */
+const acOn = (e) => !isBad(e) && e.state !== 'off';
+const acWants = new Map();          // key -> { field: value, ..., timer }
+const acTempTimers = new Map();     // key -> timeout: taps on +/- settle first
+
+/** What an AC control shows: the pending value if any, else what it reports. */
+function acView(e) {
+  const a = e.attrs || {}, w = acWants.get(e.key) || {};
+  return {
+    on: 'power' in w ? w.power : acOn(e),
+    mode: 'hvac_mode' in w ? w.hvac_mode : (acOn(e) ? e.state : null),
+    temperature: 'temperature' in w ? w.temperature : a.temperature,
+    fan: 'fan_mode' in w ? w.fan_mode : a.fan_mode,
+    preset: 'preset_mode' in w ? w.preset_mode : a.preset_mode,
+  };
+}
+
+function acHold(key, field, value) {
+  const w = acWants.get(key) || {};
+  clearTimeout(w.timer);
+  w[field] = value;
+  w.timer = setTimeout(() => {
+    acWants.delete(key);
+    toast('err', 'No response from the farm — the control was reset.');
+    render();
+  }, CMD_TIMEOUT_MS);
+  acWants.set(key, w);
+}
+
+function reconcileAc(ents) {
+  for (const e of ents) {
+    const w = acWants.get(e.key);
+    if (!w) continue;
+    const a = e.attrs || {};
+    const agrees = {
+      power: (v) => v === acOn(e), hvac_mode: (v) => v === e.state,
+      temperature: (v) => Number(v) === Number(a.temperature),
+      fan_mode: (v) => v === a.fan_mode, preset_mode: (v) => v === a.preset_mode,
+    };
+    for (const f of Object.keys(agrees)) if (f in w && agrees[f](w[f])) delete w[f];
+    if (!Object.keys(w).some((k) => k !== 'timer')) { clearTimeout(w.timer); acWants.delete(e.key); }
+  }
+}
+
+function onAc(ent, act, value) {
+  const gate = bridgeGate('control');
+  if (!gate.ok) { toast('err', gate.why); return; }
+  if (act === 'power') {
+    const want = !acView(ent).on;
+    acHold(ent.key, 'power', want);
+    render();
+    sendCommand(ent, want ? 'turn_on' : 'turn_off');
+  } else if (act === 'temp') {
+    const a = ent.attrs || {};
+    const step = Number(a.target_temp_step) || 1;
+    const lo = Number(a.min_temp ?? 16), hi = Number(a.max_temp ?? 30);
+    const now = Number(acView(ent).temperature ?? Math.round((lo + hi) / 2));
+    const next = Math.min(hi, Math.max(lo, Math.round((now + value * step) / step) * step));
+    if (next === now) return;
+    acHold(ent.key, 'temperature', next);
+    render();
+    // Taps on + and − settle for a moment, so 27 → 24 is one command, not three.
+    clearTimeout(acTempTimers.get(ent.key));
+    acTempTimers.set(ent.key, setTimeout(() => {
+      acTempTimers.delete(ent.key);
+      const t = acWants.get(ent.key)?.temperature;
+      if (t != null) sendCommand(ent, 'set_temperature', { temperature: t });
+    }, 700));
+  } else {
+    const field = { mode: 'hvac_mode', fan: 'fan_mode', preset: 'preset_mode' }[act];
+    if (!field) return;
+    acHold(ent.key, field, value);
+    // Picking a mode on an AC that is off turns it on: Home Assistant does.
+    if (field === 'hvac_mode' && !acView(ent).on) acHold(ent.key, 'power', true);
+    render();
+    sendCommand(ent, `set_${field}`, { [field]: value });
+  }
+}
+
 /* ================= toasts ================= */
 
 function toast(kind, message) {
@@ -1294,15 +1378,15 @@ function systemView(all, id) {
     ? `<section class="tiles-sec"><div class="panel-head bare"><h2 class="panel-title">Switches</h2></div>${controlNote()}<div class="tiles">${ops.filter(isOn).sort(byName).concat(ops.filter((e) => !isOn(e)).sort(byName)).map(tileFor).join('')}</div></section>` : '';
   const live = devices.filter((d) => !deviceOffline(d));
   const off = devices.filter(deviceOffline);
+  // An AC's own card leads its panel, then its readings.
+  const acFirst = (x, y) => (x.domain === 'climate' ? 0 : 1) - (y.domain === 'climate' ? 0 : 1) || byName(x, y);
   const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
-      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !isBackstage(e)).sort(byName).slice(0, 12).map((e) => row(e)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
+      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !isBackstage(e)).sort(acFirst).slice(0, 12).map((e) => row(e, false, true, d.name)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
   // Per device, as on a room page: a fan on the switches page is switched
-  // off, not offline.
-  const offFault = id === 'security' ? [] : off.filter((d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d));
-  const offRest = id === 'security' ? [] : off.filter((d) => !offFault.includes(d));
-  const offNote = (offFault.length ? `<p class="more-note note-off">Offline: ${escapeHtml(offFault.map((d) => d.name).join(', '))}</p>` : '') +
-    (offRest.length ? `<p class="more-note">Switched off: ${escapeHtml(offRest.map((d) => d.name).join(', '))}</p>` : '');
-  return head(sys.title, '', '', back) + top + tiles + devList + offNote;
+  // off, not offline. Both are drawn faded, last (owner, 2026-09-25).
+  const isFault = (d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d);
+  const offList = ['security', 'solar'].includes(id) ? '' : offPanels(off, isFault);
+  return head(sys.title, '', '', back) + top + tiles + devList + offList;
 }
 
 /* Rooms and All devices are one destination with a switch: a room is
@@ -1363,7 +1447,7 @@ function areaView(all, id) {
   // Operable domains first: the reason to open a room is usually to do something.
   const rank = (d) => (SECTION_ORDER.includes(d) ? SECTION_ORDER.indexOf(d) : 99);
   const order = [...byDomain.keys()].sort((a, b) => {
-    const ca = CONTROLLABLE.has(a) ? 0 : 1, cb = CONTROLLABLE.has(b) ? 0 : 1;
+    const ca = CONTROLLABLE.has(a) || a === 'climate' ? 0 : 1, cb = CONTROLLABLE.has(b) || b === 'climate' ? 0 : 1;
     return ca - cb || rank(a) - rank(b) || a.localeCompare(b);
   });
   const split = offlineSplit(devices, deviceSystems(all));
@@ -1380,11 +1464,9 @@ function areaView(all, id) {
         : `<div class="list${items.length > 8 ? ' cols' : ''}">${items.map((e) => row(e, false, false)).join('')}</div>`) +
         `</section>`;
     }).join('') + (search ? '' : (() => {
+      // Drawn like the rest, faded, at the end (owner, 2026-09-25).
       const index = deviceSystems(all);
-      const faults = dead.filter((d) => offlineIsFault(d, index));
-      const off = dead.filter((d) => !faults.includes(d));
-      return (faults.length ? `<p class="more-note note-off">Offline: ${escapeHtml(faults.map((d) => d.name).join(', '))}</p>` : '') +
-        (off.length ? `<p class="more-note">Switched off: ${escapeHtml(off.map((d) => d.name).join(', '))}</p>` : '');
+      return offPanels(dead, (d) => offlineIsFault(d, index));
     })());
 }
 
@@ -1435,7 +1517,7 @@ function devicesView(all) {
           <span class="dgroup-meta">${escapeHtml(areaName(g.area))}</span></span>
         ${status}${arrow('i-chevron', 'dgroup-chev')}
       </button>
-      ${open ? `<div class="dgroup-body">${g.ents.map((e) => row(e)).join('')}</div>` : ''}
+      ${open ? `<div class="dgroup-body">${g.ents.map((e) => row(e, false, true, g.name)).join('')}</div>` : ''}
     </section>`;
   }).join('');
 
@@ -3425,14 +3507,84 @@ function deviceCard(ent, mode = 'area') {
   </div>`;
 }
 
+const HVAC_WORD = { auto: 'Auto', cool: 'Cool', dry: 'Dry', fan_only: 'Fan', heat: 'Heat', heat_cool: 'Heat & cool' };
+const PRESET_WORD = { none: 'Normal', wind_free: 'Wind-free', wind_free_sleep: 'Wind-free sleep', dry_comfort: 'Dry comfort' };
+const modeWord = (v, words) => words[v] || cap(String(v).replace(/_/g, ' '));
+
+/** An AC: power, what it is set to, and the choices it offers. Viewers see
+ *  the same card with nothing to press. */
+function acCard(ent, bare = false) {
+  const a = ent.attrs || {}, v = acView(ent), bad = isBad(ent);
+  const can = canControl && !bad && bridgeGate('control').ok;
+  const dis = can ? '' : ' disabled';
+  const busy = acWants.has(ent.key);
+  const name = ent.name || ent.entity_id;
+  const lo = Number(a.min_temp ?? 16), hi = Number(a.max_temp ?? 30);
+  const t = v.temperature != null ? Number(v.temperature) : null;
+  const modes = (a.hvac_modes || []).filter((m) => m !== 'off');
+  // Mode and fan are a segmented control; presets are many (seven on the
+  // guest room's AC), so they wrap as chips.
+  const seg = (act, list, cur, words, cls) => `<div class="${cls}" role="group" aria-label="${act}">${list.map((m) =>
+    `<button type="button" data-act="ac" data-ac="${act}" data-v="${escapeHtml(m)}" aria-pressed="${!bad && v.on && m === cur}"${dis}>${escapeHtml(modeWord(m, words))}</button>`).join('')}</div>`;
+  // Under a heading that already names it (its own device panel), the name goes.
+  const status = bad ? '' : !v.on ? 'Off'
+    : `${modeWord(v.mode || '', HVAC_WORD)}${a.current_temperature != null ? ` · ${a.current_temperature}° in the room` : ''}`;
+  // Off at the wall under a "Switched off" heading: the toggle is just Power.
+  const title = bare ? (status || 'Power') : name;
+  const meta = bare ? '' : status || 'Switched off';
+  return `<div class="ac${v.on ? ' is-on' : ''}${bad ? ' is-bad' : ''}" data-key="${escapeHtml(ent.key)}">
+    <div class="dev-top">
+      <span class="dev-text"><span class="dev-name">${escapeHtml(title)}</span>${meta ? `<span class="dev-meta">${escapeHtml(meta)}</span>` : ''}</span>
+      ${canControl ? `<button class="toggle${busy && 'power' in (acWants.get(ent.key) || {}) ? ' busy' : ''}" role="switch" aria-checked="${v.on}" aria-label="${escapeHtml(name)}" data-act="ac" data-ac="power"${dis}></button>` : ''}
+    </div>
+    <div class="ac-temp">
+      <button type="button" class="ac-step" data-act="ac" data-ac="temp" data-v="-1" aria-label="Cooler"${can && t != null && t > lo ? '' : ' disabled'}>−</button>
+      <span class="ac-set"><b>${t != null ? t : '—'}</b><small>°C</small></span>
+      <button type="button" class="ac-step" data-act="ac" data-ac="temp" data-v="1" aria-label="Warmer"${can && t != null && t < hi ? '' : ' disabled'}>+</button>
+    </div>
+    ${modes.length ? `<div class="ac-line"><span class="ctl-label">Mode</span>${seg('mode', modes, v.mode, HVAC_WORD, 'seg ac-seg')}</div>` : ''}
+    ${(a.fan_modes || []).length ? `<div class="ac-line"><span class="ctl-label">Fan</span>${seg('fan', a.fan_modes, v.fan, {}, 'seg ac-seg')}</div>` : ''}
+    ${(a.preset_modes || []).length > 1 ? `<div class="ac-line"><span class="ctl-label">Preset</span>${seg('preset', a.preset_modes, v.preset, PRESET_WORD, 'ac-chips')}</div>` : ''}
+  </div>`;
+}
+
+/* A device that is off (or offline) is drawn like the others, faded and with
+ * nothing to press, after them (owner, 2026-09-25). Its readings would all say
+ * "unavailable", so it shows what it is: its main controls, disabled. */
+const PRIMARY = new Set(['climate', 'media_player', 'fan', 'light', 'switch', 'input_boolean', 'remote']);
+function offPanels(devices, isFault) {
+  return devices.map((d) => {
+    // An AC or TV is its AC or TV: its display-light and sound switches are
+    // settings, not what the device is.
+    const own = d.ents.filter((e) => ['climate', 'media_player'].includes(e.domain));
+    const main = (own.length ? own : d.ents.filter((e) => PRIMARY.has(e.domain))).sort(byName).slice(0, 4)
+      // A TV whose one reading is itself, "unavailable", is its heading alone.
+      .filter((e) => e.domain === 'climate' || CONTROLLABLE.has(e.domain) || (e.name || '') !== d.name);
+    const fault = isFault(d);
+    return `<section class="panel area-sec is-faded" aria-disabled="true">` +
+      `<div class="panel-head"><h2 class="panel-title">${escapeHtml(d.name)}</h2>` +
+      `<span class="tag${fault ? ' tag-bad' : ''}">${fault ? 'Offline' : 'Switched off'}</span></div>` +
+      (main.length ? `<div class="list">${main.map((e) => e.domain === 'climate' ? acCard(e, main.length === 1)
+        : CONTROLLABLE.has(e.domain) ? deviceCard(e, 'area') : row(e, false, false, d.name)).join('')}</div>`
+        : `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`) +
+      `</section>`;
+  }).join('');
+}
+
 /** withDomain: off under a room section that already names the kind. */
-function row(ent, withArea = false, withDomain = true) {
-  const meta = [withArea ? areaName(ent.area) : withDomain ? humanDomain(ent.domain) : '', subtitle(ent).replace(/^ · /, '')]
-    .filter(Boolean).join(' · ');
+function row(ent, withArea = false, withDomain = true, under = '') {
+  if (ent.domain === 'climate') return acCard(ent, Boolean(under));
+  // Under a device heading: "Room air conditioner Energy" reads "Energy", and
+  // "sensor · energy" says nothing twice (mirrors DeviceRow on iOS).
+  const full = ent.name || ent.entity_id;
+  const name = under && full.startsWith(`${under} `) && full.length > under.length + 1 ? full.slice(under.length + 1) : full;
+  const kind = subtitle(ent).replace(/^ · /, '');
+  const meta = under ? (name.toLowerCase().includes(kind.toLowerCase()) ? '' : kind)
+    : [withArea ? areaName(ent.area) : withDomain ? humanDomain(ent.domain) : '', kind].filter(Boolean).join(' · ');
   return `<div class="row ${isBad(ent) ? 'is-bad' : isOn(ent) ? 'is-on' : ''}" data-key="${escapeHtml(ent.key)}">
     <span class="row-icon"><svg viewBox="0 0 24 24" class="ico ico-sm"><use href="#i-${iconFor(ent)}"/></svg></span>
     <span class="row-main">
-      <span class="row-name" title="${escapeHtml(ent.name || ent.entity_id)}">${escapeHtml(ent.name || ent.entity_id)}</span>
+      <span class="row-name" title="${escapeHtml(full)}">${escapeHtml(name)}</span>
       ${meta ? `<span class="row-meta">${escapeHtml(meta)}</span>` : ''}
     </span>
     <span class="dev-state ${stateClass(ent)}">${escapeHtml(formatState(ent))}</span>
@@ -3455,6 +3607,14 @@ function wire(all) {
     btn.onclick = () => {
       const ent = index.get(btn.closest('[data-key]').dataset.key);
       if (ent) onToggle(ent);
+    };
+  });
+
+  view.querySelectorAll('[data-act="ac"]').forEach((btn) => {
+    btn.onclick = () => {
+      const ent = index.get(btn.closest('[data-key]').dataset.key);
+      if (!ent) return;
+      onAc(ent, btn.dataset.ac, btn.dataset.ac === 'temp' ? Number(btn.dataset.v) : btn.dataset.v);
     };
   });
 
@@ -3751,6 +3911,7 @@ function reconcilePending(ents) {
     const want = pending.get(ent.key)?.want;
     if (want && ((want === 'on') === isOn(ent))) clearPending(ent.key);
   }
+  reconcileAc(ents);
 }
 
 function flashChanged(ents) {
