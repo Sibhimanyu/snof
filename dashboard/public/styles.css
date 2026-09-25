@@ -1159,7 +1159,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .wmotor .more-note{margin:0;padding:0;border:0}
 .wmotor .mb-facts{padding:0;border:0;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
 .wmotor-head{display:flex;align-items:center;gap:14px}
-.wmotor-art{flex:none;width:44px;height:44px;border-radius:12px;background:var(--panel-2);object-fit:contain}
+.wmotor-art{flex:none;box-sizing:border-box;width:44px;height:44px;padding:7px;border-radius:12px;background:var(--panel-2);object-fit:contain}
 .wmotor-title{flex:1;min-width:0}
 .wmotor-title h3{font-size:16.5px;font-weight:750;letter-spacing:-.025em;color:var(--text);overflow-wrap:anywhere}
 .wmotor-title p{font-size:13px;color:var(--muted)}

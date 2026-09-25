@@ -417,7 +417,7 @@ struct MotorCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
                 Image(m.running == true && current ? "art-motor-on" : "art-motor-off").resizable().scaledToFit()
-                    .frame(width: 44, height: 44)
+                    .frame(width: 30, height: 30).frame(width: 44, height: 44)
                     .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 12))
                 if !onPage {
                     VStack(alignment: .leading, spacing: 2) {
