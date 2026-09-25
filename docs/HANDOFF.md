@@ -24,6 +24,9 @@ it, each written down where it lives:
 
 - Home answers "does anything need me?" first (*Needs a look*), then the
   systems as pictures, then controls as tiles ([dashboard.md](dashboard.md)).
+  *Needs a look* starts **collapsed** (owner, 2026-09-25): the count and the
+  worst item stay on top, a tap opens the list (web `attnOpen`, iOS
+  `AttentionCard.open`).
 - Appliances off at the wall (ACs, TVs, the printer, a fan) are "Off", never
   red; offline vs off is decided per device, everywhere.
 - Nothing stale looks live: ages everywhere from one formatter; water is

@@ -996,6 +996,7 @@ function attentionItems(all, systems) {
   return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1));
 }
 
+let attnOpen = false;      // collapsed until asked: the count stays on top, the list waits
 let attnAll = false;       // "N more" opened by hand
 function attentionPanel(items) {
   if (!items.length) {
@@ -1004,15 +1005,19 @@ function attentionPanel(items) {
   }
   const bad = items.filter((i) => i.level === 'bad').length;
   const shown = attnAll ? items : items.slice(0, 5);
-  return `<section class="panel attn${bad ? ' is-bad' : ''}" aria-label="Needs a look">
-    <div class="attn-head"><span class="attn-n">${items.length}</span><h2 class="panel-title">${plural(items.length, 'Thing needs', 'Things need')} a look</h2></div>
-    ${shown.map((i) => {
+  // Closed, the header still names the worst thing, so a glance says enough.
+  const peek = items[0].text + (items.length > 1 ? ` · +${items.length - 1} more` : '');
+  return `<section class="panel attn${bad ? ' is-bad' : ''}${attnOpen ? ' open' : ''}" aria-label="Needs a look">
+    <button class="attn-head" data-act="attn-open" aria-expanded="${attnOpen}"><span class="attn-n">${items.length}</span>
+      <span class="attn-title"><h2 class="panel-title">${plural(items.length, 'Thing needs', 'Things need')} a look</h2>` +
+      `${attnOpen ? '' : `<span class="attn-peek">${escapeHtml(peek)}</span>`}</span>${arrow('i-chevron', 'attn-chev attn-toggle')}</button>
+    ${attnOpen ? shown.map((i) => {
       const inner = `<span class="attn-dot"></span><span class="attn-main"><strong>${escapeHtml(i.text)}</strong>` +
         `${i.sub ? `<span>${escapeHtml(i.sub)}</span>` : ''}</span>`;
       return i.href ? `<a class="attn-row ${i.level}" href="${i.href}">${inner}${arrow('i-chevron', 'attn-chev')}</a>`
         : `<div class="attn-row ${i.level}">${inner}</div>`;
-    }).join('')}
-    ${items.length > 5 ? `<button class="attn-more" data-act="attn-more" aria-expanded="${attnAll}">${attnAll ? 'Show fewer' : `${items.length - 5} more`}</button>` : ''}
+    }).join('') : ''}
+    ${attnOpen && items.length > 5 ? `<button class="attn-more" data-act="attn-more" aria-expanded="${attnAll}">${attnAll ? 'Show fewer' : `${items.length - 5} more`}</button>` : ''}
   </section>`;
 }
 
@@ -3192,6 +3197,7 @@ function wire(all) {
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
 
   view.querySelectorAll('[data-act="irr-refresh"]').forEach((btn) => { btn.onclick = () => refreshIrrigation(); });
+  view.querySelectorAll('[data-act="attn-open"]').forEach((btn) => { btn.onclick = () => { attnOpen = !attnOpen; render(); }; });
   view.querySelectorAll('[data-act="attn-more"]').forEach((btn) => { btn.onclick = () => { attnAll = !attnAll; render(); }; });
   view.querySelectorAll('[data-act="crop-day"]').forEach((btn) => { btn.onclick = () => { cropDayPick = btn.dataset.day; render(); }; });
   view.querySelectorAll('[data-act="home-refresh"]').forEach((btn) => {

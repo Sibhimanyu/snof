@@ -13,6 +13,7 @@ struct SystemRoute: Hashable { let id: FarmSystemID }
 
 struct AttentionCard: View {
     @Environment(FarmStore.self) private var store
+    @State private var open = false     // collapsed until asked, as on the web
     @State private var all = false      // "N more" opened by hand
 
     var body: some View {
@@ -33,20 +34,37 @@ struct AttentionCard: View {
         } else {
             let bad = items.contains { $0.level == .bad }
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 12) {
-                    Text("\(items.count)").font(Theme.font(14, .bold, relativeTo: .subheadline).monospacedDigit())
-                        .foregroundStyle(bad ? Theme.bad : Theme.warn)
-                        .frame(minWidth: 30, minHeight: 30).padding(.horizontal, 2)
-                        .background((bad ? Theme.bad : Theme.warn).opacity(0.12), in: Capsule())
-                    Text(items.count == 1 ? "Thing needs a look" : "Things need a look")
-                        .font(Theme.panelTitle).foregroundStyle(Theme.text)
+                // Closed, the header still names the worst thing, so a glance says enough.
+                Button { withAnimation(.snappy) { open.toggle() } } label: {
+                    HStack(spacing: 12) {
+                        Text("\(items.count)").font(Theme.font(14, .bold, relativeTo: .subheadline).monospacedDigit())
+                            .foregroundStyle(bad ? Theme.bad : Theme.warn)
+                            .frame(minWidth: 30, minHeight: 30).padding(.horizontal, 2)
+                            .background((bad ? Theme.bad : Theme.warn).opacity(0.12), in: Capsule())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(items.count == 1 ? "Thing needs a look" : "Things need a look")
+                                .font(Theme.panelTitle).foregroundStyle(Theme.text)
+                            if !open {
+                                Text(items[0].text + (items.count > 1 ? " · +\(items.count - 1) more" : ""))
+                                    .font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.faint).rotationEffect(.degrees(open ? 90 : 0))
+                    }
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 18).padding(.vertical, 12)
-                ForEach(all ? items : Array(items.prefix(5))) { item in
-                    Hairline()
-                    AttentionRowView(item: item)
+                .buttonStyle(.plain)
+                .accessibilityHint(open ? "Hides the list" : "Shows the list")
+                if open {
+                    ForEach(all ? items : Array(items.prefix(5))) { item in
+                        Hairline()
+                        AttentionRowView(item: item)
+                    }
                 }
-                if items.count > 5 {
+                if open && items.count > 5 {
                     Hairline()
                     Button { withAnimation(.snappy) { all.toggle() } } label: {
                         Text(all ? "Show fewer" : "\(items.count - 5) more")

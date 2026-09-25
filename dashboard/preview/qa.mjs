@@ -370,6 +370,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     check('replay: three phases drawn', r.phases===3, `${r.phases}`);
     await p.goto(p.url().replace('#/irrigation','#/'));
     await p.waitForSelector('.attn');
+    await p.evaluate(()=>{attnOpen=true;render();});
     const h=await p.evaluate(()=>({tiles:[...document.querySelectorAll('.tile .tile-name')].map(t=>t.textContent),
       attn:[...document.querySelectorAll('.attn-row strong')].map(t=>t.textContent)}));
     check('replay: no inverter or AC setting among Home tiles', h.tiles.length>0&&!h.tiles.some(t=>/export limit|sleep mode|display/i.test(t)), h.tiles.join(', '));
@@ -409,16 +410,22 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await c.close();
 }
 {
-  // Needs a look: the rest opens on "N more".
+  // Needs a look: collapsed at first, opens on a tap, the rest on "N more".
   const [p,c]=await open('?live=1&stale=1#/');
   await p.waitForSelector('.attn');
+  const shut=await p.evaluate(()=>({rows:document.querySelectorAll('.attn-row').length,
+    peek:document.querySelector('.attn-peek')?.textContent||'',exp:document.querySelector('[data-act="attn-open"]')?.getAttribute('aria-expanded')}));
+  check('Needs a look starts collapsed, naming the worst thing', shut.rows===0&&shut.peek.length>0&&shut.exp==='false', JSON.stringify(shut));
+  await p.click('[data-act="attn-open"]'); await p.waitForTimeout(100);
   const n=await p.evaluate(()=>{const a=state.water||{};a.river=Object.assign({},a.river,{trips:['dry run'],name:'River Motor'});
     a.motors=Object.assign({},a.motors);for(const k of Object.keys(a.motors))a.motors[k]=Object.assign({},a.motors[k],{skippedZone:4});state.water=a;render();
     return document.querySelectorAll('.attn-row').length;});
   const more=await p.$('[data-act="attn-more"]');
   if(more){ await more.click(); await p.waitForTimeout(100); }
   const after=await p.evaluate(()=>document.querySelectorAll('.attn-row').length);
-  check('"N more" in Needs a look opens the rest', !more || after>n, `${n} -> ${after}`);
+  check('"N more" in Needs a look opens the rest', n>0 && (!more || after>n), `${n} -> ${after}`);
+  await p.evaluate(()=>render());
+  check('Needs a look stays open across a re-render', await p.evaluate(()=>document.querySelectorAll('.attn-row').length)===after, '');
   await c.close();
 }
 {
@@ -444,7 +451,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     state.irrigation.timerLog=[{at:stamp(start),event:'Program · Mango2',detail:'11m of 1h, stopped · 17 Mango 2 · started by timer',source:'timer'},
                 {at:stamp(start-3*3600e3),event:'Program · Mango1',detail:'25m of 1h, stopped · 16 Mango 1 · started by A8',source:'timer'}];
     state.irrigation.meta={lastUpdated:read};
-    location.hash='#/'; render(); return {irr, soFar, ended, home:document.getElementById('view').innerText};});
+    location.hash='#/'; attnOpen=true; render(); return {irr, soFar, ended, home:document.getElementById('view').innerText};});
   check('a run caught part-way, its hour since past, reads "by <read time>", not "cut short"', /11m of 1h by \d\d:\d\d/.test(r.irr)&&!/11m of 1h, cut short/.test(r.irr),
         (r.irr.match(/.{0,24}(so far|cut short| by \d\d:\d\d).{0,16}/)||[''])[0]);
   check('while it could still be going, it reads "so far"', /11m of 1h so far/.test(r.soFar), (r.soFar.match(/.{0,24}(so far|cut short| by ).{0,16}/)||[''])[0]);
