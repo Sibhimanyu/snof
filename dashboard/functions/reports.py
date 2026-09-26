@@ -213,6 +213,18 @@ def read_error(report: dict) -> dict | None:
     return {"error": str(report.get("error") or "failed")[:200], "at": SERVER_TIMESTAMP}
 
 
+def record_read_error(store, root: str, rtype: str, report: dict) -> None:
+    """Keep this type's failure, or clear it on a success. firebase_admin's
+    set() refuses None, so a success deletes: set(None) raised, and a failure
+    once recorded was never cleared (2026-09-26)."""
+    ref = store.reference(f"{root}/irrigation/meta/errors/{rtype}")
+    err = read_error(report)
+    if err:
+        ref.set(err)
+    else:
+        ref.delete()
+
+
 def metric(label: str, value: Any, unit: str = "", note: str = "") -> dict:
     return {"label": label, "value": value, "unit": unit, "note": note}
 

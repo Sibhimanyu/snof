@@ -709,6 +709,27 @@ def test_an_empty_dashboard_is_a_failed_read():
     assert D.Dcon(T({"MC1": {"timers": []}})).dashboard() == {"MC1": {"timers": []}}
 
 
+def test_a_success_clears_its_type_failure_without_set_none():
+    """set(None) raises in firebase_admin; a success must delete instead."""
+    calls = []
+
+    class Ref:
+        def __init__(self, path): self.path = path
+        def set(self, v):
+            if v is None:
+                raise ValueError("Value must not be None.")
+            calls.append(("set", self.path, v))
+        def delete(self): calls.append(("delete", self.path))
+
+    class Store:
+        def reference(self, path): return Ref(path)
+
+    R.record_read_error(Store(), "farms/snof", "controller", {"status": "error", "error": "DCON dashboard: x"})
+    R.record_read_error(Store(), "farms/snof", "controller", {"status": "ok"})
+    assert calls[0][0] == "set" and calls[0][1] == "farms/snof/irrigation/meta/errors/controller"
+    assert calls[1] == ("delete", "farms/snof/irrigation/meta/errors/controller")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
