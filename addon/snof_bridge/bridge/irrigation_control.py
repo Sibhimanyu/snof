@@ -48,17 +48,16 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
-from .relay import form_for
+from .relay import TOKEN_PATH, form_for, pick_token
 
 if TYPE_CHECKING:
     import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
-# The Mobitech session token, written by an admin signing in to Mobitech from
-# the dashboard or the app. The add-on option dcon_command_auth is only the
-# fallback: the session behind a hand-copied token ends and cannot be renewed.
-TOKEN_PATH = "private/mobitech/token"
+# The Mobitech session token (TOKEN_PATH, pick_token) lives in relay.py: the
+# reads and the commands must use the same session, since Mobitech keeps one
+# per account. The add-on option dcon_command_auth is only the fallback.
 STATUS = "mobitech_status"
 
 QUEUE = "irrigation_commands"
@@ -182,15 +181,6 @@ def confirmed(action: str, valves: list[int], state: dict) -> bool:
     if action == "run":
         return bool(state.get("manual")) and set(valves) <= set(state.get("valves") or [])
     return not state.get("manual")
-
-
-def pick_token(signed_in: Any, fallback: str | None) -> str:
-    """The session from signing in to Mobitech wins; the hand-set option is
-    the fallback. Only something shaped like the app's token counts."""
-    for cand in (signed_in, fallback):
-        if isinstance(cand, str) and cand.strip().endswith("@ios") and len(cand.strip()) >= 40:
-            return cand.strip()
-    return ""
 
 
 def lock_live(lock: Any, now_ms: float) -> bool:

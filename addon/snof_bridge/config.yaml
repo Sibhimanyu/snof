@@ -1,5 +1,5 @@
 name: SNOF Firebase Bridge
-version: "0.10.7"
+version: "0.10.8"
 slug: snof_bridge
 description: Mirrors Home Assistant entity states to Firebase Realtime Database, grouped by area, for the SNOF dashboard.
 url: https://github.com/sibhimanyu/snof

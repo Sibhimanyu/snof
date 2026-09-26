@@ -591,6 +591,31 @@ def test_a_refused_dashboard_is_passed_on_not_trimmed_to_nothing():
     assert set(out) == {"state", "message"}
 
 
+def test_the_relay_reads_with_the_session_signed_in_from_the_app():
+    """One session per account: a sign-in in the app ended the add-on's own,
+    and the relay kept using that (2026-09-26)."""
+    import asyncio
+    from bridge import relay
+
+    signed = "S" * 60 + "@ios"
+    old = "O" * 60 + "@ios"
+
+    class RTDB:
+        def __init__(self, v): self.v = v
+        async def get(self, path, shallow=False):
+            assert path == relay.TOKEN_PATH
+            return self.v
+
+    cfg = types.SimpleNamespace(dcon_relay=True, dcon_serial="S1", dcon_token_id=old,
+                                dcon_product="DCON", dcon_base="https://x")
+    assert asyncio.run(relay.DconRelay(cfg, RTDB(signed), None)._token()) == signed
+    assert asyncio.run(relay.DconRelay(cfg, RTDB(None), None)._token()) == old
+    assert asyncio.run(relay.DconRelay(cfg, RTDB("not a token"), None)._token()) == old
+    # The command module picks the same way, from the same place.
+    from bridge import irrigation_control as ic
+    assert ic.pick_token(signed, old) == signed and ic.TOKEN_PATH == relay.TOKEN_PATH
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
