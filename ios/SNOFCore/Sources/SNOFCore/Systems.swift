@@ -404,9 +404,10 @@ public enum Attention {
             out.append(.init(.warn, "\(cut.count) \(cut.count == 1 ? "run" : "runs") cut short in the last 24 h",
                              cut.prefix(2).map { "\($0.name) \($0.amount ?? "")" }.joined(separator: " · "), .irrigation))
         }
-        if let err = c.lastError, !err.isEmpty {
-            let short = err.replacingOccurrences(of: "^DCON [a-z_]+: ", with: "", options: .regularExpression)
-            out.append(.init(.warn, "Could not reach the controller", String(short.prefix(80)), .irrigation))
+        if let why = Unread.controller(c) {
+            out.append(.init(.warn, "Can't read the controller", why, .irrigation))
+        } else if let err = c.lastError, !err.isEmpty {
+            out.append(.init(.warn, "Could not reach the controller", Unread.words(err), .irrigation))
         }
         if i.mobitechSignInNeeded {
             out.append(.init(.warn, "Mobitech sign-in needed", "sign in so valve commands keep working", .irrigation))

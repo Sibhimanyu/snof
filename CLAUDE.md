@@ -398,3 +398,14 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   shows no age while its reading is under 3 minutes old and says "Was
   watering / Was not watering · 5m ago" after, so nothing under the "Live"
   pill reads as current when it is not.
+- **A source that cannot be read says so, in place** (owner, 2026-09-26:
+  "when the api fails or you dont have auth you should say that explicitly
+  … the app just says that the motor is not running"; functions, web, iOS
+  0.11.20). The function keeps each read type's failure in
+  `irrigation/meta/errors/<type>` until that type next succeeds (`lastError`
+  alone was wiped by the next `live_readings`). The apps (`Unread` /
+  `unread*()`): SibhiSump, the river motor and Thoppu's motors show "Can't
+  read" with the reason ("Mobitech signed SNOF out", "Livesky sign-in
+  expired", "Niagara did not answer") and "read 5m ago", never a state; the
+  controller page leads with the reason and how to fix it. Demo:
+  `-demo-unread`.

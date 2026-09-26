@@ -20,7 +20,8 @@ import SNOFCore
  *   -demo-fresh       (with SNOF_DEMO_TREE) water readings moved to now
  *   -demo-signedout   start on the sign-in screen
  *   -demo-denied      signed in, but not on the allowlist
- *   -demo-signinfail  sign-in fails the way a real one can (shows the report) */
+ *   -demo-signinfail  sign-in fails the way a real one can (shows the report)
+ *   -demo-unread      the controller cannot be read: Mobitech signed SNOF out */
 @MainActor
 final class DemoBackend: FarmBackend {
 
@@ -267,7 +268,17 @@ final class DemoBackend: FarmBackend {
         handler?(.areas(tree["areas"]))
         handler?(.devices(tree["devices"]))
         handler?(.entities(tree["entities"]))
-        handler?(.irrigation(tree["irrigation"]))
+        var irr = tree["irrigation"]
+        // -demo-unread: Mobitech has signed SNOF out since the last good read.
+        if flag("unread"), var i = irr as? [String: Any] {
+            var m = i["meta"] as? [String: Any] ?? [:]
+            m["errors"] = ["controller": ["error": "DCON dashboard: Mobitech signed this session out (the account was signed in on another phone)",
+                                          "at": Date().timeIntervalSince1970 * 1000]]
+            i["meta"] = m
+            irr = i
+            tree["irrigation"] = i     // kept, so later re-sends carry it too
+        }
+        handler?(.irrigation(irr))
         handler?(.reports(tree["irrigation_reports"]))
         handler?(.water(tree["water"]))
         handler?(.mobitechStatus(tree["mobitech_status"]))
@@ -368,8 +379,16 @@ final class DemoBackend: FarmBackend {
             // As the function does: the cache says when it was last asked.
             if var irr = self.tree["irrigation"] as? [String: Any] {
                 let at = Date().timeIntervalSince1970 * 1000
-                irr["meta"] = ["lastUpdated": at, "lastType": type, "lastError": ""]
-                if type == "controller", var p = irr["program"] as? [String: Any] { p["at"] = at; irr["program"] = p }
+                // A patch, as the function's update(): errors from other reads stay.
+                var meta = irr["meta"] as? [String: Any] ?? [:]
+                meta["lastUpdated"] = at; meta["lastType"] = type; meta["lastError"] = ""
+                // -demo-unread: every controller read fails, as when Mobitech has signed SNOF out.
+                let failed = type == "controller" && self.flag("unread")
+                if type == "controller", !failed {
+                    var errs = meta["errors"] as? [String: Any] ?? [:]; errs["controller"] = nil; meta["errors"] = errs
+                    if var p = irr["program"] as? [String: Any] { p["at"] = at; irr["program"] = p }
+                }
+                irr["meta"] = meta
                 self.tree["irrigation"] = irr
                 self.handler?(.irrigation(irr))
             }
