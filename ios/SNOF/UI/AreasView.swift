@@ -9,6 +9,7 @@ struct AreasView: View {
         let matching = store.entities.filter { $0.matches(search, areaName: store.areaName($0.area)) }
         let areas = Sorting.groupByArea(matching, name: store.areaName)
         Page(title: "Rooms") {
+            HomeAssistantNote()
             RoomsSwitch()
             SearchField(text: $search, prompt: "Search devices, rooms, states")
             if !store.firstSnapshot {
@@ -46,6 +47,7 @@ struct AreaDetailView: View {
         Page(title: store.areaName(areaId),
              subtitle: "\(devices.count) \(devices.count == 1 ? "device" : "devices")"
                 + (fault > 0 ? " · \(fault) offline" : "") + (down.count - fault > 0 ? " · \(down.count - fault) off" : "")) {
+            HomeAssistantNote()
             SearchField(text: $search, prompt: "Search this room")
             if list.isEmpty {
                 // An empty area and an area whose contents the search hid are

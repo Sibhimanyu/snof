@@ -177,6 +177,9 @@ public enum Parse {
             c.lastUpdated = double(m["lastUpdated"])
             c.lastType = string(m["lastType"])
             c.lastError = string(m["lastError"]).flatMap { $0.isEmpty ? nil : $0 }
+            for (k, v) in (m["errors"] as? [String: Any] ?? [:]) {
+                if let e = string((v as? [String: Any])?["error"]), !e.isEmpty { c.readErrors[k] = e }
+            }
             let ce = (m["errors"] as? [String: Any])?["controller"] as? [String: Any]
             c.controllerError = string(ce?["error"]).flatMap { $0.isEmpty ? nil : $0 }
             c.controllerErrorAt = double(ce?["at"])

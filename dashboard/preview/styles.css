@@ -927,6 +927,8 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .flow-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:0 22px}
 .flow-head .panel-link{margin-left:auto}
 .card-age{font-size:12px;font-weight:500;font-style:normal;letter-spacing:0;text-transform:none;color:var(--faint)}
+.card-age.is-warn{color:var(--warn)}
+.pw-fig.pw-unread{font-size:13.5px;letter-spacing:0;color:var(--warn)}
 /* Zone change on the zoned Niagara controller. */
 .wzones{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .zchips{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}

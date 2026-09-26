@@ -20,6 +20,7 @@ struct OverviewView: View {
                 LoadingBlock()
             } else {
                 AttentionCard()
+                HomeAssistantNote()
                 if sizeClass == .regular {
                     // Water | Power, then Irrigation | Security, as on the web.
                     HStack(alignment: .top, spacing: 14) {

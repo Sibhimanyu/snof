@@ -810,6 +810,26 @@ function unreadMotor(m) {
   return state.meta?.water?.niagara?.ok === false ? 'Niagara did not answer' : '';
 }
 
+/** Why Home Assistant — every device, the power lines, the cameras — cannot
+ *  be read now, or '': the farm box has gone quiet or offline. */
+function unreadHA() {
+  const hb = state.meta?.bridge;
+  if (!hb || !hb.lastSeen) return '';
+  if (hb.status === 'offline') return 'the farm box is offline';
+  const age = Math.max(0, (serverNow() - hb.lastSeen) / 1000);
+  return age > (hb.heartbeatSeconds || 30) * STALE_FACTOR ? `the farm box has not reported for ${humanAge(age)}` : '';
+}
+/** Short, for a narrow column: "no report for 12m". */
+function unreadHAShort() {
+  const hb = state.meta?.bridge;
+  if (!unreadHA()) return '';
+  return hb.status === 'offline' ? 'farm box offline' : `no report for ${humanAge(Math.max(0, (serverNow() - hb.lastSeen) / 1000))}`;
+}
+/** Why the last Mobitech read of this type failed, or ''. Cleared on its next success. */
+const unreadRead = (type) => { const e = irrig().meta?.errors?.[type]; return e?.error ? unreadWords(e.error) : ''; };
+/** On every page that shows Home Assistant's devices, said once at the top. */
+const haNote = () => (unreadHA() ? `<p class="more-note note-off">Can't read Home Assistant: ${escapeHtml(unreadHA())}. Devices show their last reading.</p>` : '');
+
 /** How old a reading that is not current is: the starter's own report for
  *  Livesky, Niagara's last good read (its reports only mark changes); "not
  *  read" once SNOF's Livesky session is gone. */
@@ -1155,6 +1175,10 @@ function powerPanel(systems) {
   const split = solarW > 0 ? `<div class="pw-split" role="img" aria-label="${escapeHtml(solar.map((l) => `${l.title} ${fmtPower(l.inv?.watts || 0)}`).join(', '))}">` +
     solar.map((l, i) => `<i class="pw-seg s${i}" style="flex:${(l.inv?.watts || 0).toFixed(0)}"></i>`).join('') + `</div>` : '';
   const right = (l, st) => {
+    // Solar lines come from Home Assistant, the farm line from Mobitech's live
+    // readings: either failing is said, not drawn as now.
+    const why = l.inverter ? unreadHAShort() : unreadRead('live_readings');
+    if (why) return `<span class="pw-right"><strong class="pw-fig pw-unread">Can't read</strong><span class="pw-sub">${escapeHtml(why)}</span></span>`;
     if (!l.inverter && l.supply && l.supply.v.length && st.state !== 'rest') {
       return `<span class="pw-right"><span class="pw-mini" aria-label="Phase voltages ${l.supply.v.map(Math.round).join(', ')} volts">` +
         l.supply.v.map((x) => `<i class="${x < 120 ? 'dead' : x < 200 || x > 260 ? 'warn' : ''}" style="height:${Math.max(8, Math.min(100, x / 300 * 100)).toFixed(0)}%"></i>`).join('') +
@@ -1165,9 +1189,9 @@ function powerPanel(systems) {
   };
   let seg = 0;
   return `<section class="panel power" aria-label="Power">
-    <div class="pw-head"><h2 class="panel-title">Power</h2>
+    <div class="pw-head"><h2 class="panel-title">Power</h2>${unreadHA() ? `<em class="card-age">can't read</em>` : ''}
       <a class="panel-link" href="#/sys/solar">Details${arrow()}</a></div>
-    ${solarW > 0 ? `<div class="pw-solar"><span class="pw-solar-n">${escapeHtml(fmtPower(solarW))}</span><span class="pw-solar-l">solar right now</span></div>${split}`
+    ${solarW > 0 ? `<div class="pw-solar"><span class="pw-solar-n">${escapeHtml(fmtPower(solarW))}</span><span class="pw-solar-l">${unreadHA() ? 'solar at the last reading' : 'solar right now'}</span></div>${split}`
       : `<div class="pw-solar"><span class="pw-solar-l">No solar right now</span></div>`}
     <div class="pw-rows">${lines.map((l) => {
       const st = lineStatus(l);
@@ -1338,11 +1362,13 @@ function securityCard(systems) {
   const sys = systems.security;
   if (!sys) return '';
   const s = systemSummary(sys);
-  const tone = s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : '';
+  // Home Assistant unread: its last state, grey and in the past tense.
+  const gone = !!unreadHA();
+  const tone = gone ? '' : s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : '';
   return `<a class="panel vcard sec ${tone}" href="#/sys/security">
-    <div class="pw-head"><h2 class="panel-title">Security</h2><span class="panel-link">Details${arrow()}</span></div>
+    <div class="pw-head"><h2 class="panel-title">Security</h2>${unreadHA() ? `<em class="card-age">can't read</em>` : ''}<span class="panel-link">Details${arrow()}</span></div>
     <div class="vcard-body"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
-      <div class="vcard-text"><strong>${escapeHtml(s.line)}</strong>
+      <div class="vcard-text"><strong>${escapeHtml(gone ? `Last read: ${s.line}` : s.line)}</strong>
         <span>${escapeHtml(s.sub || (s.cams ? `${s.camsOn} of ${s.cams} cameras online` : ''))}</span>
         ${s.cams ? `<span class="cam-dots" aria-hidden="true">${sys.ents.filter((e) => e.domain === 'camera').map((e) => `<i class="${isBad(e) ? 'off' : 'on'}"></i>`).join('')}</span>` : ''}</div></div>
   </a>`;
@@ -1371,7 +1397,7 @@ function overviewView(all) {
   const pill = `<span id="head-bridge" class="pill pill-head ${b.cls}" role="status"><span class="dot"></span><span id="head-bridge-text">${escapeHtml(b.long)}</span></span>`;
   // Nothing is "all clear" until the farm has actually been heard from.
   const heard = !!(state.meta && (state.meta.bridge || state.meta.updatedAt));
-  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') +
+  return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + haNote() +
     `<div class="vcards">${flowHero()}${powerPanel(systems)}${irrigationCard()}${securityCard(systems)}</div>` +
     switchTiles(all) + systemsGrid(systems);
 }
@@ -1420,7 +1446,7 @@ function systemView(all, id) {
   // off, not offline. Both are drawn faded, last (owner, 2026-09-25).
   const isFault = (d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d);
   const offList = ['security', 'solar'].includes(id) ? '' : offPanels(off, isFault);
-  return head(sys.title, '', '', back) + top + tiles + devList + offList;
+  return head(sys.title, '', '', back) + haNote() + top + tiles + devList + offList;
 }
 
 /* Rooms and All devices are one destination with a switch: a room is
@@ -1432,7 +1458,7 @@ const roomsSwitch = (on) => `<div class="seg seg-nav" role="navigation" aria-lab
 function areasView(all) {
   const areas = groupByArea(all.filter(matches));
   const index = deviceSystems(all);
-  return head('Rooms', '', '') + roomsSwitch('areas') +
+  return head('Rooms', '', '') + roomsSwitch('areas') + haNote() +
     (areas.length ? `<div class="grid">${areas.map(([id, list]) => areaCard(id, list, index)).join('')}</div>` : noMatch());
 }
 
@@ -1488,7 +1514,7 @@ function areaView(all, id) {
   const sub = `${devices.length} ${plural(devices.length, 'device', 'devices')}` +
     (split.fault ? ` · ${split.fault} offline` : '') + (split.off ? ` · ${split.off} off` : '');
 
-  return head(areaName(id), sub, '', back) +
+  return head(areaName(id), sub, '', back) + haNote() +
     (canControl && !bridgeGate('control').ok ? controlNote() : '') +
     order.map((d) => {
       const items = byDomain.get(d).sort(byName);
@@ -1555,7 +1581,7 @@ function devicesView(all) {
     </section>`;
   }).join('');
 
-  return head('Rooms', '', '') + roomsSwitch('devices') +
+  return head('Rooms', '', '') + roomsSwitch('devices') + haNote() +
     `<div class="toolbar-row">${seg}</div>` +
     (groups.length ? `<div class="dgroups">${body}</div>` : noMatch());
 }
@@ -2748,7 +2774,7 @@ function irrCropsModule() {
       <span class="crop-min">${escapeHtml(fmtMin(c.min))}</span></div>`;
   }).join('');
   return `<section class="panel irr-mod watered" aria-label="Watered">
-    <div class="panel-head"><h2 class="panel-title">Watered</h2>${irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}${seg}</div>
+    <div class="panel-head"><h2 class="panel-title">Watered</h2>${unreadRead('session_log') ? `<span class="card-age is-warn">can't read the run log</span>` : irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}${seg}</div>
     <div class="figs">${fig(runs.length, plural(runs.length, 'Run', 'Runs'))}${fig(fmtMin(water), 'Water')}` +
     (pump ? fig(fmtMin(pump.pumpMin), 'Pump') : '') + (pump?.kwh != null ? fig(`${Math.round(pump.kwh)}<small>kWh</small>`, 'Energy') : '') + `</div>` +
     (crops.length ? `<div class="crop-list">${rows}</div>` : `<p class="more-note crop-empty">Nothing watered ${pick === 'today' ? 'yet today' : 'yesterday'}.</p>`) +
@@ -2773,7 +2799,8 @@ function irrSupplyModule() {
   const last = (irrig().pressure || []).at(-1);
   const outlet = last && /outlet ([\d.]+ ?bar)/.exec(last.detail || '');
   return `<section class="panel irr-mod" aria-label="Pump and power">` +
-    `<div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>${irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}</div>` +
+    `<div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>${unreadRead('live_readings') ? `<span class="card-age is-warn">can't read</span>` : irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}</div>` +
+    (unreadRead('live_readings') ? `<p class="more-note note-off" style="padding:0 22px">Can't read the pump's power and pressure: ${escapeHtml(unreadRead('live_readings'))}. Below is the last reading.</p>` : '') +
     `<div class="supply">${bars}${p ? `<div class="pressure"><span class="fig-v">${escapeHtml(p.value)}</span><span class="fig-l">Inlet pressure</span>` +
       (outlet ? `<span class="pressure-out">outlet ${escapeHtml(outlet[1])}</span>` : '') + `</div>` : ''}</div>` +
     (tags.length ? `<div class="tags">${tags.join('')}</div>` : '') + `</section>`;
@@ -3549,7 +3576,8 @@ function adminView() {
 /* One line, next to the controls it explains. Without it the toggles are just
  * greyed out with no reason given anywhere on the page. */
 function controlNote() {
-  if (!canControl) return '';
+  // The page already says Home Assistant cannot be read; that is why.
+  if (!canControl || unreadHA()) return '';
   const gate = bridgeGate('control');
   return gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`;
 }
