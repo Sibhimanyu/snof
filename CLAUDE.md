@@ -408,4 +408,11 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   read" with the reason ("Mobitech signed SNOF out", "Livesky sign-in
   expired", "Niagara did not answer") and "read 5m ago", never a state; the
   controller page leads with the reason and how to fix it. Demo:
-  `-demo-unread`.
+  `-demo-unread`. **Same for every source** (iOS 0.11.21): when Home
+  Assistant cannot be read (bridge stale/offline) every device page leads
+  with "Can't read Home Assistant: …" (`HomeAssistantNote` / `haNote()`),
+  the Power and Security cards say "can't read", the solar lines "Can't read
+  · no report for 12m" and Security "Last read: …"; a failed Mobitech
+  `live_readings` or `session_log` read says so on Pump & power, the farm
+  motor line and Watered (`Unread.read` / `unreadRead`). The relay passes a
+  refused dashboard on as `{state, message}` (add-on 0.10.7).

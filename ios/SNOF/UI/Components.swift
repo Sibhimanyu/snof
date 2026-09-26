@@ -326,12 +326,27 @@ struct BridgePill: View {
 }
 
 /// One line explaining why controls are disabled, when they are.
+/// On every page that shows Home Assistant's devices: said once, at the top,
+/// when they cannot be read (owner, 2026-09-26: "same goes for all").
+struct HomeAssistantNote: View {
+    @Environment(FarmStore.self) private var store
+
+    var body: some View {
+        if let why = Unread.homeAssistant(store.bridgeStatus) {
+            Note(text: "Can't read Home Assistant: \(why). Devices show their last reading.", tone: .warn)
+        }
+    }
+}
+
 struct ControlNote: View {
     @Environment(FarmStore.self) private var store
 
     var body: some View {
         let gate = store.gate(.control)
-        if !store.canControl {
+        // The page already says Home Assistant cannot be read; that is why.
+        if Unread.homeAssistant(store.bridgeStatus) != nil {
+            EmptyView()
+        } else if !store.canControl {
             Note(text: "Your account can view, but not control. Ask a farm admin for the controller tier.")
         } else if !gate.ok {
             Note(text: gate.why, tone: .warn)

@@ -230,6 +230,8 @@ public struct IrrigationCache: Hashable, Sendable {
     /// (meta/errors/controller, functions 2026-09-26).
     public var controllerError: String?
     public var controllerErrorAt: Double?
+    /// Every read type whose last read failed, with why (meta/errors).
+    public var readErrors: [String: String] = [:]
 
     public init() {}
 

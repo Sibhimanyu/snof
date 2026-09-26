@@ -30,6 +30,22 @@ public enum Unread {
         return String(short.prefix(60))
     }
 
+    /// Why Home Assistant — every device, the power lines, the cameras —
+    /// cannot be read now, or nil: the farm box has gone quiet or offline.
+    public static func homeAssistant(_ s: BridgeStatus) -> String? {
+        switch s {
+        case .offline: return "the farm box is offline"
+        case .stale(let age): return "the farm box has not reported for \(Format.age(age))"
+        case .live, .unknown: return nil
+        }
+    }
+
+    /// Why the last Mobitech read of this type failed ("live_readings",
+    /// "session_log", …), or nil. The function clears it on the next success.
+    public static func read(_ c: IrrigationCache, _ type: String) -> String? {
+        c.readErrors[type].map(words)
+    }
+
     /// Why a water motor cannot be read now, or nil.
     public static func motor(_ m: WaterMotor, _ w: WaterState, nowMs: Double) -> String? {
         if m.vendor == "livesky" {

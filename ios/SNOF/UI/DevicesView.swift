@@ -40,6 +40,7 @@ struct DevicesView: View {
         let filtering = !search.isEmpty || store.deviceDomain != nil
 
         Page(title: "Rooms") {
+            HomeAssistantNote()
             RoomsSwitch()
             Picker("Status", selection: $store.deviceStatus) {
                 ForEach([StatusFilter.all, .offline]) { f in

@@ -135,13 +135,14 @@ struct PowerCard: View {
             let solarW = solar.compactMap { $0.inverter?.watts }.reduce(0, +)
             NavigationLink(value: SystemRoute(id: .solar)) {
                 VStack(alignment: .leading, spacing: 0) {
-                    CardHeader(title: "Power")
+                    CardHeader(title: "Power", meta: Unread.homeAssistant(store.bridgeStatus) == nil ? nil : "can't read")
                         .padding(.horizontal, 16).padding(.top, 16)
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         if solarW > 0 {
                             Text(Systems.power(solarW)).font(Theme.font(26, .bold, relativeTo: .title).monospacedDigit()).tracking(-1)
                                 .foregroundStyle(Theme.ink)
-                            Text("solar right now").font(Theme.meta).foregroundStyle(Theme.muted)
+                            Text(Unread.homeAssistant(store.bridgeStatus) == nil ? "solar right now" : "solar at the last reading")
+                                .font(Theme.meta).foregroundStyle(Theme.muted)
                         } else {
                             Text("No solar right now").font(Theme.meta).foregroundStyle(Theme.muted)
                         }
@@ -193,6 +194,7 @@ struct LineTile: View {
 }
 
 private struct PowerRow: View {
+    @Environment(FarmStore.self) private var store
     let line: PowerLine
     /// Which segment of the solar bar this line is, if it has an inverter.
     let key: Int?
@@ -200,6 +202,14 @@ private struct PowerRow: View {
     var body: some View {
         let st = Power.status(line)
         let stale = line.spec.inverter == nil && !line.current
+        // The solar lines come from Home Assistant, the farm line from
+        // Mobitech's live readings: either failing is said, not drawn as now.
+        let ha: String? = switch store.bridgeStatus {
+        case .offline: "farm box offline"
+        case .stale(let age): "no report for \(Format.age(age))"
+        default: nil
+        }
+        let unread = line.spec.inverter == nil ? Unread.read(store.irrigation, "live_readings") : ha
         HStack(spacing: 12) {
             LineTile(id: line.id)
             VStack(alignment: .leading, spacing: 2) {
@@ -216,12 +226,16 @@ private struct PowerRow: View {
             // (one line each, shrinking a little). The name once had the
             // priority and pushed "965 W" and "pumping" off the card.
             VStack(alignment: .trailing, spacing: 2) {
-                if line.spec.inverter == nil, let s = line.supply, s.hasVoltage, st.state != .rest {
+                if unread != nil {
+                    Text("Can't read").font(Theme.font(13.5, .bold, relativeTo: .subheadline)).foregroundStyle(Theme.warn)
+                } else if line.spec.inverter == nil, let s = line.supply, s.hasVoltage, st.state != .rest {
                     MiniPhases(volts: s.phaseV, stale: stale)
                 } else {
                     LineFigure(status: st, stale: stale, big: 19)
                 }
-                if !st.sub.isEmpty { Text(st.sub).font(Theme.font(12, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(1) }
+                if let unread {
+                    Text(unread).font(Theme.font(12, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(1)
+                } else if !st.sub.isEmpty { Text(st.sub).font(Theme.font(12, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(1) }
             }
             .fixedSize()
             .layoutPriority(1)
@@ -409,18 +423,20 @@ struct SecurityCard: View {
     var body: some View {
         if let sys = store.systems[.security] {
             let s = Systems.summary(sys)
-            let tone: Color = s.state == .bad ? Theme.bad : s.armed ? Theme.on : Theme.faint
+            // Home Assistant unread: its last state, grey and in the past tense.
+            let gone = Unread.homeAssistant(store.bridgeStatus) != nil
+            let tone: Color = gone ? Theme.faint : s.state == .bad ? Theme.bad : s.armed ? Theme.on : Theme.faint
             let cams = sys.entities.filter { $0.domain == "camera" }
             NavigationLink(value: SystemRoute(id: .security)) {
                 // Picture left, words right, as the irrigation ring.
-                HomeCard(title: "Security") {
+                HomeCard(title: "Security", meta: Unread.homeAssistant(store.bridgeStatus) == nil ? nil : "can't read") {
                     HStack(spacing: 14) {
                     Image(systemName: s.armed ? "shield.lefthalf.filled" : "shield").font(.system(size: 28))
                         .foregroundStyle(tone).frame(width: 64, height: 64)
                         .background(tone.opacity(0.12), in: Circle())
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(s.line).font(Theme.font(16, .bold, relativeTo: .headline))
-                            .foregroundStyle(s.state == .bad ? Theme.bad : Theme.text).lineLimit(1).minimumScaleFactor(0.8)
+                        Text(gone ? "Last read: \(s.line)" : s.line).font(Theme.font(16, .bold, relativeTo: .headline))
+                            .foregroundStyle(s.state == .bad && !gone ? Theme.bad : Theme.text).lineLimit(1).minimumScaleFactor(0.8)
                         Text(s.detecting > 0 ? "\(s.detecting) detecting now" : s.cameras > 0 ? "\(s.camerasOnline) of \(s.cameras) cameras" : s.sub)
                             .font(Theme.meta).foregroundStyle(Theme.muted)
                         HStack(spacing: 5) {
@@ -494,6 +510,7 @@ struct SystemView: View {
     var body: some View {
         let sys = store.systems[id]
         Page(title: id.title) {
+            HomeAssistantNote()
             if let sys {
                 let s = Systems.summary(sys)
                 if id == .solar { PowerPage() } else { hero(sys, s) }
@@ -600,7 +617,9 @@ struct WateredCard: View {
         let which = pick ?? (hasToday ? "today" : "yesterday")
         let day = which == "today" ? today : yesterday
         let r = Irrigation.crops(c, day: day, now: store.now)
-        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
+        // The run log is its own read: its failure is said here, not hidden.
+        let checked = Unread.read(c, "session_log").map { _ in "can't read the run log" }
+            ?? (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
         let pump = Irrigation.pumpDays(c).first { $0.day == day }
         if !Irrigation.runs(c).isEmpty || !Irrigation.pumpDays(c).isEmpty {
             VStack(alignment: .leading, spacing: 0) {
@@ -705,9 +724,14 @@ struct PumpPowerCard: View {
                     Text("Pump & power").font(Theme.panelTitle).foregroundStyle(Theme.text)
                     Spacer()
                     // Its age, not a bare "at 23:58" that says nothing after midnight.
-                    if let t = c.program?.at ?? c.lastUpdated {
+                    if Unread.read(c, "live_readings") != nil {
+                        Text("can't read").font(Theme.small).foregroundStyle(Theme.warn)
+                    } else if let t = c.program?.at ?? c.lastUpdated {
                         Text(Water.ago(Date(timeIntervalSince1970: t / 1000), now: store.now)).font(Theme.small).foregroundStyle(Theme.faint)
                     }
+                }
+                if let why = Unread.read(c, "live_readings") {
+                    Note(text: "Can't read the pump's power and pressure: \(why). Below is the last reading.", tone: .warn)
                 }
                 HStack(alignment: .bottom, spacing: 24) {
                     if let s = supply, s.hasVoltage {
