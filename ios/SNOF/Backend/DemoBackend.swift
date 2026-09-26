@@ -21,7 +21,8 @@ import SNOFCore
  *   -demo-signedout   start on the sign-in screen
  *   -demo-denied      signed in, but not on the allowlist
  *   -demo-signinfail  sign-in fails the way a real one can (shows the report)
- *   -demo-unread      the controller cannot be read: Mobitech signed SNOF out */
+ *   -demo-unread      the controller cannot be read: Mobitech signed SNOF out
+ *   -demo-notowner    an admin who is not the farm owner (only the owner signs in) */
 @MainActor
 final class DemoBackend: FarmBackend {
 
@@ -243,6 +244,9 @@ final class DemoBackend: FarmBackend {
         if flag("denied") { handler(.denied); return }
         handler(.controller(!flag("viewer")))
         handler(.admin(flag("admin")))
+        // -demo-notowner: an admin who is not the farm owner.
+        handler(.owner(flag("notowner") ? ["email": "owner@example.com", "name": "Sibhi"]
+                                        : ["email": Self.user.email ?? "", "name": "Demo operator"]))
         emitAll()
 
         ticker = Task { [weak self] in

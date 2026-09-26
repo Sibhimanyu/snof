@@ -525,6 +525,11 @@ struct LiveskySignIn: View {
         }
         if let problem = store.liveskyProblem { Text(problem).foregroundStyle(Theme.warn) }
 
+        // The owner alone signs SNOF in; everyone else uses that session.
+        if let who = store.signInBy {
+            Text("Only \(who) signs SNOF in to Livesky. Everyone uses that session.")
+                .font(Theme.meta).foregroundStyle(Theme.muted)
+        } else {
         switch step {
         case .idle:
             Button(signedIn ? "Sign in again" : "Sign in to Livesky") { step = .mobile }
@@ -559,6 +564,7 @@ struct LiveskySignIn: View {
             }
             .disabled(busy || code.filter(\.isNumber).count < 4)
             Button("Use another number", role: .cancel) { step = .mobile; code = "" }.disabled(busy)
+        }
         }
     }
 }

@@ -111,6 +111,7 @@ final class FirebaseBackend: FarmBackend {
         observe("acl/controllers/\(user.uid)", onDenied: { handler(.controller(false)) }) {
             handler(.controller(Parse.bool($0) == true))
         }
+        observe("acl/owner") { handler(.owner($0)) }
         observe("acl/admins/\(user.uid)", onDenied: { handler(.admin(false)) }) {
             handler(.admin(Parse.bool($0) == true))
         }

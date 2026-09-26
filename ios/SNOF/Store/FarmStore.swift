@@ -69,6 +69,21 @@ final class FarmStore {
 
     private(set) var canControl = false
     private(set) var isAdmin = false
+    /// The farm owner (acl/owner): the one person who signs SNOF in to
+    /// Mobitech and Livesky; everyone else uses those sessions (owner,
+    /// 2026-09-26). The rules and water_session enforce it.
+    private(set) var ownerEmail: String?
+    private(set) var ownerName: String?
+    var isOwner: Bool {
+        guard let o = ownerEmail, let me = user?.email?.lowercased() else { return false }
+        return o == me
+    }
+    /// "Sibhi" when someone else signs in; nil when it is you.
+    var signInBy: String? { isOwner ? nil : (ownerName ?? "The farm owner") }
+    /// What to do about a lapsed session, said to whoever is looking.
+    func signInAgain(_ what: String) -> String {
+        signInBy.map { "\($0) needs to sign in again \(what)." } ?? "Sign in again \(what)."
+    }
     private(set) var connected = true
     private var skewMs: Double = 0
 
@@ -225,6 +240,10 @@ final class FarmStore {
         case .motorResults(let v): settleMotor(v)
         case .controller(let b): canControl = b
         case .admin(let b): isAdmin = b
+        case .owner(let v):
+            let d = v as? [String: Any]
+            ownerEmail = Parse.string(d?["email"])?.lowercased()
+            ownerName = Parse.string(d?["name"]).flatMap { $0.isEmpty ? nil : $0 }
         case .serverTimeOffset(let s): skewMs = s
         case .connected(let c): connected = c
         case .denied:
@@ -659,6 +678,7 @@ final class FarmStore {
         i.now = now
         i.mobitechSignInNeeded = isAdmin && mobitechProblem != nil
         i.liveskySignInNeeded = isAdmin && water.enabled && [.none, .expired].contains(liveskyKind)
+        i.signInBy = signInBy
         i.water = water
         i.systems = systems
         i.areaName = areas.mapValues(\.name)
@@ -701,17 +721,17 @@ final class FarmStore {
     var liveskyProblem: String? {
         switch liveskyKind {
         case .ok: return nil
-        case .none: return "SNOF is not signed in to Livesky, so the river motor cannot be read."
+        case .none: return "SNOF is not signed in to Livesky, so the river motor cannot be read." + (signInBy.map { " \($0) signs it in." } ?? "")
         case .expired:
             let when = water.livesky.expires.map { Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .shortened) } ?? ""
-            return "The Livesky session ended \(when). Sign in again to read the river motor."
+            return "The Livesky session ended \(when). \(signInAgain("to read the river motor"))"
         case .error: return water.livesky.status.error
         }
     }
 
     /// Ask Livesky to text a code. True when it did.
     func liveskySendCode(_ raw: String) async -> Bool {
-        guard isAdmin else { show(.err, "Only farm admins can sign in to Livesky."); return false }
+        guard isOwner else { show(.err, "Only \(signInBy ?? "the farm owner") signs SNOF in to Livesky."); return false }
         guard let mobile = Mobitech.mobile(raw) else { show(.err, "Enter the 10-digit mobile number on the Livesky account."); return false }
         do {
             _ = try await backend.waterSession(["action": "send_code", "mobile": mobile])
@@ -723,7 +743,7 @@ final class FarmStore {
 
     /// Sign in with the code. The function keeps the token; the app never sees it.
     func liveskySignIn(_ raw: String, code: String) async -> Bool {
-        guard isAdmin, let mobile = Mobitech.mobile(raw) else { return false }
+        guard isOwner, let mobile = Mobitech.mobile(raw) else { return false }
         let otp = code.filter(\.isNumber)
         guard (4...8).contains(otp.count) else { show(.err, "Enter the code from the SMS."); return false }
         do {
@@ -757,9 +777,11 @@ final class FarmStore {
 
     /// One line for any screen, or nil when SNOF's session is fine.
     var mobitechProblem: String? {
-        guard let st = mobitechStatus else { return "SNOF is not signed in to Mobitech. Sign in so valve commands keep working." }
+        guard let st = mobitechStatus else {
+            return "SNOF is not signed in to Mobitech. \(signInBy.map { "\($0) needs to sign in" } ?? "Sign in") so valve commands keep working."
+        }
         guard st.rejected, let when = st.lastRejected else { return nil }
-        return "Mobitech rejected SNOF's session at \(Date(timeIntervalSince1970: when / 1000).formatted(date: .abbreviated, time: .shortened)). Sign in again to send valve commands."
+        return "Mobitech rejected SNOF's session at \(Date(timeIntervalSince1970: when / 1000).formatted(date: .abbreviated, time: .shortened)). \(signInAgain("to send valve commands"))"
     }
     private(set) var mobitechStatus: MobitechStatus?
     /// The device token for the login in progress: made when the code is
@@ -768,7 +790,7 @@ final class FarmStore {
 
     /// Ask Mobitech to text a code. True when it did.
     func mobitechSendCode(_ raw: String) async -> Bool {
-        guard isAdmin else { show(.err, "Only farm admins can sign in to Mobitech."); return false }
+        guard isOwner else { show(.err, "Only \(signInBy ?? "the farm owner") signs SNOF in to Mobitech."); return false }
         guard let mobile = Mobitech.mobile(raw) else { show(.err, "Enter the 10-digit mobile number on the Mobitech account."); return false }
         do {
             let (data, resp) = try await URLSession.shared.data(for: Mobitech.codeRequest(mobile: mobile))
@@ -784,7 +806,7 @@ final class FarmStore {
 
     /// Log in with the code and store the session. True when signed in.
     func mobitechSignIn(_ raw: String, code: String) async -> Bool {
-        guard let uid = user?.uid, isAdmin, let mobile = Mobitech.mobile(raw) else { return false }
+        guard let uid = user?.uid, isOwner, let mobile = Mobitech.mobile(raw) else { return false }
         let otp = code.filter(\.isNumber)
         guard (4...8).contains(otp.count) else { show(.err, "Enter the code from the SMS."); return false }
         let token = mobitechPendingToken ?? Mobitech.deviceToken()
