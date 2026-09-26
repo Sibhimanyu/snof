@@ -618,10 +618,17 @@ struct WateredCard: View {
         let day = which == "today" ? today : yesterday
         let r = Irrigation.crops(c, day: day, now: store.now)
         // The run log is its own read: its failure is said here, not hidden.
-        let checked = Unread.read(c, "session_log").map { _ in "can't read the run log" }
-            ?? (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
+        let checked = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
         let pump = Irrigation.pumpDays(c).first { $0.day == day }
-        if !Irrigation.runs(c).isEmpty || !Irrigation.pumpDays(c).isEmpty {
+        if let why = Unread.read(c, "session_log") {
+            // No old figures on a failed read (owner, 2026-09-26).
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Watered").font(Theme.panelTitle).foregroundStyle(Theme.text)
+                Note(text: "Can't read the run log: \(why).", tone: .warn)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel(padding: 18)
+        } else if !Irrigation.runs(c).isEmpty || !Irrigation.pumpDays(c).isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 // The age sits under the title: beside it, title + age + the
                 // day picker is wider than a 375pt phone has room for.
@@ -731,8 +738,9 @@ struct PumpPowerCard: View {
                     }
                 }
                 if let why = Unread.read(c, "live_readings") {
-                    Note(text: "Can't read the pump's power and pressure: \(why). Below is the last reading.", tone: .warn)
-                }
+                    // No old figures on a failed read (owner, 2026-09-26).
+                    Note(text: "Can't read the pump's power and pressure: \(why).", tone: .warn)
+                } else {
                 HStack(alignment: .bottom, spacing: 24) {
                     if let s = supply, s.hasVoltage {
                         PhaseBars(volts: s.phaseV)
@@ -762,6 +770,7 @@ struct PumpPowerCard: View {
                                 kind: d ? .on : .plain)
                         }
                     }
+                }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -169,7 +169,16 @@ struct IrrigationRingCard: View {
         let unread = Unread.controller(c)
         let checked = unread.map { _ in "can't read" } ?? (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: store.now) }
         Button { Haptics.select(); store.openMotor(FarmStore.dconKey) } label: { HomeCard(title: "Irrigation", meta: checked) {
-            if c.isEmpty {
+            if let unread {
+                // No last run: it cannot be read now (owner, 2026-09-26).
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(unread).font(Theme.font(16, .bold, relativeTo: .headline)).foregroundStyle(Theme.warn)
+                    Text(unread.contains("signed SNOF out")
+                         ? (store.isOwner ? "Open to sign in again" : "\(store.signInBy ?? "The farm owner") needs to sign in again")
+                         : "Open to try again")
+                        .font(Theme.meta).foregroundStyle(Theme.muted)
+                }
+            } else if c.isEmpty {
                 Text("No data yet").font(Theme.meta).foregroundStyle(Theme.muted)
             } else {
                 HStack(spacing: 14) {
@@ -423,14 +432,7 @@ struct IrrigationNowCard: View {
                            message: store.canControl ? "Press Refresh to ask the controller." : "Nothing has been pulled yet.",
                            symbol: "drop", framed: false)
             } else {
-                // Can't read it: said first, and the card below is its last reading.
-                if let why = Unread.controller(c) {
-                    Note(text: "Can't read the controller: \(why)."
-                         + (why.contains("signed SNOF out") ? (store.isAdmin ? " Sign in again under Mobitech account below." : " A farm admin needs to sign in again.") : "")
-                         + " Below is its last reading.", tone: .warn)
-                        .padding(.horizontal, 18).padding(.top, 4)
-                }
-                WaterNow(cache: c, zone: zone, now: store.now, stale: Unread.controller(c) != nil)
+                WaterNow(cache: c, zone: zone, now: store.now)
             }
             if store.canRunIrrigation, !c.isEmpty { IrrigationControls(cache: c, zone: zone, now: store.now, quiet: both || !known) }
             if store.canControl, !reads.ok, known {
@@ -471,16 +473,14 @@ struct WaterNow: View {
     let cache: IrrigationCache
     let zone: TimeZone
     let now: Date
-    /// The controller could not be read since: its last reading, in the past tense.
-    var stale = false
 
     var body: some View {
         let s = state
-        let live = s.running && !stale
+        let live = s.running
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle().fill(live ? Theme.brand : Theme.faint.opacity(0.5)).frame(width: 8, height: 8)
-                Text(stale ? (s.running ? "Was watering" : "Was not watering") : s.running ? "Watering now" : "Not watering").eyebrowStyle()
+                Text(s.running ? "Watering now" : "Not watering").eyebrowStyle()
                     .foregroundStyle(live ? Theme.on : Theme.faint)
                 Spacer(minLength: 4)
                 if let checked = s.checked {

@@ -431,3 +431,11 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   (`sinceWhen()` / `Water.since`), and every "… ago" carries its clock time,
   "12m ago · 09:37" (`agoText()` / `Water.ago`; "just now" stays bare). The
   bridge's Live pill stays short.
+- **An unreadable source shows no old data** (owner, 2026-09-26: "it should
+  not show the last fetched data. It's misleading"; web, iOS 0.11.24). When
+  the controller, the river motor or Thoppu's motors cannot be read, their
+  page is one card (`UnreadHero` / `unreadHero()`): what is wrong, why, and
+  the fix — **Sign in to Mobitech / Livesky** for the owner, "Sibhi needs to
+  sign in again" for others, **Try again** when the vendor did not answer.
+  Home's Irrigation card, Pump & power and Watered say "can't read" with the
+  reason instead of their last figures. No "below is its last reading".

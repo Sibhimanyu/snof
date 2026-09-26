@@ -742,3 +742,43 @@ struct ACCard: View {
         }
     }
 }
+
+
+/// A source that cannot be read, in place of its last reading (owner,
+/// 2026-09-26: "it should not show the last fetched data. It's misleading").
+/// What is wrong, why, and the one thing that fixes it.
+struct UnreadHero: View {
+    let title: String
+    let reason: String
+    var symbol = "exclamationmark.icloud"
+    /// The fix: "Sign in to Mobitech", "Try again". Nil when it is someone
+    /// else's to fix, and `footnote` says whose.
+    struct Fix { let label: String; let run: () -> Void }
+    var action: Fix? = nil
+    var footnote: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: symbol).font(.system(size: 26, weight: .semibold)).foregroundStyle(Theme.warn)
+                .frame(width: 56, height: 56).background(Theme.warn.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(Theme.font(20, .bold, relativeTo: .title3)).foregroundStyle(Theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(reason).font(Theme.font(14.5, .regular, relativeTo: .subheadline)).foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let action {
+                Button { Haptics.tap(); action.run() } label: {
+                    Text(action.label).font(Theme.font(16, .bold, relativeTo: .headline))
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .foregroundStyle(.white).background(Theme.brand, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            if let footnote { Text(footnote).font(Theme.meta).foregroundStyle(Theme.muted) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel(padding: 20)
+        .accessibilityElement(children: .combine)
+    }
+}

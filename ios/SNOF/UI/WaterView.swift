@@ -239,6 +239,21 @@ struct MotorDetailView: View {
     let key: String
     @State private var account = false
 
+    private func unreadHero(_ m: WaterMotor, why: String) -> UnreadHero {
+        let signIn = m.vendor == "livesky" && [.none, .expired].contains(store.liveskyKind)
+        if signIn {
+            var fix: UnreadHero.Fix? = nil
+            if store.isOwner { fix = UnreadHero.Fix(label: "Sign in to Livesky") { account = true } }
+            return UnreadHero(title: "SNOF is signed out of Livesky",
+                              reason: "\(why). Nothing here can be read until SNOF signs in again.",
+                              symbol: "person.crop.circle.badge.exclamationmark", action: fix,
+                              footnote: store.isOwner ? nil : "\(store.signInBy ?? "The farm owner") needs to sign in again.")
+        }
+        let store = store
+        return UnreadHero(title: "Can't read \(m.name)", reason: "\(why). Nothing here can be read until it answers.",
+                          action: UnreadHero.Fix(label: "Try again") { Task { await store.refreshWater(force: true) } })
+    }
+
     var body: some View {
         if key == FarmStore.dconKey {
             // The controller's page is the Irrigation view itself, named for it.
@@ -253,11 +268,19 @@ struct MotorDetailView: View {
                 : (w.niagara.ok == false ? w.niagara.error : nil)
             Page(title: m.name, subtitle: [m.vendor == "livesky" ? "Livesky" : "Niagara", m.roleText].filter { !$0.isEmpty }.joined(separator: " · "),
                  refresh: { await store.refreshWater(force: true) }) {
-                if noted, let problem = store.liveskyProblem { Note(text: problem, tone: .warn) }
-                MotorCard(motor: m, now: store.now, vendorError: vendorError, current: w.isCurrent(m, now: store.now),
-                          key: key, onPage: true)
+                if let why = Unread.motor(m, w, nowMs: store.now.timeIntervalSince1970 * 1000) {
+                    // Nothing from before: the page leads to the fix (owner, 2026-09-26).
+                    unreadHero(m, why: why)
+                } else {
+                    if noted, let problem = store.liveskyProblem { Note(text: problem, tone: .warn) }
+                    MotorCard(motor: m, now: store.now, vendorError: vendorError, current: w.isCurrent(m, now: store.now),
+                              key: key, onPage: true)
+                }
                 if river, store.isAdmin {
-                    AccountRow(title: "Livesky account", problem: store.liveskyProblem) { account = true }.padding(.top, 10)
+                    // The card above already says what is wrong; the row just opens it.
+                    AccountRow(title: "Livesky account",
+                               problem: Unread.motor(m, w, nowMs: store.now.timeIntervalSince1970 * 1000) == nil ? store.liveskyProblem : nil) { account = true }
+                        .padding(.top, 10)
                 }
             }
             .navigationTitle(m.name)

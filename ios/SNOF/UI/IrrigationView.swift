@@ -24,11 +24,30 @@ struct IrrigationView: View {
     var title = "Irrigation"
     var subtitle: String? = nil
 
+    private func unreadHero(_ why: String) -> UnreadHero {
+        if why.contains("signed SNOF out") {
+            var fix: UnreadHero.Fix? = nil
+            if store.isOwner { fix = UnreadHero.Fix(label: "Sign in to Mobitech") { account = true } }
+            return UnreadHero(title: "SNOF is signed out of Mobitech",
+                              reason: "Mobitech ended SNOF's session because the account signed in somewhere else. Nothing here can be read until SNOF signs in again.",
+                              symbol: "person.crop.circle.badge.exclamationmark", action: fix,
+                              footnote: store.isOwner ? nil : "\(store.signInBy ?? "The farm owner") needs to sign in again.")
+        }
+        let store = store
+        var fix: UnreadHero.Fix? = nil
+        if store.canControl { fix = UnreadHero.Fix(label: "Try again") { Task { await store.refreshIrrigation() } } }
+        return UnreadHero(title: "Can't read the controller", reason: "\(why). Nothing here can be read until it answers.", action: fix)
+    }
+
     /// Everything irrigation, as modules (owner, 2026-09-25): what the
     /// controller is doing with Run / Stop, the valves, the last day, the
     /// supply, and the reports. Mirrors irrigationView() in app.js.
     var body: some View {
         Page(title: title, subtitle: subtitle, refresh: store.irrigationPull) {
+          if let why = Unread.controller(store.irrigation) {
+            // Nothing from before: the page leads to the fix (owner, 2026-09-26).
+            unreadHero(why)
+          } else {
             IrrigationNowCard()
             PumpPowerCard()
             WateredCard()
@@ -52,8 +71,10 @@ struct IrrigationView: View {
                 }
                 .modifier(Panel(padding: 0))
             }
+          }
             if store.isAdmin {
-                AccountRow(title: "Mobitech account", problem: store.mobitechProblem) { account = true }
+                AccountRow(title: "Mobitech account",
+                           problem: Unread.controller(store.irrigation) == nil ? store.mobitechProblem : nil) { account = true }
                     .padding(.top, 10)
             }
         }
