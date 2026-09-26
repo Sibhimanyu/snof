@@ -478,7 +478,9 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     // Home's water card is the Water tab's path, compact: one row per motor.
     const rows=()=>[...document.querySelectorAll('#view .flow .wp-motor')].filter(a=>a.getAttribute('href')!=='#/motor/dcon'&&a.querySelector('.tag').textContent!=='No reading');
     const f=()=>{render();return {pipes:rows().map(a=>!!a.querySelector('.wp-st.is-on')),
-      ages:rows().map(a=>a.querySelector('.wp-state em')?.textContent).filter(Boolean),head:document.querySelector('#view .flow .flow-head .card-age')?.textContent||''};};
+      ages:rows().map(a=>a.querySelector('.wp-state em')?.textContent).filter(Boolean),
+      tags:rows().map(a=>a.querySelector('.tag').textContent),lines:rows().map(a=>a.querySelector('small')?.textContent||''),
+      head:document.querySelector('#view .flow .flow-head .card-age')?.textContent||''};};
     const stale=f();
     state.water.river.reportedAt=iso(now-20e3); const fresh=f();
     state.meta.water.livesky.expires=now-60e3; const expired=f();
@@ -490,9 +492,10 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('a stale river reading shows its age and does not flow', r.stale.pipes[0]===false&&r.stale.ages.length===1&&r.stale.head==='', JSON.stringify(r.stale));
   check('Niagara, which reports on change, still flows on a fresh pull', r.stale.pipes[1]===true);
   check('fresh readings flow, with no age beside them', r.fresh.pipes.every(Boolean)&&r.fresh.ages.length===0, JSON.stringify(r.fresh));
-  check('an ended Livesky session stops the river flowing', r.expired.pipes[0]===false&&r.expired.ages[0]==='not read', JSON.stringify(r.expired));
+  // Since 2026-09-26 (owner): a source that cannot be read says so, in place.
+  check('an ended Livesky session stops the river flowing and says it cannot be read', r.expired.pipes[0]===false&&r.expired.tags[0]==="Can't read"&&/Livesky sign-in expired/.test(r.expired.lines[0])&&!/just now/.test(r.expired.ages[0]||''), JSON.stringify(r.expired));
   check('Home says when water readings are off', r.off.head==='readings off', r.off.head);
-  check('a failing Niagara read is not current, and ages from its last good read', r.niagaraDown.pipes[1]===false&&r.niagaraDown.ages.includes('3h ago'), JSON.stringify(r.niagaraDown));
+  check('a failing Niagara read is not current, says so, and ages from its last good read', r.niagaraDown.pipes[1]===false&&r.niagaraDown.tags[1]==="Can't read"&&r.niagaraDown.ages.includes('read 3h ago'), JSON.stringify(r.niagaraDown));
   await c.close();
 }
 {

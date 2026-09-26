@@ -202,6 +202,17 @@ def _spread(points: list[dict], field: str, unit: str, multi_day: bool) -> str:
             f"high {hi[field]:g} at {_clock(hi['at'], multi_day)}")
 
 
+def read_error(report: dict) -> dict | None:
+    """irrigation/meta/errors/<type>: why the last read of this kind failed,
+    kept until the next one of the same kind succeeds. lastError alone is
+    overwritten by any read, and a live_readings read (which needs no
+    Mobitech session) cleared a failed controller read seconds later, so the
+    apps said "not watering" while Mobitech had signed SNOF out (2026-09-26)."""
+    if report.get("status") != "error":
+        return None
+    return {"error": str(report.get("error") or "failed")[:200], "at": SERVER_TIMESTAMP}
+
+
 def metric(label: str, value: Any, unit: str = "", note: str = "") -> dict:
     return {"label": label, "value": value, "unit": unit, "note": note}
 

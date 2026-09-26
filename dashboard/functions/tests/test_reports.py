@@ -684,9 +684,18 @@ def test_a_dashboard_failure_is_an_error_not_an_idle_controller():
     assert patch == {}, "the last good program and controller stay in the cache"
 
 
+def test_a_failed_read_is_kept_per_kind():
+    """A failed controller read stays until a controller read succeeds."""
+    err = R.read_error({"status": "error", "error": "DCON dashboard: Mobitech signed this session out"})
+    assert err["error"].startswith("DCON dashboard") and err["at"] == R.SERVER_TIMESTAMP
+    assert R.read_error({"status": "ok"}) is None
+    assert R.read_error({"status": "partial"}) is None
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
         fn()
         print(f"  PASS  {fn.__name__}")
     print(f"\n{len(tests)} tests passed")
+

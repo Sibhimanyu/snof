@@ -71,8 +71,11 @@ struct WaterPath: View {
         let live = { (m: WaterMotor?) in m?.running == true && w.isCurrent(m, now: now) }
         let onRiver = live(river), onSupply = live(supply), onDrip = live(drip), onFarm = say.running
         // Like the motors: no age while current, past tense and its age after.
-        let farmCurrent = store.controllerCurrent
-        let checked = farmCurrent ? nil : (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: now) }
+        // A failed read says so, never "not watering" (owner, 2026-09-26).
+        let farmUnread = Unread.controller(c)
+        let farmCurrent = store.controllerCurrent && farmUnread == nil
+        let lastRead = (c.program?.at ?? c.lastUpdated).map { Water.ago(Date(timeIntervalSince1970: $0 / 1000), now: now) }
+        let checked = farmCurrent ? nil : farmUnread != nil ? lastRead.flatMap { $0 == "just now" ? nil : "read \($0)" } : lastRead
         let farmLine = onFarm
             ? [c.program?.valves.isEmpty == false ? c.program!.valves : say.title,
                say.leftMin.flatMap { $0 > 0 ? "\(Format.minutes($0)) left" : nil }].compactMap { $0 }.joined(separator: " · ")
@@ -85,9 +88,9 @@ struct WaterPath: View {
             motorRow(drip, fallback: "well-motor", up: onSupply || onDrip, down: onSupply, branch: onDrip)
             motorRow(supply, fallback: "wellmotor75hp", up: onSupply, down: onSupply)
             place("Farm", up: onSupply, down: onFarm && farmCurrent)
-            row(key: FarmStore.dconKey, name: store.dconName, line: farmLine,
-                word: farmCurrent ? (onFarm ? "Watering" : "Not watering") : (onFarm ? "Was watering" : "Was not watering"),
-                on: onFarm && farmCurrent, age: checked, up: onFarm && farmCurrent, down: nil)
+            row(key: FarmStore.dconKey, name: store.dconName, line: farmUnread ?? farmLine,
+                word: farmUnread != nil ? "Can't read" : farmCurrent ? (onFarm ? "Watering" : "Not watering") : (onFarm ? "Was watering" : "Was not watering"),
+                on: onFarm && farmCurrent, age: checked, up: onFarm && farmCurrent, down: nil, warn: farmUnread != nil)
             ForEach(rest) { m in motorRow(m, fallback: m.id, up: nil, down: nil) }
         }
         .padding(.vertical, compact ? 0 : 6)
@@ -114,12 +117,16 @@ struct WaterPath: View {
     private func motorRow(_ m: WaterMotor?, fallback: String, up: Bool?, down: Bool?, branch: Bool? = nil) -> some View {
         if let m {
             let w = store.water
-            let cur = w.isCurrent(m, now: store.now)
-            let word = m.running == true ? (cur ? "Running" : "Was running") : m.running == false ? (cur ? "Off" : "Was off") : "Unknown"
-            let age: String? = cur ? nil : (m.vendor == "livesky" && store.liveskyProblem != nil ? "not read"
-                : w.readingDate(m).map { Water.ago($0, now: store.now) })
-            row(key: m.id, name: m.name, line: line(m, current: cur), word: word, on: m.running == true && cur,
-                age: age, up: up, down: down, branch: branch)
+            let unread = Unread.motor(m, w, nowMs: store.now.timeIntervalSince1970 * 1000)
+            let cur = w.isCurrent(m, now: store.now) && unread == nil
+            let word = unread != nil ? "Can't read"
+                : m.running == true ? (cur ? "Running" : "Was running") : m.running == false ? (cur ? "Off" : "Was off") : "Unknown"
+            let seen = w.readingDate(m).map { Water.ago($0, now: store.now) }
+            let good = w.lastGoodRead(m).map { Water.ago($0, now: store.now) }
+            // Beside "Can't read", "read just now" confuses: the age shows from a minute.
+            let age: String? = cur ? nil : unread != nil ? good.flatMap { $0 == "just now" ? nil : "read \($0)" } : seen
+            row(key: m.id, name: m.name, line: unread ?? line(m, current: cur), word: word, on: m.running == true && cur,
+                age: age, up: up, down: down, branch: branch, warn: unread != nil)
         } else {
             row(key: fallback, name: ["river": "River Motor", "well-motor": "Well motor", "wellmotor75hp": "Wellmotor75HP"][fallback] ?? "Motor", line: "No reading yet", word: "No reading",
                 on: false, age: nil, up: up, down: down, branch: branch)
@@ -127,7 +134,7 @@ struct WaterPath: View {
     }
 
     private func row(key: String, name: String, line: String, word: String, on: Bool, age: String?,
-                     up: Bool?, down: Bool?, branch: Bool? = nil) -> some View {
+                     up: Bool?, down: Bool?, branch: Bool? = nil, warn: Bool = false) -> some View {
         NavigationLink(value: MotorRoute(key: key)) {
             HStack(spacing: 0) {
                 if let branch {
@@ -144,14 +151,14 @@ struct WaterPath: View {
                         .padding(.trailing, 12)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(Theme.font(15, .bold, relativeTo: .headline)).foregroundStyle(Theme.text)
-                    if !line.isEmpty { Text(line).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted) }
+                    Text(name).font(Theme.font(15, .bold, relativeTo: .headline)).foregroundStyle(Theme.text).lineLimit(1)
+                    // Two lines at most, so a reason is said whole on the indented row.
+                    if !line.isEmpty { Text(line).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(2) }
                 }
-                .lineLimit(1)
                 .padding(.vertical, 10)
                 Spacer(minLength: 10)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Tag(text: word, kind: on ? .on : .plain)
+                    Tag(text: word, kind: warn ? .warn : on ? .on : .plain)
                     if let age { Text(age).font(Theme.font(11.5, .regular, relativeTo: .caption2)).foregroundStyle(Theme.faint) }
                 }
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.faint)

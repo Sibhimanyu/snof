@@ -226,6 +226,10 @@ public struct IrrigationCache: Hashable, Sendable {
     public var lastUpdated: Double?
     public var lastType: String?
     public var lastError: String?
+    /// Why the last controller read failed, kept until one succeeds
+    /// (meta/errors/controller, functions 2026-09-26).
+    public var controllerError: String?
+    public var controllerErrorAt: Double?
 
     public init() {}
 

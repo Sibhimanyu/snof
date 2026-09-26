@@ -126,6 +126,18 @@ public struct WaterState: Hashable, Sendable {
     public func readingDate(_ m: WaterMotor) -> Date? {
         m.vendor == "livesky" ? m.lastReport : (niagara.at ?? pulledAt).map { Date(timeIntervalSince1970: $0 / 1000) }
     }
+
+    /// When SNOF last read this motor successfully: for Livesky the older of
+    /// its last good read and the starter's own report, so a session that has
+    /// ended never shows "read just now".
+    public func lastGoodRead(_ m: WaterMotor) -> Date? {
+        guard m.vendor == "livesky" else { return readingDate(m) }
+        let read = livesky.status.at.map { Date(timeIntervalSince1970: $0 / 1000) }
+        switch (read, m.lastReport) {
+        case let (a?, b?): return min(a, b)
+        case let (a, b): return a ?? b
+        }
+    }
 }
 
 extension Parse {

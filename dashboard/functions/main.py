@@ -150,6 +150,7 @@ def _handle(store, root: str, req_id: str, req: Any) -> None:
     store.reference(f"{root}/irrigation/meta").update(
         {"lastUpdated": reports.SERVER_TIMESTAMP, "lastType": rtype,
          "lastError": report.get("error", "")})
+    store.reference(f"{root}/irrigation/meta/errors/{rtype}").set(reports.read_error(report))
     _status(store, root, ok=report["status"] != "error",
             error=report.get("error", ""), rtype=rtype)
     _LOG.info("Irrigation report %s (%s): %s in %.1fs", req_id, rtype,

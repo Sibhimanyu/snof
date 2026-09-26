@@ -779,6 +779,37 @@ function waterCurrent(m) {
   const read = ws.niagara?.at || (ws.niagara?.ok !== false ? w.pulledAt : 0);
   return !!read && now - read <= 10 * 60000;
 }
+/* When a source cannot be read, say so where its reading would be, and never
+ * show the last reading as now (owner, 2026-09-26: "when the api fails or you
+ * dont have auth you should say that explicitly … the app just says that the
+ * motor is not running"). Mirrors Unread in SNOFCore. */
+function unreadWords(raw) {
+  const t = String(raw || '').toLowerCase();
+  if (/signed this session out|other mobile|re-sign/.test(t)) return 'Mobitech signed SNOF out';
+  if (/bridge did not answer|nuc online/.test(t)) return 'The farm box did not answer';
+  if (t.includes('not configured')) return 'Mobitech is not set up';
+  if (/http|timeout|connectionerror|not json/.test(t)) return 'Mobitech did not answer';
+  return String(raw || '').replace(/^DCON [a-z_]+: /, '').slice(0, 60);
+}
+/** Why the controller cannot be read now, or ''. Only a failure after the
+ *  last good read counts (irrigation/meta/errors/controller). */
+function unreadController() {
+  const e = irrig().meta?.errors?.controller;
+  if (!e?.error) return '';
+  if ((e.at || 0) < (irrig().program?.at || 0)) return '';
+  return unreadWords(e.error);
+}
+/** Why a water motor cannot be read now, or ''. */
+function unreadMotor(m) {
+  if (!m) return '';
+  if (m.vendor === 'livesky') {
+    const k = liveskyState();
+    return k.kind === 'none' ? 'Not signed in to Livesky' : k.kind === 'expired' ? 'Livesky sign-in expired'
+      : k.kind === 'error' ? (k.text || 'Livesky did not answer').slice(0, 60) : '';
+  }
+  return state.meta?.water?.niagara?.ok === false ? 'Niagara did not answer' : '';
+}
+
 /** How old a reading that is not current is: the starter's own report for
  *  Livesky, Niagara's last good read (its reports only mark changes); "not
  *  read" once SNOF's Livesky session is gone. */
@@ -840,7 +871,7 @@ function irrigationCard() {
   const pics = String(valves).split(/,\s*/).filter(Boolean).slice(0, 5)
     .map((v) => { const a = valveArt(v, 'irrigation'); return a ? artImg(a, 'crop') : ''; }).join('');
   return `<a class="panel vcard" href="#/motor/dcon">
-    <div class="pw-head"><h2 class="panel-title">Irrigation</h2>${irrChecked() ? `<em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}
+    <div class="pw-head"><h2 class="panel-title">Irrigation</h2>${unreadController() ? `<em class="card-age">can't read</em>` : irrChecked() ? `<em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}
       <span class="panel-link">Details${arrow()}</span></div>
     ${empty ? `<p class="vcard-empty">No data yet</p>` : `<div class="vcard-body">${ring(frac, tone, label, sub)}
       <div class="vcard-text"><strong>${escapeHtml(s.running ? s.title : s.title.replace(/^Last: /, ''))}</strong>
@@ -1229,8 +1260,9 @@ function attentionItems(all, systems) {
   // Programs with no valves assigned end at 0m by design; they are not faults.
   const stopped = irrRuns().filter((r) => !r.finished && r.planned != null && r.valves && !mayStillRun(r) && (farmMs(r.start) ?? 0) >= since);
   if (stopped.length) add('warn', `${stopped.length} ${plural(stopped.length, 'run', 'runs')} cut short in the last 24 h`, stopped.slice(0, 2).map((r) => `${r.name} ${runAmount(r)}`).join(' · '), '#/motor/dcon');
-  const repErr = c.meta?.lastError;
-  if (repErr) add('warn', 'Could not reach the controller', repErr.replace(/^DCON [a-z_]+: /, '').slice(0, 80), '#/motor/dcon');
+  const repErr = c.meta?.lastError, unread = unreadController();
+  if (unread) add('warn', "Can't read the controller", unread, '#/motor/dcon');
+  else if (repErr) add('warn', 'Could not reach the controller', unreadWords(repErr), '#/motor/dcon');
   if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', 'sign in so valve commands keep working', '#/motor/dcon');
   // Water chain.
   const w = state.water || {};
@@ -2581,9 +2613,15 @@ function irrNowModule() {
       : refusal && refusal !== 'Only farm admins can open or close valves.' && !both ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
       : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>`
       : s.running && s.manual ? '<p class="more-note">One manual run at a time.</p>' : ''}` : '';
-  return `<section class="panel now${s.running ? ' is-on' : ''}" aria-label="Now">
+  // Can't read it: said first, and the card below is its last reading.
+  const why = unreadController();
+  const whyNote = why ? `<p class="more-note note-off">Can't read the controller: ${escapeHtml(why)}.` +
+    (why.includes('signed SNOF out') ? (isAdmin ? ' Sign in again under Mobitech account below.' : ' A farm admin needs to sign in again.') : '') +
+    ' Below is its last reading.</p>' : '';
+  const liveNow = s.running && !why;
+  return whyNote + `<section class="panel now${liveNow ? ' is-on' : ''}" aria-label="Now">
     <div class="now-top">
-      <p class="now-label"><span class="dot"></span>${s.running ? 'Watering now' : 'Not watering'}</p>
+      <p class="now-label"><span class="dot"></span>${why ? (s.running ? 'Was watering' : 'Was not watering') : s.running ? 'Watering now' : 'Not watering'}</p>
       ${s.checked ? `<span class="now-checked">checked ${escapeHtml(s.checked)}</span>` : ''}${refresh}
     </div>
     ${empty ? `<h2 class="now-title">No data yet</h2><p class="now-detail">${canControl ? 'Press Refresh to ask the controller.' : 'Nothing has been pulled yet.'}</p>`
@@ -2932,11 +2970,14 @@ function waterMotors() {
 function dconTile() {
   const d = (state.irrigation || {}).dcon || {};
   const s = irrNowState();
-  // Like the motors: no age while current, past tense and its age after.
-  const cur = controllerCurrent();
-  return { key: DCON_KEY, name: d.device || 'Mobitech DCON', vendor: 'mobitech', running: s.running, current: cur,
-    sub: 'Mobitech · Farm valves', word: cur ? (s.running ? 'Watering' : 'Not watering') : (s.running ? 'Was watering' : 'Was not watering'),
-    age: cur ? '' : irrChecked() };
+  // Like the motors: no age while current, past tense and its age after; a
+  // failed read says so, never "not watering".
+  const unread = unreadController();
+  const cur = controllerCurrent() && !unread;
+  return { key: DCON_KEY, name: d.device || 'Mobitech DCON', vendor: 'mobitech', running: s.running, current: cur, unread,
+    sub: 'Mobitech · Farm valves',
+    word: unread ? "Can't read" : cur ? (s.running ? 'Watering' : 'Not watering') : (s.running ? 'Was watering' : 'Was not watering'),
+    age: cur ? '' : unread ? (irrChecked() && irrChecked() !== 'just now' ? `read ${irrChecked()}` : '') : irrChecked() };
 }
 /* The water's path (owner, 2026-09-25: "a visual representation of the
  * water flow"; then "bad use of space and not clean"). One panel, one row per
@@ -2965,21 +3006,32 @@ function waterPath({ compact = false } = {}) {
   const rest = motors.filter((m) => m !== river && m !== supply && m !== drip);
   const s = irrNowState();
   const live = (m) => !!m && m.running === true && waterCurrent(m);
-  const on = { river: live(river), supply: live(supply), drip: live(drip), farm: !!s.running && controllerCurrent() };
+  const on = { river: live(river) && !unreadMotor(river), supply: live(supply) && !unreadMotor(supply),
+    drip: live(drip) && !unreadMotor(drip), farm: !!s.running && controllerCurrent() && !unreadController() };
   // A rail cell: the pipe above and below the row's centre, each on or off.
   const rail = (up, down) => `<span class="wp-rail${up == null ? ' no-up' : up ? ' up-on' : ''}${down == null ? ' no-dn' : down ? ' dn-on' : ''}" aria-hidden="true"></span>`;
   const station = (flowing) => `<span class="wp-st${flowing ? ' is-on' : ''}"><img src="/art/${flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span>`;
   const place = (name, up, down) => compact ? '' : `<div class="wp-row wp-place">${rail(up, down)}<span class="wp-place-name">${escapeHtml(name)}</span></div>`;
-  const row = (key, name, line, word, flowing, age, up, down, branch = null) =>
+  const row = (key, name, line, word, flowing, age, up, down, branch = null, warn = false) =>
     `<a class="wp-row wp-motor${branch != null ? ' wp-branch' : ''}${flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(key)}">` +
     (branch != null ? `${rail(up, down)}<span class="wp-stub${branch ? ' is-on' : ''}">${station(flowing)}</span>` : `<span class="wp-g">${rail(up, down)}${station(flowing)}</span>`) +
     `<span class="wp-text"><strong>${escapeHtml(name)}</strong>${line ? `<small>${escapeHtml(line)}</small>` : ''}</span>` +
-    `<span class="wp-state"><span class="tag${flowing ? ' tag-on' : ''}">${escapeHtml(word)}</span>${age ? `<em>${escapeHtml(age)}</em>` : ''}</span>` +
+    `<span class="wp-state"><span class="tag${warn ? ' tag-warn' : flowing ? ' tag-on' : ''}">${escapeHtml(word)}</span>${age ? `<em>${escapeHtml(age)}</em>` : ''}</span>` +
     `${arrow('i-arrow', 'wp-go')}</a>`;
   const motorRow = (m, fallbackKey, up, down, branch) => {
     if (!m) return row(fallbackKey, { river: 'River Motor', 'well-motor': 'Well motor', wellmotor75hp: 'Wellmotor75HP' }[fallbackKey] || 'Motor', 'No reading yet', 'No reading', false, '', up, down, branch);
-    const cur = waterCurrent(m);
-    return row(m.key, m.name || 'Motor', motorLine(m, cur), motorWord(m, cur), live(m), cur ? '' : waterAge(m), up, down, branch);
+    const why = unreadMotor(m);
+    const cur = waterCurrent(m) && !why;
+    // When SNOF last read it successfully: for Livesky the older of its last
+    // good read and the starter's own report, so an ended session never says
+    // "read just now".
+    const rep = Date.parse(m.liveAt || m.reportedAt || ''), good = state.meta?.water?.livesky?.at;
+    const seen = agoText(m.vendor === 'livesky'
+      ? (Number.isFinite(rep) && good ? Math.min(rep, good) : good || m.liveAt || m.reportedAt)
+      : (state.meta?.water?.niagara?.at || state.water?.pulledAt));
+    return row(m.key, m.name || 'Motor', why || motorLine(m, cur), why ? "Can't read" : motorWord(m, cur), live(m) && !why,
+      // Beside "Can't read", "read just now" confuses: the age shows from a minute.
+      cur ? '' : why ? (seen && seen !== 'just now' ? `read ${seen}` : '') : waterAge(m), up, down, branch, why);
   };
   const t = dconTile();
   const farmLine = s.running ? [s.valves || s.title, s.left != null && s.left > 0 ? `${fmtMin(s.left)} left` : ''].filter(Boolean).join(' · ') : 'Valves closed';
@@ -2990,7 +3042,7 @@ function waterPath({ compact = false } = {}) {
     motorRow(drip, 'well-motor', on.supply || on.drip, on.supply, on.drip) +
     motorRow(supply, 'wellmotor75hp', on.supply, on.supply) +
     place('Farm', on.supply, on.farm) +
-    row(DCON_KEY, t.name, farmLine, t.word, on.farm, t.age, on.farm, null);
+    row(DCON_KEY, t.name, t.unread || farmLine, t.word, on.farm, t.age, on.farm, null, null, !!t.unread);
   const extra = rest.map((m) => motorRow(m, m.key, null, null)).join('');
   // Home: the same rows, without the place names, inside its own card.
   if (compact) return `<div class="wpath is-compact">${rows}${extra}</div>`;
