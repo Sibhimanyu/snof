@@ -692,6 +692,23 @@ def test_a_failed_read_is_kept_per_kind():
     assert R.read_error({"status": "partial"}) is None
 
 
+def test_an_empty_dashboard_is_a_failed_read():
+    """The relay once trimmed Mobitech's refusal to {}: never an idle controller."""
+    import dcon as D
+
+    class T:
+        def __init__(self, body): self.body = body
+        def call(self, call, args): return self.body
+    for body in ({}, [], {"state": "ok"}):
+        try:
+            D.Dcon(T(body)).dashboard()
+        except D.DconError as e:
+            assert "no controller data" in str(e)
+        else:
+            raise AssertionError(f"{body!r} read as a dashboard")
+    assert D.Dcon(T({"MC1": {"timers": []}})).dashboard() == {"MC1": {"timers": []}}
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:

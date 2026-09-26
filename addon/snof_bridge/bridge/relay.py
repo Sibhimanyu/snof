@@ -125,6 +125,14 @@ def trim_dashboard(body: Any) -> Any:
     """Keep only the keys the reports read from the dashboard call."""
     if not isinstance(body, dict):
         return {}
+    # A refusal ({"state": "failed", "message": "…signed in on other mobile
+    # devices…"}) is passed on as one, not trimmed to {}: an empty dashboard
+    # read as an idle controller, and the apps said "not watering" while
+    # Mobitech had signed SNOF out (2026-09-26). The message is Mobitech's own
+    # text; any run of six or more digits is cut all the same.
+    if body.get("state") == "failed" or body.get("status") == "failed":
+        why = str(body.get("message") or body.get("reason") or "refused")
+        return {"state": "failed", "message": re.sub(r"\d{6,}", "", why)[:200]}
     out = {}
     for serial, node in body.items():
         if not isinstance(node, dict):
