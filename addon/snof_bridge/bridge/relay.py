@@ -73,6 +73,23 @@ CALLS = {
 _DASHBOARD_KEEP = ("server_time", "time_zone", "timers")
 
 
+# The Mobitech session an admin signs in with from the app (RTDB, no client
+# reads). Mobitech keeps one session per account, so each new sign-in ends
+# the one before: the reads must use it too, or a sign-in in the app signs the
+# relay out (2026-09-26: "it told me it was signed in, then when I refresh it
+# tells me Mobitech logged me out"). The add-on option is only the fallback.
+TOKEN_PATH = "private/mobitech/token"
+
+
+def pick_token(signed_in: Any, fallback: str | None) -> str:
+    """The session from signing in to Mobitech wins; the hand-set option is
+    the fallback. Only something shaped like the app's token counts."""
+    for cand in (signed_in, fallback):
+        if isinstance(cand, str) and cand.strip().endswith("@ios") and len(cand.strip()) >= 40:
+            return cand.strip()
+    return ""
+
+
 def validate(job: Any, now: float | None = None) -> tuple[str, dict] | None:
     """(call, args) for a job worth running, or None."""
     if not isinstance(job, dict):
@@ -177,12 +194,22 @@ class DconRelay:
         return {"enabled": self.enabled, "served": self.served,
                 "refused": self.refused, "lastError": self.last_error}
 
+    async def _token(self) -> str:
+        """The signed-in session if there is one, else the add-on option."""
+        try:
+            signed_in = await self._rtdb.get(TOKEN_PATH)
+        except Exception:          # noqa: BLE001 — the option still works
+            signed_in = None
+        return pick_token(signed_in, self._cfg.dcon_token_id) or self._cfg.dcon_token_id
+
     async def _fetch(self, call: str, args: dict) -> tuple[int, str]:
         import aiohttp
 
         cfg = self._cfg
         method = CALLS[call][0]
-        fields = form_for(call, args, cfg.dcon_serial, cfg.dcon_token_id,
+        # Only the dashboard call carries the token; the rest need none.
+        token = await self._token() if call == "dashboard" else cfg.dcon_token_id
+        fields = form_for(call, args, cfg.dcon_serial, token,
                           cfg.dcon_product or "DCON")
         url = f"{cfg.dcon_base}/v1/http/"
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)

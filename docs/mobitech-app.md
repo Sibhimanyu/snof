@@ -89,10 +89,12 @@ are answered for anyone who knows the serial number or device id. Only
    Mobitech sign-in — displaces it, and the dashboard then answers
    `{"state":"failed","message":"Your account has been sign-in on other
    mobile devices…"}`. That once read as "Not watering" (fixed: it is now an
-   error, and the cache keeps the last good program). After any re-sign-in,
-   set the add-on's `dcon_token_id` to the session in `/private/mobitech/token`
-   (merge into the Supervisor options, restart — nuc-access-and-deploy.md 6a),
-   or reads of "what is running" stop.
+   error, and the cache keeps the last good program). **Since add-on 0.10.8
+   (2026-09-26) the relay reads with the session in `/private/mobitech/token`**
+   (`relay.pick_token`, the same choice the valve commands make), and
+   `dcon_token_id` is only the fallback, so signing in from the app no longer
+   signs the relay out. Signing in on the Mobitech phone app still ends SNOF's
+   session: sign in again from SNOF afterwards.
 
 ## Screens and their calls
 
