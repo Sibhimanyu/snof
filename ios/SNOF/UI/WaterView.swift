@@ -104,8 +104,10 @@ struct WaterPath: View {
     /// What a motor row says under its name: what it is doing, else its job.
     private func line(_ m: WaterMotor, current: Bool) -> String {
         if current, m.vendor == "livesky" {
-            if m.running == true, let r = m.runMinutes { return "For \(WaterFormat.minutes(r))" }
-            if m.running == false, let r = m.stopMinutes { return "Off for \(WaterFormat.minutes(r))" }
+            // The duration and when it began (owner, 2026-09-26).
+            let end = m.lastReport ?? store.now
+            if m.running == true, let r = m.runMinutes { return "For \(WaterFormat.minutes(r)) · \(Water.since(r, before: end, now: store.now))" }
+            if m.running == false, let r = m.stopMinutes { return "Off for \(WaterFormat.minutes(r)) · \(Water.since(r, before: end, now: store.now))" }
         }
         if current, m.running == true, let p = m.program {
             return [p, m.zone.map { "zone \($0)" }, m.zoneLeft.map { "\(WaterFormat.hms($0)) left" }].compactMap { $0 }.joined(separator: " · ")
@@ -151,7 +153,8 @@ struct WaterPath: View {
                         .padding(.trailing, 12)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(Theme.font(15, .bold, relativeTo: .headline)).foregroundStyle(Theme.text).lineLimit(1)
+                    // Two lines rather than cut: a long name beside "read 78m ago · 08:36".
+                    Text(name).font(Theme.font(15, .bold, relativeTo: .headline)).foregroundStyle(Theme.text).lineLimit(2)
                     // Two lines at most, so a reason is said whole on the indented row.
                     if !line.isEmpty { Text(line).font(Theme.font(12.5, .regular, relativeTo: .caption)).foregroundStyle(Theme.muted).lineLimit(2) }
                 }
@@ -285,9 +288,16 @@ enum Water {
     /// "just now", "12m ago", "2h ago", "3d ago": the app's one age format,
     /// as agoText() in app.js. (Two formats once put "checked 2h ago" and
     /// "1 h ago" for the same pull on one screen.)
+    /// With its clock time (owner, 2026-09-26: "the timestamp for last
+    /// updated also needed"): "12m ago · 09:37", "2h ago · 23:40 yesterday".
     static func ago(_ d: Date, now: Date) -> String {
         let s = max(0, now.timeIntervalSince(d))
-        return s < 45 ? "just now" : "\(Format.age(s)) ago"
+        return s < 45 ? "just now" : "\(Format.age(s)) ago · \(FarmTime.when(ms: d.timeIntervalSince1970 * 1000, now: now))"
+    }
+
+    /// "since 05:36": when a duration that ends at `end` began.
+    static func since(_ minutes: Int, before end: Date, now: Date) -> String {
+        "since \(FarmTime.when(ms: (end.timeIntervalSince1970 - Double(minutes) * 60) * 1000, now: now))"
     }
 }
 
@@ -469,8 +479,9 @@ struct MotorCard: View {
         let m = motor
         var out: [(String, String)] = []
         if m.vendor == "livesky" {
-            if m.running == true, let r = m.runMinutes { out.append(("Running for", WaterFormat.minutes(r))) }
-            if m.running == false, let s = m.stopMinutes { out.append(("Off for", WaterFormat.minutes(s))) }
+            let end = m.lastReport ?? now
+            if m.running == true, let r = m.runMinutes { out.append(("Running for", "\(WaterFormat.minutes(r)), \(Water.since(r, before: end, now: now))")) }
+            if m.running == false, let s = m.stopMinutes { out.append(("Off for", "\(WaterFormat.minutes(s)), \(Water.since(s, before: end, now: now))")) }
         }
         if let p = m.program {
             out.append(("Program", p + (m.zone.map { " · zone \($0)" } ?? "")))

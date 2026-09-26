@@ -203,8 +203,7 @@ struct ReportListRow: View {
         var bits: [String] = []
         if let f = report.from, let t = report.to { bits.append(Format.dayRange(f, t, now: now)) }
         if report.at > 0 {
-            let age = now.timeIntervalSince1970 - report.at / 1000
-            bits.append(age < 60 ? "just now" : "\(Format.age(age)) ago")
+            bits.append(Water.ago(Date(timeIntervalSince1970: report.at / 1000), now: now))
         }
         return bits.isEmpty ? "Waiting for the controller" : bits.joined(separator: " · ")
     }

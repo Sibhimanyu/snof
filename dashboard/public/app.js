@@ -2889,12 +2889,18 @@ document.addEventListener('visibilitychange', () => { if (waterTimer && !documen
 
 const serverNow = () => Date.now() + clockSkewMs;
 /** "3 min ago" from an ISO stamp or epoch ms; '' when unknown. */
+/** With its clock time (owner, 2026-09-26: "the timestamp for last updated
+ *  also needed"): "12m ago · 09:37", "2h ago · 23:40 yesterday". */
 function agoText(when) {
   const t = typeof when === 'number' ? when : Date.parse(when || '');
   if (!Number.isFinite(t)) return '';
   const sec = Math.max(0, (serverNow() - t) / 1000);
-  return sec < 45 ? 'just now' : `${humanAge(sec)} ago`;
+  return sec < 45 ? 'just now' : `${humanAge(sec)} ago · ${whenMs(t)}`;
 }
+/** A moment (ms) as the farm's clock says it: "09:37", "23:40 yesterday", "21 Sep 20:32". */
+const whenMs = (ms) => farmWhen(new Date(ms + farmTz() * 60000).toISOString().slice(0, 16).replace('T', ' '));
+/** "since 05:36": when a duration of `min` minutes ending at `endMs` began. */
+const sinceWhen = (min, endMs) => `since ${whenMs((endMs || serverNow()) - min * 60000)}`;
 const hm = (min) => (min == null ? '' : min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${pad2(min % 60)} min`);
 const hms = (v) => String(v || '').replace(/^00:/, '').replace(/^0(\d:)/, '$1');
 const joinNums = (list, unit) => (Array.isArray(list) && list.length ? `${list.join(' · ')} ${unit}` : '');
@@ -2927,8 +2933,9 @@ function waterMotorCard(m, vendorErr, onPage = false) {
   if (!m) return '';
   const facts = [];
   if (m.vendor === 'livesky') {
-    if (m.running === true && m.runMinutes != null) facts.push(['Running for', hm(m.runMinutes)]);
-    if (m.running === false && m.stopMinutes != null) facts.push(['Off for', hm(m.stopMinutes)]);
+    const end = Date.parse(m.liveAt || m.reportedAt || '') || serverNow();
+    if (m.running === true && m.runMinutes != null) facts.push(['Running for', `${hm(m.runMinutes)}, ${sinceWhen(m.runMinutes, end)}`]);
+    if (m.running === false && m.stopMinutes != null) facts.push(['Off for', `${hm(m.stopMinutes)}, ${sinceWhen(m.stopMinutes, end)}`]);
   }
   if (m.program) {
     facts.push(['Program', `${m.program}${m.zone != null ? ` · zone ${m.zone}` : ''}`]);
@@ -3017,8 +3024,10 @@ const WATER_WAY = { river: 'River to Thoppu', 'main-farm': 'Thoppu to Farm', dri
 /** What a motor row says under its name: what it is doing, else its job. */
 function motorLine(m, current) {
   if (current && m.vendor === 'livesky') {
-    if (m.running === true && m.runMinutes != null) return `For ${hm(m.runMinutes)}`;
-    if (m.running === false && m.stopMinutes != null) return `Off for ${hm(m.stopMinutes)}`;
+    // The duration and when it began (owner, 2026-09-26).
+    const end = Date.parse(m.liveAt || m.reportedAt || '') || serverNow();
+    if (m.running === true && m.runMinutes != null) return `For ${hm(m.runMinutes)} · ${sinceWhen(m.runMinutes, end)}`;
+    if (m.running === false && m.stopMinutes != null) return `Off for ${hm(m.stopMinutes)} · ${sinceWhen(m.stopMinutes, end)}`;
   }
   if (current && m.running && m.program) {
     return [m.program, m.zone != null ? `zone ${m.zone}` : '', m.zoneLeft ? `${hms(m.zoneLeft)} left` : ''].filter(Boolean).join(' · ');
@@ -3595,7 +3604,9 @@ function deviceCard(ent, mode = 'area') {
   const lvl = level !== null && !bad && on ? ` · ${level}%` : '';
   // Inside a room the toggle already shows on or off; the words add what the
   // toggle cannot: for how long.
-  const since = sinceText(ent);
+  // For how long, and since when (owner, 2026-09-26).
+  const changed = Date.parse(ent.lastChanged || '');
+  const since = sinceText(ent) ? `${sinceText(ent)}${Number.isFinite(changed) ? ` · since ${whenMs(changed)}` : ''}` : '';
   const meta = mode === 'quick'
     ? `${areaName(ent.area)}${lvl}`
     : bad ? `Not reporting${since ? ` for ${since}` : ''}`
