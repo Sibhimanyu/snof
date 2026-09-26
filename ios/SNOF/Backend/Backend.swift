@@ -34,6 +34,9 @@ enum FarmEvent {
     /// farms/<farm>/water: the river motor and the other farm's motors, as
     /// the water functions last read them. Read-only.
     case water(Any?)
+    /// acl/owner: {email, name} — the one person who signs SNOF in to
+    /// Mobitech and Livesky (owner, 2026-09-26).
+    case owner(Any?)
     case controller(Bool)
     case admin(Bool)
     case serverTimeOffset(Double)

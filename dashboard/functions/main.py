@@ -386,11 +386,15 @@ def water_session(req: https_fn.Request) -> https_fn.Response:
     store = _db()
     header = req.headers.get("Authorization", "")
     try:
-        uid = fb_auth.verify_id_token(header.removeprefix("Bearer ").strip())["uid"]
+        claims = fb_auth.verify_id_token(header.removeprefix("Bearer ").strip())
+        uid = claims["uid"]
     except Exception:          # noqa: BLE001 — any failure is "not signed in"
         return _json({"ok": False, "error": "Sign in to SNOF first."}, 401)
-    if store.reference(f"acl/admins/{uid}").get() is not True:
-        return _json({"ok": False, "error": "Only farm admins can sign in to Livesky."}, 403)
+    # The owner alone signs SNOF in (owner, 2026-09-26); everyone else uses
+    # the session through the water functions.
+    if store.reference(f"acl/admins/{uid}").get() is not True or \
+            not water.is_owner(claims, store.reference("acl/owner/email").get()):
+        return _json({"ok": False, "error": "Only the farm owner signs SNOF in to Livesky."}, 403)
 
     body = req.get_json(silent=True) or {}
     action = body.get("action")

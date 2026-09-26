@@ -365,6 +365,11 @@ struct MobitechSignIn: View {
         }
         if let problem = store.mobitechProblem { Text(problem).foregroundStyle(Theme.warn) }
 
+        // The owner alone signs SNOF in; everyone else uses that session.
+        if let who = store.signInBy {
+            Text("Only \(who) signs SNOF in to Mobitech. Everyone uses that session.")
+                .font(Theme.meta).foregroundStyle(Theme.muted)
+        } else {
         switch step {
         case .idle:
             Button(store.mobitechStatus == nil ? "Sign in to Mobitech" : "Sign in again") { step = .mobile }
@@ -376,12 +381,12 @@ struct MobitechSignIn: View {
                             busy = true
                             Task { await store.mobitechSignOut(); busy = false }
                         }
-                    } message: { Text("Valve commands stop until someone signs in again.") }
+                    } message: { Text("Valve commands stop until you sign in again.") }
             }
         case .mobile:
             TextField("Mobitech mobile number", text: $mobile)
                 .keyboardType(.numberPad).textContentType(.telephoneNumber)
-            Text("Signing SNOF in may sign the Mobitech app on the phone out, if Mobitech allows one session per account.")
+            Text("Signing SNOF in signs the Mobitech app on your phone out: Mobitech allows one session per account.")
                 .font(Theme.meta).foregroundStyle(Theme.muted)
             Button(busy ? "Sending…" : "Send code") {
                 busy = true
@@ -401,6 +406,7 @@ struct MobitechSignIn: View {
             }
             .disabled(busy || code.filter(\.isNumber).count < 4)
             Button("Use another number", role: .cancel) { step = .mobile; code = "" }.disabled(busy)
+        }
         }
     }
 }

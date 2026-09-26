@@ -299,6 +299,15 @@ def test_claim_pull_spacing():
     assert W.claim_pull(db, "farms/snof", 1_016_000) is True
 
 
+def test_only_the_owner_signs_in():
+    owner = "sibhi.gv@gmail.com"
+    assert W.is_owner({"email": "Sibhi.GV@gmail.com", "email_verified": True}, owner)
+    assert not W.is_owner({"email": owner, "email_verified": False}, owner), "unverified email"
+    assert not W.is_owner({"email": "someone@else.com", "email_verified": True}, owner)
+    assert not W.is_owner({"email": owner, "email_verified": True}, None), "no owner set: nobody"
+    assert not W.is_owner({}, owner)
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_")]
     for name, fn in tests:

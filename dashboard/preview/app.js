@@ -43,6 +43,14 @@ const isBackstage = (e) => SETTING_DOMAINS.has(e.domain) || /\bdebug\b/i.test(e.
 let state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, irrigation_reports: {}, water: {}, acl: {} };
 let canControl = false;
 let isAdmin = false;
+/* The farm owner (acl/owner): the one person who signs SNOF in to Mobitech
+ * and Livesky; everyone else uses those sessions (owner, 2026-09-26). The
+ * rules and water_session enforce it; this only decides what to offer. */
+let owner = null;   // { email, name }
+const isOwner = () => !!(owner?.email && currentUser?.email && currentUser.email.toLowerCase() === owner.email.toLowerCase());
+const ownerName = () => owner?.name || 'The farm owner';
+/** What to do about a lapsed session, said to whoever is looking. */
+const signInAgain = (what) => (isOwner() ? `Sign in again ${what}.` : `${ownerName()} needs to sign in again ${what}.`);
 let aclRef = null;
 let currentUser = null;
 let search = '';
@@ -226,6 +234,9 @@ function enter(user) {
   // Once true, it also unlocks a read of the whole acl subtree (RTDB rules
   // cascade that from admins == true), which the Admin page needs to list
   // everyone in one shot rather than probing uid by uid.
+  const ownerRef = db.ref('acl/owner');
+  const ownerCb = ownerRef.on('value', (s) => { owner = s.val(); render(); }, () => { owner = null; });
+  refs.push({ ref: ownerRef, ev: 'value', cb: ownerCb });
   const adminRef = db.ref(`acl/admins/${user.uid}`);
   const adminCb = adminRef.on('value',
     (s) => {
@@ -1287,7 +1298,7 @@ function attentionItems(all, systems) {
   const repErr = c.meta?.lastError, unread = unreadController();
   if (unread) add('warn', "Can't read the controller", unread, '#/motor/dcon');
   else if (repErr) add('warn', 'Could not reach the controller', unreadWords(repErr), '#/motor/dcon');
-  if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', 'sign in so valve commands keep working', '#/motor/dcon');
+  if (isAdmin && mobitechState().kind !== 'ok') add('warn', 'Mobitech sign-in needed', isOwner() ? 'sign in so valve commands keep working' : `${ownerName()} signs SNOF in`, '#/motor/dcon');
   // Water chain.
   const w = state.water || {};
   for (const m of [w.river, ...Object.values(w.motors || {})].filter(Boolean)) {
@@ -1296,7 +1307,7 @@ function attentionItems(all, systems) {
   }
   const ws = state.meta?.water || {};
   if (ws.enabled === true) {
-    if (isAdmin && ['none', 'expired'].includes(liveskyState().kind)) add('warn', 'Livesky sign-in needed', 'the river motor is not being read', '#/water');
+    if (isAdmin && ['none', 'expired'].includes(liveskyState().kind)) add('warn', 'Livesky sign-in needed', isOwner() ? 'the river motor is not being read' : `${ownerName()} signs SNOF in`, '#/water');
     else if (ws.livesky?.ok === false && ws.livesky?.error) add('warn', 'River motor not read', ws.livesky.error, '#/water');
     if (ws.niagara?.ok === false && ws.niagara?.error) add('warn', 'Thoppu not read', ws.niagara.error, '#/water');
     if (w.pulledAt && serverNow() - w.pulledAt > 30 * 60000) add('warn', 'Water readings are old', `last read ${agoText(w.pulledAt)}`, '#/water');
@@ -3107,7 +3118,7 @@ function motorView(key) {
     const t = dconTile();
     const mb = isAdmin ? mobitechState() : { kind: 'ok' };
     const account = isAdmin
-      ? `<details class="acct-sec"${mb.kind !== 'ok' || mbStep !== 'idle' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
+      ? `<details class="acct-sec"${mb.kind !== 'ok' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
     return head(t.name, t.sub, '', back) +
       `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
       `<div class="irr-col">${irrSupplyModule()}</div></div>` + `<div class="irr-wide">${irrCropsModule()}</div>` +
@@ -3192,9 +3203,9 @@ async function liveskySignOut() {
 /** SNOF's Livesky session in one line, for any page. */
 function liveskyState() {
   const st = state.meta?.water?.livesky || {};
-  if (!st.signedInAt && !st.expires) return { kind: 'none', text: 'SNOF is not signed in to Livesky, so the river motor cannot be read.' };
+  if (!st.signedInAt && !st.expires) return { kind: 'none', text: `SNOF is not signed in to Livesky, so the river motor cannot be read.${isOwner() ? '' : ` ${ownerName()} signs it in.`}` };
   if (st.expires && st.expires <= serverNow()) {
-    return { kind: 'expired', text: `The Livesky session ended ${mbWhen(st.expires)}. Sign in again to read the river motor.` };
+    return { kind: 'expired', text: `The Livesky session ended ${mbWhen(st.expires)}. ${signInAgain('to read the river motor')}` };
   }
   if (st.ok === false && st.error) return { kind: 'error', text: st.error };
   return { kind: 'ok', text: '' };
@@ -3211,7 +3222,9 @@ function liveskyPanel() {
     </div>` : '';
   const status = s.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(s.text)}</p>`;
   let form;
-  if (lsStep === 'mobile') {
+  if (!isOwner()) {
+    form = `<p class="more-note">Only ${escapeHtml(ownerName())} signs SNOF in to Livesky. Everyone uses that session.</p>`;
+  } else if (lsStep === 'mobile') {
     form = `<div class="rep-builder" data-key="livesky">
         <label class="rep-field"><span>Livesky mobile number</span>
           <input id="ls-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
@@ -3385,84 +3398,17 @@ function adminRow(uid, person) {
  * own — a session of its own that the phone's sign-outs cannot end — and
  * proves it with a dashboard read (read-only) before storing it.
  *
- * The browser talks to Mobitech directly (it allows any origin; it refuses
- * Google Cloud). The token goes where no client can read it
+ * Signing in happens in the iPhone app: Mobitech sends no CORS header, so a
+ * browser cannot read its answers (2026-09-26); it also refuses Google
+ * Cloud. The web keeps "Sign SNOF out". The token goes where no client can read it
  * (/private/mobitech); a non-secret line goes to farms/<farm>/mobitech_status,
  * where whatever sends the commands also records lastOk / lastRejected.
  * The number and the code are never stored. Unproven until first used:
  * whether Mobitech accepts a token that is not a real FCM token, and
  * whether it lets one user keep two sessions (the phone may be signed out). */
-const MOBITECH = 'https://dcon.mobitechwireless.com';
-let mbStep = 'idle';     // idle | mobile | code
-let mbMobile = '', mbCode = '', mbBusy = false, mbError = '', mbInfo = '';
-let mbToken = '';
-
-/** A device token shaped like the Mobitech app's (an FCM registration token
- *  with "@ios"): 22 url-safe characters, ":APA91b", 134 more. */
-function mobitechDeviceToken() {
-  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-  const pick = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => abc[b % 64]).join('');
-  return `${pick(22)}:APA91b${pick(134)}@ios`;
-}
-
+/** "98765 43210", "+91 98765 43210" -> "9876543210" (the Livesky number too). */
 const mobitechDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
-const mbForm = (fields) => ({ method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-  body: typeof fields === 'string' ? fields : new URLSearchParams(fields) });
-async function mbJson(r) { const t = await r.text(); try { return JSON.parse(t); } catch { return null; } }
-
-async function mobitechSendCode() {
-  const mobile = mobitechDigits(mbMobile);
-  if (!/^\d{10}$/.test(mobile)) { mbError = 'Enter the 10-digit mobile number on the Mobitech account.'; render(); return; }
-  mbBusy = true; mbError = ''; mbInfo = ''; render();
-  try {
-    // Byte for byte what the app sends: a JSON object as the whole form body.
-    const r = await fetch(`${MOBITECH}/v1/otp/`, mbForm(JSON.stringify({ mobile: `91${mobile}` })));
-    const j = await mbJson(r);
-    if (!r.ok || (j && j.message && j.message !== 'Success')) {
-      throw new Error((j && j.message) || `Mobitech answered ${r.status}`);
-    }
-    mbStep = 'code'; mbCode = ''; mbToken = mobitechDeviceToken();
-    mbInfo = `Mobitech sent a code to the number ending ${mobile.slice(-4)}.`;
-  } catch (err) {
-    mbError = `No code sent: ${err.message}`;
-  }
-  mbBusy = false; render();
-}
-
-async function mobitechSignIn() {
-  const mobile = mobitechDigits(mbMobile);
-  const otp = String(mbCode || '').replace(/\D/g, '');
-  if (!/^\d{4,8}$/.test(otp)) { mbError = 'Enter the code from the SMS.'; render(); return; }
-  mbBusy = true; mbError = ''; render();
-  try {
-    const sent = mbToken || mobitechDeviceToken();
-    const r = await fetch(`${MOBITECH}/v1/http/?`, mbForm({ action: 'login', type: 'otp', otp, mobile,
-      token: sent, product: 'DCON', app_id: 'com.mobitech.drip' }));
-    const who = await mbJson(r);
-    if (!r.ok || !who || who.state !== 'ok') {
-      throw new Error((who && (who.msg || who.message || who.reason)) || 'the code was not accepted');
-    }
-    const token = String(who.id || sent);
-    if (!token.endsWith('@ios')) throw new Error('Mobitech did not register a session');
-    // Prove it: the dashboard is one of the two calls that check the token,
-    // and a read changes nothing. A rejected token gets no controller back.
-    const d = await mbJson(await fetch(`${MOBITECH}/v1/http/`,
-      mbForm({ action: 'dashboard', p: 'app', token_id: token, product: 'DCON' })));
-    const ok = d && typeof d === 'object' && Object.values(d).some((v) => v && typeof v === 'object' && !Array.isArray(v));
-    if (!ok) throw new Error('Mobitech took the code but will not serve the controller to this session');
-    const db = firebase.database();
-    const at = firebase.database.ServerValue.TIMESTAMP;
-    await db.ref('private/mobitech').set({ token, at, uid: currentUser.uid });
-    await db.ref(`farms/${FARM}/mobitech_status`).set({ at, uid: currentUser.uid,
-      name: String(who.name || '').slice(0, 64), user: String(who.uname || '').slice(0, 64),
-      mobileLast4: mobile.slice(-4) });
-    mbStep = 'idle'; mbMobile = ''; mbCode = ''; mbToken = ''; mbInfo = '';
-    toast('ok', `Signed in to Mobitech as ${who.name || who.uname || 'the farm account'}. Valve commands use this session.`);
-  } catch (err) {
-    mbError = `Not signed in: ${err.message}`;
-  }
-  mbBusy = false; render();
-}
+let mbBusy = false, mbError = '', mbInfo = '';
 
 /** Stop SNOF using its session. The Mobitech logout call needs the token,
  *  which no client can read, so the session stays registered at Mobitech
@@ -3472,7 +3418,7 @@ async function mobitechSignOut() {
   try {
     await firebase.database().ref('private/mobitech').remove();
     await firebase.database().ref(`farms/${FARM}/mobitech_status`).remove();
-    toast('ok', 'Signed SNOF out of Mobitech. Valve commands are off until someone signs in again.');
+    toast('ok', 'Signed SNOF out of Mobitech. Valve commands are off until you sign in again from the iPhone app.');
   } catch (err) {
     toast('err', `Could not sign out: ${err.message}`);
   }
@@ -3484,9 +3430,9 @@ const mbWhen = (ms) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', mo
 /** What SNOF's Mobitech session is doing, in one line, for any page. */
 function mobitechState() {
   const st = state.mobitechStatus || {};
-  if (!st.at) return { kind: 'none', text: 'SNOF is not signed in to Mobitech. Sign in so valve commands keep working.' };
+  if (!st.at) return { kind: 'none', text: `SNOF is not signed in to Mobitech. ${isOwner() ? 'Sign in' : `${ownerName()} needs to sign in`} so valve commands keep working.` };
   if (st.lastRejected && st.lastRejected > Math.max(st.at, st.lastOk || 0)) {
-    return { kind: 'rejected', text: `Mobitech rejected SNOF's session at ${mbWhen(st.lastRejected)}. Sign in again to send valve commands.` };
+    return { kind: 'rejected', text: `Mobitech rejected SNOF's session at ${mbWhen(st.lastRejected)}. ${signInAgain('to send valve commands')}` };
   }
   return { kind: 'ok', text: '' };
 }
@@ -3503,28 +3449,13 @@ function mobitechPanel() {
     </div>` : '';
   const status = m.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(m.text)}</p>`;
   let form = '';
-  if (mbStep === 'mobile') {
-    form = `<div class="rep-builder" data-key="mobitech">
-        <label class="rep-field"><span>Mobitech mobile number</span>
-          <input id="mb-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
-                 value="${escapeHtml(mbMobile)}" data-act="mb-mobile"></label>
-        <button class="btn btn-primary" data-act="mb-send"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Sending…' : 'Send code'}</button>
-        <button class="btn btn-ghost" data-act="mb-cancel"${mbBusy ? ' disabled' : ''}>Cancel</button>
-      </div>
-`;
-  } else if (mbStep === 'code') {
-    form = `<div class="rep-builder" data-key="mobitech">
-        <label class="rep-field"><span>Code from the SMS</span>
-          <input id="mb-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
-                 value="${escapeHtml(mbCode)}" data-act="mb-code"></label>
-        <button class="btn btn-primary" data-act="mb-signin"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Signing in…' : 'Sign in'}</button>
-        <button class="btn btn-ghost" data-act="mb-back"${mbBusy ? ' disabled' : ''}>Use another number</button>
-      </div>`;
+  if (!isOwner()) {
+    form = `<p class="more-note">Only ${escapeHtml(ownerName())} signs SNOF in to Mobitech. Everyone uses that session.</p>`;
   } else {
-    form = `<div class="mb-actions">
-        <button class="btn btn-primary" data-act="mb-start">${st.at ? 'Sign in again' : 'Sign in to Mobitech'}</button>
-        ${st.at ? `<button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
-      </div>`;
+    // Mobitech's server sends no CORS header, so a web page cannot read its
+    // answers and sign-in cannot work here (2026-09-26): the iPhone app can.
+    form = `<p class="more-note">Sign in from the SNOF iPhone app (Water → ${escapeHtml(dconTile().name)} → Mobitech account): Mobitech does not let a web page sign in.</p>` +
+      (st.at ? `<div class="mb-actions"><button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign SNOF out</button></div>` : '');
   }
   return `<section class="panel mb-panel">
       ${facts}${status}${form}
@@ -3828,25 +3759,6 @@ function wire(all) {
   });
   // Mobitech sign-in. Typing holds live rebuilds (as a slider drag does), so
   // a half-typed number or code is never wiped by a sensor update.
-  view.querySelectorAll('[data-act="mb-mobile"],[data-act="mb-code"]').forEach((input) => {
-    input.onfocus = beginInteract;
-    // Released a beat later: a click on "Send code" blurs the field first,
-    // and an immediate rebuild would swap the button out from under it.
-    input.onblur = () => setTimeout(endInteract, 300);
-    input.oninput = () => { if (input.dataset.act === 'mb-mobile') mbMobile = input.value; else mbCode = input.value; };
-    input.onkeydown = (e) => { if (e.key === 'Enter') { input.blur(); (input.dataset.act === 'mb-mobile' ? mobitechSendCode : mobitechSignIn)(); } };
-  });
-  view.querySelectorAll('[data-act="mb-send"]').forEach((btn) => { btn.onclick = () => mobitechSendCode(); });
-  view.querySelectorAll('[data-act="mb-signin"]').forEach((btn) => { btn.onclick = () => mobitechSignIn(); });
-  view.querySelectorAll('[data-act="mb-back"]').forEach((btn) => {
-    btn.onclick = () => { mbStep = 'mobile'; mbCode = ''; mbToken = ''; mbInfo = ''; mbError = ''; render(); };
-  });
-  view.querySelectorAll('[data-act="mb-start"]').forEach((btn) => {
-    btn.onclick = () => { mbStep = 'mobile'; mbError = ''; mbInfo = ''; render(); };
-  });
-  view.querySelectorAll('[data-act="mb-cancel"]').forEach((btn) => {
-    btn.onclick = () => { mbStep = 'idle'; mbMobile = ''; mbError = ''; render(); };
-  });
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
 
   view.querySelectorAll('[data-act="irr-refresh"]').forEach((btn) => { btn.onclick = () => refreshIrrigation(); });

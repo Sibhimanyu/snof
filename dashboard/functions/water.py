@@ -443,6 +443,14 @@ def pull(store, root: str, livesky_base: str, niagara: NiagaraClient | None, now
             "livesky": lpatch.get("error", ""), "niagara": npatch.get("error", "")}
 
 
+def is_owner(claims: dict, owner_email: Any) -> bool:
+    """The caller is the farm owner: a verified Google email equal to
+    acl/owner/email. Nobody is the owner while that is unset."""
+    email = str(claims.get("email") or "").strip().lower()
+    return bool(email and claims.get("email_verified") is True
+                and isinstance(owner_email, str) and email == owner_email.strip().lower())
+
+
 def mobile10(raw: Any) -> str | None:
     digits = re.sub(r"\D", "", str(raw or ""))
     if len(digits) == 12 and digits.startswith("91"):

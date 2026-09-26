@@ -34,7 +34,7 @@ Architecture and data shape are in README.md.
   **no authentication**: its user id (`NIAGARA_USER_ID`) and host
   (`NIAGARA_BASE`) are secrets, and controller ids never leave the
   function. The Livesky 24-hour JWT lives in `/private/livesky` (no client
-  access), renewed by an admin's SMS sign-in (Water tab, "Livesky account"). **No motor control exists.**
+  access), renewed by the owner's SMS sign-in (Water → River Motor, "Livesky account"). **No motor control exists.**
   Building it needs the owner's answers first (docs/water.md, "Control").
   It must copy the irrigation_lock model, and `AUTOON` counts as a start.
 
@@ -43,10 +43,20 @@ Architecture and data shape are in README.md.
   before it is kept, senders record lastOk/lastRejected, admins can sign
   SNOF out. (a) and (b) are still open: commands stay FON/OFF.
 - **The Mobitech command session comes from signing in** (2026-09-24):
-  admins sign in to Mobitech with an SMS code from the controller's page (Water → SibhiSump)
-  ("Mobitech account", web and iOS); the token goes to `/private/mobitech` (admins write, no client
-  reads) and consumers prefer it over the hand-set option. Never show or log
+  the owner signs in to Mobitech with an SMS code from the controller's page (Water → SibhiSump)
+  ("Mobitech account", **iOS only**: Mobitech sends no CORS header, so a
+  browser cannot); the token goes to `/private/mobitech` (the owner writes, no client
+  reads) and every consumer (the relay since 0.10.8, the valve commands)
+  prefers it over the hand-set option. Never show or log
   it. Details: docs/irrigation-control.md.
+- **Only the owner signs SNOF in to vendors** (owner, 2026-09-26: "the
+  super admin will be the only one to have to sign in, and everyone else
+  would just use those tokens"). `acl/owner` = `{email, name}` (set from the
+  command line; readable by anyone signed in, writable by no client). The
+  rules let only that verified email write `/private/mobitech` and
+  `mobitech_status`; `water_session` (Livesky) checks it with
+  `water.is_owner`. Everyone else sees the session and "Only Sibhi signs
+  SNOF in", never a form (`isOwner()` / `store.isOwner`).
 - **No second valve change until the first is confirmed** (owner,
   2026-09-24): Mobitech accepts anything and its server cannot handle
   conflicts. `irrigation_lock` is taken before sending and held until the

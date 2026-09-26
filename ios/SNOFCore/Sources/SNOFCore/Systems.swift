@@ -366,6 +366,9 @@ public enum Attention {
         public var mobitechSignInNeeded = false
         /// Only a missing or ended session: an outage is not a sign-in problem.
         public var liveskySignInNeeded = false
+        /// Who signs SNOF in to Mobitech and Livesky, when it is not the
+        /// person looking ("Sibhi"); nil when it is (acl/owner).
+        public var signInBy: String? = nil
         public var water = WaterState()
         public var systems: [FarmSystemID: FarmSystem] = [:]
         public var areaName: [String: String] = [:]
@@ -410,7 +413,8 @@ public enum Attention {
             out.append(.init(.warn, "Could not reach the controller", Unread.words(err), .irrigation))
         }
         if i.mobitechSignInNeeded {
-            out.append(.init(.warn, "Mobitech sign-in needed", "sign in so valve commands keep working", .irrigation))
+            out.append(.init(.warn, "Mobitech sign-in needed",
+                             i.signInBy.map { "\($0) signs SNOF in" } ?? "sign in so valve commands keep working", .irrigation))
         }
         let w = i.water
         for m in ([w.river] + w.motors.map { Optional($0) }).compactMap({ $0 }) {
@@ -418,7 +422,10 @@ public enum Attention {
             if let z = m.skippedZone { out.append(.init(.warn, "\(m.name): zone \(z) skipped", "no valve feedback", .water)) }
         }
         if w.enabled {
-            if i.liveskySignInNeeded { out.append(.init(.warn, "Livesky sign-in needed", "the river motor is not being read", .water)) }
+            if i.liveskySignInNeeded {
+                out.append(.init(.warn, "Livesky sign-in needed",
+                                 i.signInBy.map { "\($0) signs SNOF in" } ?? "the river motor is not being read", .water))
+            }
             else if w.livesky.status.ok == false, !w.livesky.status.error.isEmpty {
                 out.append(.init(.warn, "River motor not read", w.livesky.status.error, .water))
             }
