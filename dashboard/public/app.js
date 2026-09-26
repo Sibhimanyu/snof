@@ -901,6 +901,16 @@ function irrigationCard() {
   }
   const pics = String(valves).split(/,\s*/).filter(Boolean).slice(0, 5)
     .map((v) => { const a = valveArt(v, 'irrigation'); return a ? artImg(a, 'crop') : ''; }).join('');
+  // No last run when it cannot be read now (owner, 2026-09-26).
+  const unread = unreadController();
+  if (unread) {
+    return `<a class="panel vcard" href="#/motor/dcon">
+    <div class="pw-head"><h2 class="panel-title">Irrigation</h2><em class="card-age">can't read</em>
+      <span class="panel-link">Details${arrow()}</span></div>
+    <div class="vcard-text"><strong class="uh-inline">${escapeHtml(unread)}</strong>
+      <span>${escapeHtml(unread.includes('signed SNOF out') ? (isOwner() ? 'Open to sign in again' : `${ownerName()} needs to sign in again`) : 'Open to try again')}</span></div>
+  </a>`;
+  }
   return `<a class="panel vcard" href="#/motor/dcon">
     <div class="pw-head"><h2 class="panel-title">Irrigation</h2>${unreadController() ? `<em class="card-age">can't read</em>` : irrChecked() ? `<em class="card-age">${escapeHtml(irrChecked())}</em>` : ''}
       <span class="panel-link">Details${arrow()}</span></div>
@@ -2650,15 +2660,10 @@ function irrNowModule() {
       : refusal && refusal !== 'Only farm admins can open or close valves.' && !both ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
       : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>`
       : s.running && s.manual ? '<p class="more-note">One manual run at a time.</p>' : ''}` : '';
-  // Can't read it: said first, and the card below is its last reading.
-  const why = unreadController();
-  const whyNote = why ? `<p class="more-note note-off">Can't read the controller: ${escapeHtml(why)}.` +
-    (why.includes('signed SNOF out') ? (isAdmin ? ' Sign in again under Mobitech account below.' : ' A farm admin needs to sign in again.') : '') +
-    ' Below is its last reading.</p>' : '';
-  const liveNow = s.running && !why;
-  return whyNote + `<section class="panel now${liveNow ? ' is-on' : ''}" aria-label="Now">
+  // When the controller cannot be read, motorView() shows unreadHero() instead.
+  return `<section class="panel now${s.running ? ' is-on' : ''}" aria-label="Now">
     <div class="now-top">
-      <p class="now-label"><span class="dot"></span>${why ? (s.running ? 'Was watering' : 'Was not watering') : s.running ? 'Watering now' : 'Not watering'}</p>
+      <p class="now-label"><span class="dot"></span>${s.running ? 'Watering now' : 'Not watering'}</p>
       ${s.checked ? `<span class="now-checked">checked ${escapeHtml(s.checked)}</span>` : ''}${refresh}
     </div>
     ${empty ? `<h2 class="now-title">No data yet</h2><p class="now-detail">${canControl ? 'Press Refresh to ask the controller.' : 'Nothing has been pulled yet.'}</p>`
@@ -2760,6 +2765,12 @@ function cropBreakdown(day) {
 }
 
 function irrCropsModule() {
+  const unreadLog = unreadRead('session_log');
+  if (unreadLog) {
+    // No old figures on a failed read (owner, 2026-09-26).
+    return `<section class="panel irr-mod"><div class="panel-head"><h2 class="panel-title">Watered</h2><span class="card-age is-warn">can't read</span></div>` +
+      `<p class="more-note note-off" style="padding:0 22px 16px">Can't read the run log: ${escapeHtml(unreadLog)}.</p></section>`;
+  }
   const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
   const hasToday = irrRuns().some((r) => r.day === today && r.valves);
   const pick = cropDayPick || (hasToday ? 'today' : 'yesterday');
@@ -2798,6 +2809,12 @@ function irrCropsModule() {
 function irrSupplyModule() {
   const s = irrSupply(), p = irrPressure();
   if (!s && !p) return '';
+  const why = unreadRead('live_readings');
+  if (why) {
+    // No old figures on a failed read (owner, 2026-09-26).
+    return `<section class="panel irr-mod" aria-label="Pump and power"><div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>` +
+      `<span class="card-age is-warn">can't read</span></div><p class="more-note note-off" style="padding:0 22px 16px">Can't read the pump's power and pressure: ${escapeHtml(why)}.</p></section>`;
+  }
   const bars = s && s.v.length ? phaseBars(s.v) : '';
   const tags = [];
   if (s && s.v.length) {
@@ -2811,7 +2828,6 @@ function irrSupplyModule() {
   const outlet = last && /outlet ([\d.]+ ?bar)/.exec(last.detail || '');
   return `<section class="panel irr-mod" aria-label="Pump and power">` +
     `<div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>${unreadRead('live_readings') ? `<span class="card-age is-warn">can't read</span>` : irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}</div>` +
-    (unreadRead('live_readings') ? `<p class="more-note note-off" style="padding:0 22px">Can't read the pump's power and pressure: ${escapeHtml(unreadRead('live_readings'))}. Below is the last reading.</p>` : '') +
     `<div class="supply">${bars}${p ? `<div class="pressure"><span class="fig-v">${escapeHtml(p.value)}</span><span class="fig-l">Inlet pressure</span>` +
       (outlet ? `<span class="pressure-out">outlet ${escapeHtml(outlet[1])}</span>` : '') + `</div>` : ''}</div>` +
     (tags.length ? `<div class="tags">${tags.join('')}</div>` : '') + `</section>`;
@@ -3111,6 +3127,18 @@ function waterView() {
     waterPath();
 }
 
+/* A source that cannot be read, in place of its last reading (owner,
+ * 2026-09-26: "it should not show the last fetched data. It's misleading").
+ * What is wrong, why, and the one thing that fixes it. Mirrors UnreadHero. */
+function unreadHero(title, reason, action = '', footnote = '') {
+  return `<section class="panel unread-hero" role="status">
+    <span class="uh-ico" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-alert"/></svg></span>
+    <h2 class="uh-title">${escapeHtml(title)}</h2>
+    <p class="uh-reason">${escapeHtml(reason)}</p>
+    ${action}${footnote ? `<p class="more-note">${escapeHtml(footnote)}</p>` : ''}
+  </section>`;
+}
+
 /** One motor's own page: its controls, readings and reports. */
 function motorView(key) {
   const back = `<a class="back" href="#/water">${arrow('i-back')}Water</a>`;
@@ -3119,6 +3147,19 @@ function motorView(key) {
     const mb = isAdmin ? mobitechState() : { kind: 'ok' };
     const account = isAdmin
       ? `<details class="acct-sec"${mb.kind !== 'ok' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
+    const why = unreadController();
+    if (why) {
+      // Nothing from before: the page leads to the fix (owner, 2026-09-26).
+      const out = why.includes('signed SNOF out');
+      const hero = out
+        ? unreadHero('SNOF is signed out of Mobitech',
+            'Mobitech ended SNOF\'s session because the account signed in somewhere else. Nothing here can be read until SNOF signs in again.',
+            isOwner() ? `<p class="uh-do">Sign in from the SNOF iPhone app: Water → ${escapeHtml(t.name)} → Sign in to Mobitech. Mobitech does not let a web page sign in.</p>` : '',
+            isOwner() ? '' : `${ownerName()} needs to sign in again.`)
+        : unreadHero("Can't read the controller", `${why}. Nothing here can be read until it answers.`,
+            canControl ? `<button class="btn btn-primary uh-btn" data-act="irr-refresh">Try again</button>` : '');
+      return head(t.name, t.sub, '', back) + hero + account;
+    }
     return head(t.name, t.sub, '', back) +
       `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
       `<div class="irr-col">${irrSupplyModule()}</div></div>` + `<div class="irr-wide">${irrCropsModule()}</div>` +
@@ -3134,6 +3175,20 @@ function motorView(key) {
   const account = isAdmin && isRiver
     ? `<details class="acct-sec"${livesky.kind !== 'ok' || lsStep !== 'idle' ? ' open' : ''}><summary>Livesky account</summary>${liveskyPanel()}</details>` : '';
   const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
+  const why = unreadMotor(m);
+  if (why) {
+    // Nothing from before: the page leads to the fix (owner, 2026-09-26).
+    const signIn = isRiver && ['none', 'expired'].includes(liveskyState().kind);
+    const hero = signIn
+      ? unreadHero('SNOF is signed out of Livesky', `${why}. Nothing here can be read until SNOF signs in again.`,
+          isOwner() && lsStep === 'idle' ? `<button class="btn btn-primary uh-btn" data-act="ls-start">Sign in to Livesky</button>` : '',
+          isOwner() ? '' : `${ownerName()} needs to sign in again.`)
+      : unreadHero(`Can't read ${m.name || 'this motor'}`, `${why}. Nothing here can be read until it answers.`,
+          `<button class="btn btn-primary uh-btn" data-act="water-refresh">Try again</button>`);
+    // The sign-in form opens right under the card when asked for.
+    const form = signIn && isOwner() && lsStep !== 'idle' ? liveskyPanel() : '';
+    return head(m.name || 'Motor', sub, '', back) + hero + form;
+  }
   return head(m.name || 'Motor', sub, `<button class="btn btn-ghost btn-sm" data-act="water-refresh">Refresh</button>`, back) +
     (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
     waterMotorCard(m, vendorErr, true) + account;

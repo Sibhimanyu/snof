@@ -1371,3 +1371,13 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   .sys-tile{display:grid;grid-template-columns:36px minmax(0,1fr);column-gap:10px;row-gap:1px;align-content:center;min-height:64px;padding:10px 12px}
   .sys-tile .sys-ico{grid-row:1 / 4;margin:0;align-self:center}
 }
+
+/* A source that cannot be read, in place of its last reading (2026-09-26). */
+.unread-hero{display:flex;flex-direction:column;gap:10px;padding:22px}
+.uh-ico{display:grid;place-items:center;width:56px;height:56px;border-radius:50%;background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.uh-ico .ico{width:26px;height:26px}
+.uh-title{font-size:20px;font-weight:750;letter-spacing:-.02em;color:var(--text)}
+.uh-reason{font-size:14.5px;color:var(--muted);line-height:1.45}
+.uh-do{font-size:14px;font-weight:600;color:var(--text)}
+.uh-btn{align-self:stretch;min-height:48px;font-size:15.5px}
+.uh-inline{color:var(--warn)}
