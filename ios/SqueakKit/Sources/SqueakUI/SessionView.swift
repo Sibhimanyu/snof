@@ -43,8 +43,13 @@ struct SessionView: View {
 
                 Divider().overlay(Theme.line)
 
-                Text("What it said").font(.headline)
-                MessageText(text: session.message ?? session.detail ?? "Nothing to show yet.")
+                if session.state == "working", let activity = session.activity, !activity.steps.isEmpty {
+                    Text("What it's doing").font(.headline)
+                    ActivityFeed(activity: activity)
+                } else {
+                    Text("What it said").font(.headline)
+                    MessageText(text: session.message ?? session.detail ?? "Nothing to show yet.")
+                }
 
                 if let receipt { ReceiptView(receipt: receipt) }
             }
@@ -95,6 +100,40 @@ struct SessionView: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background(Theme.bg.shadow(.drop(color: .black.opacity(0.3), radius: 8, y: -2)))
+    }
+}
+
+/// A working session's turn so far, newest last: thinking in italics, tool
+/// calls marked in the working colour, the agent's notes as they are.
+struct ActivityFeed: View {
+    let activity: PhoneSnapshot.Activity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if activity.total > activity.steps.count {
+                Text("The latest \(activity.steps.count) of \(activity.total) steps this turn.")
+                    .font(.caption).foregroundStyle(Theme.muted)
+            }
+            ForEach(Array(activity.steps.enumerated()), id: \.offset) { _, step in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if step.kind == "thinking" {
+                        Text("Thinking").font(.caption).foregroundStyle(Theme.subtle)
+                    } else if step.kind == "background" {
+                        Text("Worker done").font(.caption).foregroundStyle(Theme.subtle)
+                    }
+                    Text(step.text)
+                        .font(.subheadline)
+                        .italic(step.kind == "thinking")
+                        .foregroundStyle(step.kind == "note" ? Theme.ink : Theme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(step.kind == "tool" ? Theme.working : Theme.line).frame(width: 2)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
     }
 }
 

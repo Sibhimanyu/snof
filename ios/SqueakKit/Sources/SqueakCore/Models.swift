@@ -24,6 +24,21 @@ public struct PhoneSnapshot: Codable, Equatable, Sendable {
         }
     }
 
+    /// One step of a working session's current turn (fleet/activity.ts on the Mac).
+    public struct Step: Codable, Equatable, Sendable {
+        /// "thinking", "note", "tool" or "background".
+        public let kind: String
+        public let text: String
+        public init(kind: String, text: String) { self.kind = kind; self.text = text }
+    }
+
+    /// The newest few steps of the turn so far, and how many it has had.
+    public struct Activity: Codable, Equatable, Sendable {
+        public let total: Int
+        public let steps: [Step]
+        public init(total: Int, steps: [Step]) { self.total = total; self.steps = steps }
+    }
+
     public struct Session: Codable, Equatable, Sendable, Identifiable {
         public let key: String
         public let conductorSessionId: String?
@@ -37,17 +52,19 @@ public struct PhoneSnapshot: Codable, Equatable, Sendable {
         public let turnId: String?
         public let message: String?
         public let choices: Choices?
+        /// Only while working, and only from a Mac new enough to send it.
+        public let activity: Activity?
         public var id: String { key }
 
         public init(
             key: String, conductorSessionId: String?, label: String, agent: String, state: String,
             lastActivityAt: String, detail: String?, git: String?, contextPercent: Double?,
-            turnId: String?, message: String?, choices: Choices?
+            turnId: String?, message: String?, choices: Choices?, activity: Activity? = nil
         ) {
             self.key = key; self.conductorSessionId = conductorSessionId; self.label = label
             self.agent = agent; self.state = state; self.lastActivityAt = lastActivityAt
             self.detail = detail; self.git = git; self.contextPercent = contextPercent
-            self.turnId = turnId; self.message = message; self.choices = choices
+            self.turnId = turnId; self.message = message; self.choices = choices; self.activity = activity
         }
 
         /// DESIGN.md §9 vocabulary.

@@ -1,7 +1,7 @@
 # SqueakKit (vendored)
 
 Squeak's iPhone screens, embedded here as a tab (`SqueakRootView()`).
-Generated from Squeak commit `2f17d7e` by
+Generated from Squeak commit `fdc8127` by
 `ios/scripts/vendor-into.sh` in the Squeak repository. Do not edit this copy:
 change Squeak, then re-run the script. See Squeak's docs/remote-channel.md
 for what the tab does and why it is safe.
