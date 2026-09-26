@@ -755,7 +755,8 @@ struct LoadingBlock: View {
 }
 
 /// The loading state (owner, 2026-09-25): the logo, breathing, with a brand
-/// ring turning round it. 84 pt, the launch screen's LaunchLogo, so launch
+/// ring turning round it. 128 pt (owner, 2026-09-26: "could be bigger"), the
+/// launch screen's LaunchLogo, so launch
 /// hands over to the app without a jump. Mirrors .loader in styles.css.
 struct LogoLoader: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -765,15 +766,15 @@ struct LogoLoader: View {
     var body: some View {
         ZStack {
             // Inset by half the line, so the ring stays inside its frame.
-            Circle().inset(by: 1.25).stroke(Theme.line2, lineWidth: 2.5)
-            Circle().inset(by: 1.25).trim(from: 0, to: 0.28)
-                .stroke(Theme.brand, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+            Circle().inset(by: 1.5).stroke(Theme.line2, lineWidth: 3)
+            Circle().inset(by: 1.5).trim(from: 0, to: 0.28)
+                .stroke(Theme.brand, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(turn ? 360 : 0))
             Image("brand-logo").resizable().interpolation(.high).scaledToFit()
-                .frame(width: 84, height: 84)
+                .frame(width: 128, height: 128)
                 .scaleEffect(breathe ? 0.94 : 1).opacity(breathe ? 0.85 : 1)
         }
-        .frame(width: 104, height: 104)
+        .frame(width: 152, height: 152)
         .onAppear {
             // The ring keeps turning with Reduce Motion on: it is what says
             // "still working". Only the breathing stops.
