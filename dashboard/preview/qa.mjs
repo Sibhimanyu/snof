@@ -495,7 +495,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // Since 2026-09-26 (owner): a source that cannot be read says so, in place.
   check('an ended Livesky session stops the river flowing and says it cannot be read', r.expired.pipes[0]===false&&r.expired.tags[0]==="Can't read"&&/Livesky sign-in expired/.test(r.expired.lines[0])&&!/just now/.test(r.expired.ages[0]||''), JSON.stringify(r.expired));
   check('Home says when water readings are off', r.off.head==='readings off', r.off.head);
-  check('a failing Niagara read is not current, says so, and ages from its last good read', r.niagaraDown.pipes[1]===false&&r.niagaraDown.tags[1]==="Can't read"&&r.niagaraDown.ages.includes('read 3h ago'), JSON.stringify(r.niagaraDown));
+  check('a failing Niagara read is not current, says so, and ages from its last good read', r.niagaraDown.pipes[1]===false&&r.niagaraDown.tags[1]==="Can't read"&&r.niagaraDown.ages.some((a)=>a.startsWith('read 3h ago · ')), JSON.stringify(r.niagaraDown));
   await c.close();
 }
 {

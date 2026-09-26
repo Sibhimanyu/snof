@@ -500,7 +500,9 @@ struct DeviceCard: View {
     private func meta(on: Bool) -> String {
         let level = entity.level.map { on && !entity.isBad ? " · \($0)%" : "" } ?? ""
         if showArea { return store.areaName(entity.area) + level }
-        let since = Format.since(entity.lastChanged).map { " for \($0)" } ?? ""
+        // For how long, and since when (owner, 2026-09-26).
+        let at = Format.date(entity.lastChanged).map { FarmTime.when(ms: $0.timeIntervalSince1970 * 1000, now: store.now) }
+        let since = Format.since(entity.lastChanged).map { " for \($0)" + (at.map { " · since \($0)" } ?? "") } ?? ""
         if entity.isBad { return "Not reporting" + since }
         return (on ? "On" : "Off") + since + level
     }

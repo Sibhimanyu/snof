@@ -561,6 +561,13 @@ public enum Format {
 
     /// "3h" since an ISO-8601 timestamp (Home Assistant's, with microseconds),
     /// "4 days" past two days, nil if unparseable or in the future.
+    /// The moment an ISO-8601 timestamp names, or nil.
+    public static func date(_ iso: String?) -> Date? {
+        guard var s = iso, !s.isEmpty else { return nil }
+        if let r = s.range(of: #"\.\d+"#, options: .regularExpression) { s.removeSubrange(r) }
+        return ISO8601DateFormatter().date(from: s)
+    }
+
     public static func since(_ iso: String?, now: Date = Date()) -> String? {
         guard var s = iso, !s.isEmpty else { return nil }
         // ISO8601DateFormatter will not take six fractional digits; drop them.

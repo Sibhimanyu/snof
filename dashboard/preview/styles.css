@@ -1348,7 +1348,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .wp-stub::before{content:"";position:absolute;left:-28px;right:40px;top:calc(50% - 2px);height:4px;background:var(--line-2)}
 .wp-stub.is-on::before{background:var(--brand)}
 .wp-text{display:flex;flex-direction:column;gap:2px;min-width:0;padding:10px 0}
-.wp-text strong{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wp-text strong{font-size:15px;font-weight:700;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 /* Two lines at most, so "Niagara did not answer" is said whole on the
    indented Well motor row instead of cut. */
 .wp-text small{font-size:12.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}

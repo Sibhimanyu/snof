@@ -416,3 +416,8 @@ When writing verification shell, remember `grep -c` exits 1 on zero matches and
   `live_readings` or `session_log` read says so on Pump & power, the farm
   motor line and Watered (`Unread.read` / `unreadRead`). The relay passes a
   refused dashboard on as `{state, message}` (add-on 0.10.7).
+- **Durations say since when, ages say the time** (owner, 2026-09-26; web,
+  iOS 0.11.22). "For 4 h 13 min · since 05:36", "Off for 3h · since 06:12"
+  (`sinceWhen()` / `Water.since`), and every "… ago" carries its clock time,
+  "12m ago · 09:37" (`agoText()` / `Water.ago`; "just now" stays bare). The
+  bridge's Live pill stays short.
