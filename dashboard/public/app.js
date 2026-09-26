@@ -736,7 +736,7 @@ function skeletonView() {
   const r = route();
   const title = { water: 'Water', motor: 'Water', areas: 'Rooms', devices: 'Rooms', admin: 'Admin' }[r.name] || 'Home';
   return head(title, '', '') +
-    `<div class="loader-block" role="status"><span class="loader"><img src="/art/logo-mark.png" alt="" width="84" height="84"></span>
+    `<div class="loader-block" role="status"><span class="loader"><img src="/art/logo-loader.png" alt="" width="128" height="128"></span>
       <p>Connecting to the farm…</p></div>`;
 }
 
