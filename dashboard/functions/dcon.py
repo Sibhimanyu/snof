@@ -150,7 +150,13 @@ class Dcon:
         self._t = transport
 
     def dashboard(self) -> Any:
-        return self._t.call("dashboard", {})
+        body = self._t.call("dashboard", {})
+        # A dashboard names its controller (one node per serial). One with
+        # none is not "nothing running": the relay used to trim a refusal to
+        # {} (2026-09-26), and a controller that sent nothing is not idle.
+        if not (isinstance(body, dict) and any(isinstance(v, dict) for v in body.values())):
+            raise DconError("DCON dashboard: Mobitech sent no controller data")
+        return body
 
     def nodes(self) -> Any:
         return self._t.call("nodes", {})

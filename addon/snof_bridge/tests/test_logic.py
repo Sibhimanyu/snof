@@ -582,6 +582,15 @@ def test_the_read_relay_still_cannot_send_a_command():
 
 
 
+def test_a_refused_dashboard_is_passed_on_not_trimmed_to_nothing():
+    """{"state": "failed"} once trimmed to {}, which read as an idle controller."""
+    from bridge import relay
+    out = relay.trim_dashboard({"state": "failed", "message": "Your account has been sign-in on other mobile devices. Call 9876543210"})
+    assert out["state"] == "failed" and "other mobile devices" in out["message"]
+    assert "9876543210" not in out["message"]
+    assert set(out) == {"state", "message"}
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
