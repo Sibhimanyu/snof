@@ -11,6 +11,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+# RTDB's event stream sends a keep-alive about every 30 s even when idle. A
+# stream that has been silent for this long is dead, not quiet: a connection
+# lost without a clean close never raises on its own, and with no read timeout
+# the relay sat "open" and deaf for nine days (2026-10-08 to 2026-10-17).
+STREAM_READ_TIMEOUT_SECONDS = 75.0
+
 
 def encode_body(payload: Any) -> str:
     """Serialise a write body by hand, because `json=None` is not the same as a

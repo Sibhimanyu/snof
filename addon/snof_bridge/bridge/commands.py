@@ -25,6 +25,8 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+from .wire import STREAM_READ_TIMEOUT_SECONDS
+
 if TYPE_CHECKING:          # aiohttp is imported where it is used, so the pure
     import aiohttp         # validation logic stays testable with no deps installed.
 
@@ -276,9 +278,11 @@ class CommandConsumer:
         url = f"{self._cfg.firebase_db_url}/{self._cfg.root}/commands.json"
         token = await self._rtdb._token()
         headers = {"Authorization": f"Bearer {token}", "Accept": "text/event-stream"}
-        # sock_read=None: the stream is idle most of the time by design, and RTDB
-        # sends a keep-alive rather than closing. A total timeout would kill it.
-        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=None)
+        # No total timeout (the stream is idle by design), but RTDB's keep-alive
+        # arrives every ~30 s, so a silent socket is a dead one: sock_read
+        # raises and the retry loop reconnects.
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30,
+                                        sock_read=STREAM_READ_TIMEOUT_SECONDS)
 
         async with self._session.get(url, headers=headers, timeout=timeout,
                                      allow_redirects=True) as resp:

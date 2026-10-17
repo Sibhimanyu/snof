@@ -620,6 +620,41 @@ def test_relay_failure_and_silence_are_plain_errors():
         assert any(p.startswith("relay/jobs/") for p in store.deleted), "job left behind"
 
 
+def test_relay_fails_fast_when_the_bridge_says_it_is_not_listening():
+    import dcon, time
+    now_ms = int(time.time() * 1000)
+    cases = [
+        ({"lastSeen": now_ms, "relay": {"enabled": True, "streamIdleSeconds": 9000}}, "not been listening"),
+        ({"lastSeen": now_ms, "relay": {"enabled": False}}, "switched off"),
+        ({"lastSeen": now_ms - 900_000, "relay": {"enabled": True}}, "not reported"),
+    ]
+    for bridge, words in cases:
+        store = _Store()
+        store.data["farms/snof/meta/bridge"] = bridge
+        t = dcon.RelayTransport(store, wait=5, poll=0, clock=iter(range(10_000)).__next__,
+                                sleep=lambda s: None, bridge_path="farms/snof/meta/bridge")
+        try:
+            t.call("nodes", {})
+            raise AssertionError("expected DconError")
+        except dcon.DconError as err:
+            assert "bridge did not answer" in str(err) and words in str(err), err
+        assert not any(p.startswith("relay/jobs") for p in store.data), "job pushed anyway"
+
+
+def test_relay_still_tries_when_the_heartbeat_is_healthy_or_unknown():
+    import dcon, time
+    for bridge in ({"lastSeen": int(time.time() * 1000), "relay": {"enabled": True, "streamIdleSeconds": 12}},
+                   {"lastSeen": int(time.time() * 1000), "relay": {"enabled": True}},   # older add-on
+                   None):
+        store = _Store(answer={"ok": True, "status": 200, "gz": _packed('{"status":"success","data":[]}')},
+                       answer_after=2)      # poll 1 is the heartbeat read
+        if bridge is not None:
+            store.data["farms/snof/meta/bridge"] = bridge
+        t = dcon.RelayTransport(store, wait=5, poll=0, clock=iter(range(10_000)).__next__,
+                                sleep=lambda s: None, bridge_path="farms/snof/meta/bridge")
+        t.call("nodes", {})
+
+
 def test_dcon_client_cannot_reach_the_command_endpoint():
     """Reports are read-only. The client has one URL, and it is not /command."""
     src = (HERE / "dcon.py").read_text()

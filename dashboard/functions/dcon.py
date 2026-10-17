@@ -34,6 +34,10 @@ TIMEOUT_SECONDS = 30
 # come back in 1–3 s; a month of electricity packets takes longer.
 RELAY_WAIT_SECONDS = 50.0
 RELAY_POLL_SECONDS = 0.5
+# The bridge reconnects a silent stream after 75 s and writes its heartbeat
+# every 30 s; past these the relay is not listening, whatever Mobitech does.
+RELAY_IDLE_LIMIT_SECONDS = 150
+BRIDGE_SILENT_LIMIT_SECONDS = 180
 
 
 class DconError(RuntimeError):
@@ -114,11 +118,42 @@ class RelayTransport:
     db module (or anything with .reference(path) -> push/get/delete)."""
 
     def __init__(self, store, wait: float = RELAY_WAIT_SECONDS,
-                 poll: float = RELAY_POLL_SECONDS, clock=time.monotonic, sleep=time.sleep):
+                 poll: float = RELAY_POLL_SECONDS, clock=time.monotonic, sleep=time.sleep,
+                 bridge_path: str | None = None):
         self._store, self._wait, self._poll = store, wait, poll
         self._clock, self._sleep = clock, sleep
+        self._bridge_path = bridge_path
+
+    def _not_listening(self) -> str:
+        """Why the relay cannot be answering right now, or "" when it may be.
+        Reads the bridge's own heartbeat; anything missing or unreadable means
+        "may be" (an older add-on has no stream age), never a refusal."""
+        if not self._bridge_path:
+            return ""
+        try:
+            bridge = self._store.reference(self._bridge_path).get() or {}
+        except Exception:          # noqa: BLE001 — the wait still decides
+            return ""
+        if not isinstance(bridge, dict):
+            return ""
+        seen = bridge.get("lastSeen")
+        if isinstance(seen, (int, float)) and not isinstance(seen, bool):
+            silent = time.time() - seen / 1000.0
+            if silent > BRIDGE_SILENT_LIMIT_SECONDS:
+                return f"the farm box has not reported for {int(silent // 60)} min"
+        relay = bridge.get("relay")
+        if isinstance(relay, dict) and relay.get("enabled") is False:
+            return "the relay is switched off on the farm box"
+        idle = relay.get("streamIdleSeconds") if isinstance(relay, dict) else None
+        if isinstance(idle, (int, float)) and not isinstance(idle, bool) \
+                and idle > RELAY_IDLE_LIMIT_SECONDS:
+            return f"the relay has not been listening for {int(idle // 60)} min"
+        return ""
 
     def call(self, call: str, args: dict) -> Any:
+        why = self._not_listening()
+        if why:
+            raise DconError(f"DCON {call}: the farm's bridge did not answer — {why}")
         job = self._store.reference("relay/jobs").push(
             {"call": call, "args": args, "at": {".sv": "timestamp"}})
         result_ref = self._store.reference(f"relay/results/{job.key}")

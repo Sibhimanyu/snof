@@ -49,6 +49,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from .relay import TOKEN_PATH, form_for, pick_token
+from .wire import STREAM_READ_TIMEOUT_SECONDS
 
 if TYPE_CHECKING:
     import aiohttp
@@ -413,7 +414,8 @@ class IrrigationControl:
         url = f"{self._cfg.firebase_db_url}/{self._cfg.root}/{QUEUE}.json"
         token = await self._rtdb._token()
         headers = {"Authorization": f"Bearer {token}", "Accept": "text/event-stream"}
-        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=None)
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30,
+                                        sock_read=STREAM_READ_TIMEOUT_SECONDS)
         async with self._session.get(url, headers=headers, timeout=timeout, allow_redirects=True) as resp:
             if resp.status >= 400:
                 raise RuntimeError(f"irrigation stream -> {resp.status}: {(await resp.text())[:200]}")

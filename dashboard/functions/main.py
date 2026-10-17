@@ -134,7 +134,7 @@ def _handle(store, root: str, req_id: str, req: Any) -> None:
             transport = dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(),
                                              DCON_TOKEN_ID.value.strip())
         else:
-            transport = dcon.RelayTransport(store)
+            transport = dcon.RelayTransport(store, bridge_path=f"{root}/meta/bridge")
         src = dcon.Dcon(transport)
         report, patch = reports.build(rtype, params, src)
     except dcon.DconError as err:
