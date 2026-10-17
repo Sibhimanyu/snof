@@ -39,6 +39,8 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+from .wire import STREAM_READ_TIMEOUT_SECONDS
+
 if TYPE_CHECKING:          # aiohttp is imported where it is used, so the pure
     import aiohttp         # validation logic stays testable with no deps installed.
 
@@ -184,6 +186,7 @@ class DconRelay:
         self.served = 0
         self.refused = 0
         self.last_error = ""
+        self._stream_seen: float | None = None   # monotonic, any line incl. keep-alive
 
     @property
     def enabled(self) -> bool:
@@ -191,8 +194,14 @@ class DconRelay:
         return bool(cfg.dcon_relay and cfg.dcon_serial and cfg.dcon_token_id)
 
     def status(self) -> dict:
+        # Seconds since the job stream last said anything (keep-alives count).
+        # The report function reads it to tell "the relay is not listening"
+        # from "Mobitech is down"; None = never opened since start.
+        idle = (None if self._stream_seen is None
+                else round(time.monotonic() - self._stream_seen))
         return {"enabled": self.enabled, "served": self.served,
-                "refused": self.refused, "lastError": self.last_error}
+                "refused": self.refused, "lastError": self.last_error,
+                "streamIdleSeconds": idle}
 
     async def _token(self) -> str:
         """The signed-in session if there is one, else the add-on option."""
@@ -287,14 +296,17 @@ class DconRelay:
         url = f"{self._cfg.firebase_db_url}/{JOBS}.json"
         token = await self._rtdb._token()
         headers = {"Authorization": f"Bearer {token}", "Accept": "text/event-stream"}
-        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=None)
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30,
+                                        sock_read=STREAM_READ_TIMEOUT_SECONDS)
         async with self._session.get(url, headers=headers, timeout=timeout,
                                      allow_redirects=True) as resp:
             if resp.status >= 400:
                 raise RuntimeError(f"relay stream -> {resp.status}: {(await resp.text())[:200]}")
             _LOGGER.info("Relay job stream open")
+            self._stream_seen = time.monotonic()
             event = ""
             async for raw in resp.content:
+                self._stream_seen = time.monotonic()
                 line = raw.decode("utf-8", "replace").rstrip("\r\n")
                 if line.startswith("event:"):
                     event = line[6:].strip()

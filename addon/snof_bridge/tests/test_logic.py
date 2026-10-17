@@ -411,6 +411,30 @@ def _job(**over):
     return base
 
 
+def test_every_firebase_stream_has_a_read_timeout():
+    """A socket lost without a clean close never raises on its own. The relay
+    sat deaf for nine days with sock_read=None (2026-10-17); RTDB's keep-alive
+    comes every ~30 s, so every stream must give up on a silent socket."""
+    from bridge.wire import STREAM_READ_TIMEOUT_SECONDS
+    assert 45 <= STREAM_READ_TIMEOUT_SECONDS <= 120
+    for name in ("commands.py", "relay.py", "irrigation_control.py"):
+        src = (Path(__file__).resolve().parent.parent / "bridge" / name).read_text()
+        assert "sock_read=None" not in src, name
+        assert "sock_read=STREAM_READ_TIMEOUT_SECONDS" in src, name
+
+
+def test_relay_status_reports_how_long_its_stream_has_been_silent():
+    r = relay.DconRelay.__new__(relay.DconRelay)
+    r._cfg = type("C", (), {"dcon_relay": True, "dcon_serial": "x", "dcon_token_id": "y"})()
+    r.served = r.refused = 0
+    r.last_error = ""
+    r._stream_seen = None
+    assert r.status()["streamIdleSeconds"] is None
+    import time
+    r._stream_seen = time.monotonic() - 42
+    assert 41 <= r.status()["streamIdleSeconds"] <= 44
+
+
 def test_relay_runs_only_named_reads_with_strict_args():
     assert relay.validate(_job()) == ("valves", {"from": "2026-09-20", "to": "2026-09-22"})
     assert relay.validate(_job(call="dashboard", args={})) == ("dashboard", {})
