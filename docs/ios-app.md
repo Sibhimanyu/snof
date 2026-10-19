@@ -213,24 +213,3 @@ Program (US$99/year). A public App Store listing for a single-farm tool
 risks rejection. Unlisted App Distribution or a Custom App (Apple Business
 Manager) are the usual routes. Replace the placeholder app icon before any of
 them.
-
-## The Squeak tab (owner only)
-
-A fourth tab, **Squeak**, appears only when the signed-in account is the
-owner's (`SNOF/UI/SqueakAccess.swift`). It is the owner's pager for their
-coding agents — a separate project — carried here only because a free Apple
-ID allows three sideloaded apps. It touches nothing of SNOF's: no RTDB paths,
-no farm state, no controls.
-
-- `ios/SqueakKit/` is **vendored** from the Squeak repository by its
-  `ios/scripts/vendor-into.sh`. Do not edit it here; change Squeak and re-run
-  the script. `SqueakKit/VENDORED.md` names the Squeak commit it came from.
-- The email check is only about who *sees* the tab. The tab can do nothing
-  until the owner's Mac shows a pairing code, this phone scans it, and the
-  owner approves it on the Mac; every reply is then signed by the phone's
-  Secure Enclave and verified by the Mac (Squeak's docs/remote-channel.md).
-- It needs `NSCameraUsageDescription` (pairing scan) and
-  `NSFaceIDUsageDescription` (confirming a reply) in `project.yml`; iOS
-  terminates an app that asks for either without them.
-- Screenshots: `-demo -squeak-tab` shows the tab to the demo user (Debug
-  builds only) and opens it; add `-squeak-demo` for Squeak's own demo data.

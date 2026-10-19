@@ -1,6 +1,5 @@
 import SwiftUI
 import SNOFCore
-import SqueakUI
 
 struct RootView: View {
     @Environment(FarmStore.self) private var store
@@ -52,14 +51,6 @@ struct MainTabs: View {
             }
             // Faults only: ACs, TVs and the printer off at the wall are not.
             .badge(store.faultyDevices.isEmpty ? nil : Text(""))
-            if SqueakAccess.shows(for: store.user?.email) {
-                // The duck from Squeak's own artwork; SF Symbols' "bird" reads as a dove.
-                Tab(value: AppTab.squeak) {
-                    SqueakRootView()
-                } label: {
-                    Label { Text("Squeak") } icon: { SqueakRootView.tabIcon }
-                }
-            }
         }
         .tint(Theme.text)
         .toolbarBackground(.bar, for: .tabBar)
@@ -84,7 +75,6 @@ struct MainTabs: View {
             if Snapshot.args.contains("-account") { account = true }
             // -people: the account sheet, opened on People and access.
             if Snapshot.args.contains("-people") { account = true }
-            if Snapshot.args.contains("-squeak-tab") { store.selectedTab = .squeak }
         }
         #endif
     }

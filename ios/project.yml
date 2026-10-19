@@ -9,7 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.11.25"
+    MARKETING_VERSION: "0.11.26"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -22,9 +22,6 @@ packages:
     from: "9.0.0"
   SNOFCore:
     path: SNOFCore
-  # Squeak's screens, vendored from the Squeak repository (see SqueakKit/VENDORED.md).
-  SqueakKit:
-    path: SqueakKit
 targets:
   SNOF:
     type: application
@@ -45,15 +42,9 @@ targets:
         product: FirebaseDatabase
       - package: GoogleSignIn
         product: GoogleSignIn
-      - package: SqueakKit
-        product: SqueakUI
     info:
       path: SNOF/Info.plist
       properties:
-        # For the owner-only Squeak tab: its pairing scan and its Face ID
-        # check before a reply. iOS kills an app that asks without these.
-        NSCameraUsageDescription: Squeak uses the camera once, to scan the pairing code on your Mac.
-        NSFaceIDUsageDescription: Squeak asks for Face ID before it sends anything to your agents.
         CFBundleDisplayName: SNOF
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -83,11 +74,6 @@ targets:
           - CFBundleURLName: google-signin
             CFBundleURLSchemes:
               - $(GOOGLE_REVERSED_CLIENT_ID)
-          # snof://squeak?s=<session>: a Telegram card's "Open in Squeak"
-          # lands here (owner only; see SqueakAccess.swift).
-          - CFBundleURLName: snof-links
-            CFBundleURLSchemes:
-              - snof
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(SNOF_BUNDLE_ID)

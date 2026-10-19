@@ -28,23 +28,11 @@
 				<string>$(GOOGLE_REVERSED_CLIENT_ID)</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>snof-links</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>snof</string>
-			</array>
-		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSCameraUsageDescription</key>
-	<string>Squeak uses the camera once, to scan the pairing code on your Mac.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Squeak asks for Face ID before it sends anything to your agents.</string>
 	<key>SNOFSourceURL</key>
 	<string>$(SNOF_SOURCE_URL)</string>
 	<key>UIAppFonts</key>
