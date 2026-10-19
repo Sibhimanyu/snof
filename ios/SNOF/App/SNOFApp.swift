@@ -1,6 +1,5 @@
 import SwiftUI
 import GoogleSignIn
-import SqueakUI
 
 @main
 struct SNOFApp: App {
@@ -14,20 +13,6 @@ struct SNOFApp: App {
         let demo = !FirebaseBackend.isConfigured || ProcessInfo.processInfo.arguments.contains("-demo")
         let backend: FarmBackend = demo ? DemoBackend() : FirebaseBackend()
         _store = State(initialValue: FarmStore(backend: backend))
-    }
-
-    /// Every URL the app is opened with. snof://squeak?s=<session> comes from
-    /// a Squeak card in Telegram: the owner's Squeak tab, on that session;
-    /// nobody else has the tab, so for them it does nothing. Anything else is
-    /// Google sign-in's.
-    private func open(_ url: URL) {
-        if url.scheme == "snof", url.host == "squeak" {
-            guard SqueakAccess.shows(for: store.user?.email) else { return }
-            store.selectedTab = .squeak
-            SqueakRouter.shared.handle(url)
-            return
-        }
-        GIDSignIn.sharedInstance.handle(url)
     }
 
     var body: some Scene {
@@ -44,8 +29,6 @@ struct SNOFApp: App {
                     #if DEBUG
                     Snapshot.prepare(store)
                     Snapshot.runIfRequested()
-                    // The link path without iOS's "Open in SNOF?" prompt, for review.
-                    if let link = Snapshot.value("-open-url").flatMap(URL.init(string:)) { open(link) }
                     #endif
                     #if targetEnvironment(macCatalyst)
                     // On a Mac (the no-simulator preview path) default to a
@@ -58,7 +41,7 @@ struct SNOFApp: App {
                     }
                     #endif
                 }
-                .onOpenURL { open($0) }
+                .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }
     }
 }
