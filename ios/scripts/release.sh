@@ -43,10 +43,22 @@ echo "==> SNOF $VERSION ($BUILD)"
 (cd SNOFCore && swift test >/dev/null 2>&1) || { echo "SNOFCore tests failed — run swift test in SNOFCore" >&2; exit 1; }
 xcodegen -q
 rm -rf build/Release-iphoneos build/ipa
+# Trust xcodebuild's own exit code, not a grep for "error:" — benign tool
+# noise (e.g. a CoreSimulator "...DeveloperDir:error:..." warning) contains
+# that substring and fails the release even when the build succeeded.
+mkdir -p build
+set +e
 xcodebuild -project SNOF.xcodeproj -scheme SNOF -configuration Release -sdk iphoneos \
   -destination 'generic/platform=iOS' -derivedDataPath build \
   CURRENT_PROJECT_VERSION="$BUILD" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-  build -quiet 2>&1 | grep -E "error:" && exit 1 || true
+  build -quiet >build/xcodebuild.log 2>&1
+xcb_status=$?
+set -e
+if [[ $xcb_status -ne 0 ]]; then
+  grep -iE "error:|BUILD FAILED" build/xcodebuild.log | grep -vi "SimServiceContext" | tail -20 >&2
+  echo "xcodebuild failed (exit $xcb_status)" >&2
+  exit 1
+fi
 
 APP="build/Build/Products/Release-iphoneos/SNOF.app"
 [[ -d "$APP" ]] || { echo "build produced no app" >&2; exit 1; }
