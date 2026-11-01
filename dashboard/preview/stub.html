@@ -51,7 +51,7 @@
       lock:{ gate_lock:{name:'Gate lock',entity_id:'lock.gate_lock',state:'locked',area:'farmhouse',attrs:{}} }
     },
     irrigation:{
-      dcon:{device:'SibhiSump',serial:'MCON874Q000568',lastPacket:'2026-02-22 09:00:43',
+      dcon:{device:'SibhiSump',serial:'MCON000DEMO01',lastPacket:'2026-02-22 09:00:43',
             serverTime:'2026-02-22 09:04:04',timeZone:'+05:30'},
       valveNames:[{id:'4',name:'4 Veg',type:'Irrigation'},{id:'6',name:'6 Kulam',type:'Irrigation'},
                   {id:'2',name:'2 BPump',type:'Booster Pump'}],
@@ -220,7 +220,7 @@
     const range=win?' · '+win:'';
     const base={type,label:irrLabels[type]||type,params:{},status:'ok',rows:[],at:Date.now()};
     if(from&&to) base.params={from,to};
-    const facts=[{label:'Device',value:'SibhiSump'},{label:'Serial',value:'MCON874Q000568'},
+    const facts=[{label:'Device',value:'SibhiSump'},{label:'Serial',value:'MCON000DEMO01'},
       {label:'Last packet',value:'2026-02-22 09:00:43'},
       {label:'Controller clock',value:'2026-02-22 09:04:04'}];
     const logRows=[{at:'2026-02-21 06:00',event:'timer',detail:'Timer 11 completed',source:'timer'},

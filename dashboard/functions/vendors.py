@@ -201,7 +201,7 @@ def _slots(value: Any) -> list[str]:
 # ---- dashboard / get_node -------------------------------------------------
 
 def _dashboard_node(payload: Any) -> tuple[str, dict]:
-    """action=dashboard is keyed by serial: {"MCON874Q000568": {...}}."""
+    """action=dashboard is keyed by serial: {"MCON000DEMO01": {...}}."""
     node = payload if isinstance(payload, dict) else {}
     for key, value in node.items():
         if isinstance(value, dict) and str(key).upper().startswith("MCON"):

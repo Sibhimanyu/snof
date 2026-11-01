@@ -4729,7 +4729,7 @@
  "irrigation": {
   "dcon": {
    "device": "SibhiSump",
-   "serial": "MCON874Q000568",
+   "serial": "MCON000DEMO01",
    "lastPacket": "2026-02-22 09:00:43",
    "serverTime": "2026-02-22 09:04:04",
    "timeZone": "+05:30"
