@@ -206,26 +206,33 @@ Hard-won constraints:
 
 `#/motor/dcon`: Now hero (time-left ring while watering), Watered and Pump & power side by side, Reports as a compact list with the opened report beside it from 900px of pane width (inline below), the Mobitech account last. Run valves opens as a right drawer (bottom sheet on phones) over the page; same buttons, same lock and gates. Layout only: no command, lock or request code moved.
 
-## Water art (2026-11-01)
+## Water art (2026-11-01, redrawn)
 
-`#/water` draws three cutaway scenes (River well, Thoppu well, Farm sump) over
-generated raster art in `dashboard/public/art/water/{river,thoppu,farm}.webp`
-(1200 x 800, about 325 KB together). Owner's brief: realistic, an Indian open
-dug well and not a tank, a river that feels like a river, motors as
-submersibles standing in the water (river well 6 HP, two at Thoppu, one in the
-shallower farm sump), the river well fed by an underground pipe.
+`#/water` draws three illustrated cutaway scenes on the card's own surface
+(owner: no photographed soil or landscape, the wells and tanks "need not be
+photorealistic", the water in the pipes must be realistic). They are SVG in
+`wsArt()` / `wsWell()` in `app.js`, 1000 x 600 units, the same in both themes:
 
-Provenance: generated with Codex (`codex exec`, built-in image generation),
-one prompt per scene sharing one style paragraph (dusk blue-hour light, front
-cutaway, ground line a quarter down, dark gradient above ground, no pipes, no
-streams, no splashes, no bubbles, calm water), then converted with
-`cwebp -q 72 -resize 1200 800`. The prompts live only in the PR description;
-re-run them to change the art. Anything state-dependent is drawn on top in
-`wsArt()` in the art's own 1000 x 666 units: pipes, the glassy pour with foam
-and rings, bubbles round a running motor, surface ripples and glints, the
-river's moving surface. Each motion needs its motor running on a current
-reading; idle is dry and still. A source that cannot be read is greyed and
-hatched with its reason. There is no level sensor, so the water sits at a
-fixed natural depth and each scene says "No level reading". If a scene is
-regenerated, re-check the coordinates in `wsArt()` (motor tops, surface
-ellipses, pour x).
+- **River well** and **Thoppu well**: brick-lined cylindrical Indian open wells,
+  capstone rim, the front cut away to show the water and the submerged motor(s).
+  **Farm sump**: a shallower rectangular brick tank in the same style (about
+  11 ft). The river is a plain band with a sand bank; the river well draws from
+  it through an underground pipe, which is passive and never moves.
+- **Pipes are clear glass.** Idle they are empty and still. Running on a current
+  reading they are full of water: a baked caustic texture sliding along the
+  pipe under cylinder shading and a specular line. **Never dots, dashes, beads
+  or particles** (a QA check enforces it: no stroke-dasharray and no bubble
+  elements in the art). The pour is a clear column with the same texture
+  falling, a soft displaced foam and expanding rings where it lands; a running
+  motor sits in a soft turbulent disturbance, not bubbles.
+- The texture is `art/water/flow-h.webp` and `flow-v.webp` (about 20 KB each),
+  seamless along the flow, made from SVG feTurbulence by
+  `dashboard/preview/make-flow-texture.mjs` (Chromium render, then `cwebp
+  -q 80 -alpha_q 90`). Nothing is photographic or AI-generated any more.
+- Texture phases come from the clock (`wsSp()`), so a re-render resumes the
+  motion. Reduced motion: no animation at all, the water keeps its texture.
+- Can't read: scene and pipes greyed and hatched with the reason and Sign in.
+  Each scene says "No level reading"; water sits at a fixed depth.
+- The pipes between scenes (CSS bridges, `.ws-bridge`) use the same textures at
+  the same scale. Texture and pipe-width constants (`--pw`, 36 units of the
+  scene width) must stay in step with `WS_PW` in `wsPipe()`.

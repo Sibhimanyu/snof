@@ -1537,110 +1537,82 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   container-type:inline-size;margin-top:4px}
 :root[data-theme="dark"] .wscene{--land:#232325;--water-2:#4aa0e6;--water-deep:#1b5da6}
 @media (prefers-color-scheme:dark){:root:not([data-theme]) .wscene{--land:#232325;--water-2:#4aa0e6;--water-deep:#1b5da6}}
-/* --tw: the width of one scene; every pipe is drawn in the art's own 1000 x
- * 666 units, so its width and where it crosses the gap follow from it. */
-.ws-grid{--lw:16px;--tw:min(100cqw,520px);--pw:calc(var(--tw)*.033);
+/* --tw: the width of one scene; the art is drawn in 1000 x 600 units, so a
+ * unit is --tw/1000 and the pipes' widths and where they cross the gap follow. */
+.ws-grid{--lw:16px;--tw:min(100cqw,520px);--pw:calc(var(--tw)*.036);
   display:grid;grid-template-columns:minmax(0,1fr);row-gap:0;max-width:520px;margin:0 auto}
 .ws-stage{display:contents}
 .ws-tile,.ws-link,.ws-beds,.ws-cards{order:var(--o,0)}
 .ws-cards{display:flex;flex-direction:column;gap:12px;margin-top:16px;min-width:0}
-.ws-tile{position:relative;aspect-ratio:3/2;border-radius:var(--r-xl);overflow:hidden;background:#0b1117;
+.ws-tile{position:relative;aspect-ratio:5/3;border-radius:var(--r-xl);overflow:hidden;background:var(--panel);
   box-shadow:var(--shadow-card),inset 0 0 0 1px var(--edge);isolation:isolate}
-.ws-img,.ws-art{position:absolute;inset:0;display:block;width:100%;height:100%}
-.ws-img{object-fit:cover;user-select:none;-webkit-user-drag:none}
-.ws-art{overflow:hidden}
-/* the scenes are dark whatever the theme: the labels sit on them accordingly */
+.ws-art{position:absolute;inset:0;display:block;width:100%;height:100%;overflow:hidden}
 .ws-place{position:absolute;left:12px;bottom:12px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:1px;
-  padding:5px 11px 6px;border-radius:14px;font-size:12.5px;font-weight:750;letter-spacing:.01em;color:#eef4f8;
-  background:rgba(9,14,19,.62);border:1px solid rgba(255,255,255,.14);
-  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
-.ws-dripnote{position:absolute;z-index:3;left:5%;top:23%;font-size:10.5px;font-weight:650;letter-spacing:.02em;color:rgba(238,244,248,.62);
-  text-shadow:0 1px 3px rgba(0,0,0,.7);pointer-events:none}
-.ws-dripnote.is-on{color:#bfe3fb}
-.ws-place small{font-size:10.5px;font-weight:600;color:rgba(238,244,248,.55);letter-spacing:.01em}
-/* pipes: a cylinder out of a few strokes. Dull and dry until water moves. */
-.ws-p-rim,.ws-p-body,.ws-p-shade,.ws-p-hi,.ws-p-flow{fill:none;stroke-linecap:butt;stroke-linejoin:round}
-.ws-p-rim{stroke:#10161b;stroke-width:33}
-.ws-p-body{stroke:#4b5b66;stroke-width:27}
-.ws-p-shade{stroke:#2c3841;stroke-width:11;transform:translate(2.5px,3px)}
-.ws-p-hi{stroke:#fff;stroke-opacity:.34;stroke-width:6;transform:translate(-5.5px,-5.5px)}
-.ws-p-flow{stroke:transparent;stroke-width:7.5}
-.ws-pipe.is-mid .ws-p-rim{stroke-width:23}.ws-pipe.is-mid .ws-p-body{stroke-width:18}.ws-pipe.is-mid .ws-p-shade{stroke-width:7}
-.ws-pipe.is-mid .ws-p-hi{stroke-width:3.5;transform:translate(-3px,-3px)}.ws-pipe.is-mid .ws-p-flow{stroke-width:4.5}
-.ws-pipe.is-on .ws-p-rim{stroke:#0a3556}
-.ws-pipe.is-on .ws-p-body{stroke:#2f8fd8}
-.ws-pipe.is-on .ws-p-shade{stroke:#1b5f9e}
-.ws-pipe.is-on .ws-p-hi{stroke:#e6f5ff;stroke-opacity:.7}
-.ws-pipe.is-on .ws-p-flow{stroke:#d9f0ff;stroke-opacity:.85;stroke-dasharray:16 30;animation:ws-flow 1.1s linear infinite;animation-delay:var(--ph-flow,0s)}
-.ws-pipe.is-mid.is-on .ws-p-flow{stroke-dasharray:10 24}
-@keyframes ws-flow{to{stroke-dashoffset:-46}}
-/* the bridge across the gap, the same cylinder as a div */
+  padding:5px 11px 6px;border-radius:14px;font-size:12.5px;font-weight:750;letter-spacing:.01em;color:var(--text);
+  background:var(--glass);border:1px solid var(--glass-line);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.ws-place small{font-size:10.5px;font-weight:600;color:var(--faint);letter-spacing:.01em}
+.ws-dripnote{position:absolute;z-index:3;left:5%;top:25%;font-size:10.5px;font-weight:650;letter-spacing:.02em;color:var(--faint);pointer-events:none}
+.ws-dripnote.is-on{color:var(--accent)}
+/* pipes: clear glass. Running, they are full of water: the baked caustic
+ * texture sliding along under cylinder shading. Nothing is a dot or a dash. */
+.ws-pg-rim,.ws-pg-glass{fill:none;stroke-linejoin:miter;stroke-linecap:butt}
+.ws-pg-rim{stroke:#2a3741;stroke-opacity:.85}
+.ws-pg-glass{stroke:#b4cfdf;stroke-opacity:.16}
+.ws-pg-shd{fill:#0a2a45;opacity:.13}
+.ws-pipe.is-on .ws-pg-shd{display:none}
+.ws-pg-spec{fill:#fff;opacity:.6}
+.ws-pipe.is-unread{opacity:.8}
+.ws-tx-px{animation:ws-px var(--sp,7s) linear infinite}
+.ws-tx-nx{animation:ws-nx var(--sp,7s) linear infinite}
+.ws-tx-py{animation:ws-py var(--sp,7s) linear infinite}
+.ws-tx-ny{animation:ws-ny var(--sp,7s) linear infinite}
+.ws-tx-px,.ws-tx-nx,.ws-tx-py,.ws-tx-ny{animation-delay:var(--ph-tx,0s)}
+@keyframes ws-px{to{transform:translateX(600px)}}
+@keyframes ws-nx{to{transform:translateX(-600px)}}
+@keyframes ws-py{to{transform:translateY(600px)}}
+@keyframes ws-ny{to{transform:translateY(-600px)}}
+.ws-art:not(.is-live) .ws-tx-px,.ws-art:not(.is-live) .ws-tx-nx,.ws-art:not(.is-live) .ws-tx-py,.ws-art:not(.is-live) .ws-tx-ny{animation:none}
+/* the bridge across the gap: the same glass pipe, in CSS */
 .ws-link{position:relative;height:var(--lw);width:100%}
 .ws-lh{display:none}
 .ws-lv{display:block}
-.ws-bridge{position:absolute;display:block;overflow:hidden;box-sizing:border-box;
-  border:0 solid #10161b;background:#4b5b66}
-.ws-lv .ws-bridge{top:0;height:100%;width:var(--pw);left:calc(var(--tw)*var(--vx)/100 - var(--pw)/2);
-  background:linear-gradient(90deg,#10161b 0,#4b5b66 18%,#7a8b96 34%,#4b5b66 62%,#2c3841 88%,#10161b 100%)}
-.ws-lh .ws-bridge{left:0;width:100%;height:var(--pw);top:calc(var(--tw)*.034 - var(--pw)/2);
-  background:linear-gradient(180deg,#10161b 0,#4b5b66 16%,#7a8b96 30%,#4b5b66 58%,#2c3841 86%,#10161b 100%)}
-.ws-bridge.is-on{background:linear-gradient(90deg,#0a3556 0,#2f8fd8 18%,#8fd0fb 34%,#2f8fd8 62%,#1b5f9e 88%,#0a3556 100%)}
-.ws-lh .ws-bridge.is-on{background:linear-gradient(180deg,#0a3556 0,#2f8fd8 16%,#8fd0fb 30%,#2f8fd8 58%,#1b5f9e 86%,#0a3556 100%)}
-.ws-bridge .ws-p-flow{position:absolute;inset:0;display:block;opacity:0}
-.ws-bridge.is-on .ws-p-flow{opacity:1;background-size:46px 46px}
-.ws-lh .ws-bridge.is-on .ws-p-flow{background-image:repeating-linear-gradient(90deg,rgba(235,247,255,.85) 0 12px,transparent 12px 30px);
-  background-size:auto;animation:ws-bflow-h 1.1s linear infinite;animation-delay:var(--ph-flow,0s)}
-.ws-lv .ws-bridge.is-on .ws-p-flow{background-image:repeating-linear-gradient(180deg,rgba(235,247,255,.85) 0 3px,transparent 3px 10px);
-  animation:ws-bflow-v 1.1s linear infinite;animation-delay:var(--ph-flow,0s)}
-@keyframes ws-bflow-h{to{background-position:30px 0}}
-@keyframes ws-bflow-v{to{background-position:0 10px}}
-.ws-pipe.is-unread{opacity:.8}
 .ws-h{display:none}
 .ws-v{display:block}
-/* water that is still, and water that moves */
-.ws-under{fill:#0a4a78;fill-opacity:.3;pointer-events:none}
-.ws-flange{fill:#222c33;stroke:#0b1014;stroke-width:2}
-.ws-emit{fill:#0d1317;stroke:#3a4650;stroke-width:1.5}
-.ws-drop-c{fill:#bfe3fb;opacity:0}
-.ws-ripple{fill:none;stroke:#fff;stroke-opacity:.32;stroke-width:1.8;display:none}
-.ws-glint{opacity:0;display:none}
-.ws-caus{display:none;fill:url(#wsg-glint);opacity:0}
-.ws-art.is-live .ws-ripple,.ws-art.is-live .ws-glint,.ws-art.is-live .ws-caus{display:inline}
-.ws-art.is-live .ws-r1{animation:ws-wave 9s linear infinite;animation-delay:var(--ph-r1,0s)}
-.ws-art.is-live .ws-r2{animation:ws-wave 13s linear infinite reverse;animation-delay:var(--ph-r2,0s)}
-.ws-art.is-live .ws-glint{animation:ws-glint 5s ease-in-out infinite;animation-delay:calc(var(--ph-glint,0s) - var(--gi,0) * 1.7s)}
-.ws-flowwater .ws-r1{animation-duration:6s}
-.ws-art.is-live .ws-caus{opacity:.12;animation:ws-caus 14s linear infinite;animation-delay:var(--ph-caus,0s)}
-@keyframes ws-wave{to{transform:translateX(-80px)}}
-@keyframes ws-glint{0%,100%{opacity:0}45%,55%{opacity:.85}}
-@keyframes ws-caus{0%{transform:translateX(0)}100%{transform:translateX(-120px)}}
-.ws-art .ws-drop-c{animation:ws-drip 1.4s ease-in infinite;animation-delay:calc(var(--ph-drop,0s) - var(--di,0) * .45s)}
-@keyframes ws-drip{0%{opacity:0;transform:translateY(-4px)}15%{opacity:.95}85%{opacity:.9}100%{opacity:0;transform:translateY(22px)}}
-/* a submerged motor at work: a turbulent glow and air rising */
-.ws-turb{animation:ws-turb 1.8s ease-in-out infinite;animation-delay:var(--ph-glow,0s)}
-.ws-bub{fill:rgba(220,242,255,.32);stroke:rgba(235,248,255,.9);stroke-width:1.4;animation:ws-bub 2.6s linear infinite;
-  animation-delay:calc(var(--ph-bub,0s) - var(--bd,0) * .37s);opacity:0}
-@keyframes ws-turb{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:1;transform:scale(1.08)}}
-.ws-turb{transform-box:fill-box;transform-origin:center}
-@keyframes ws-bub{0%{opacity:0;transform:translateY(0)}12%{opacity:.95}78%{opacity:.7}100%{opacity:0;transform:translateY(calc(var(--bh) * -1))}}
-/* the pour: a glassy column with foam and rings where it lands */
-.ws-stream-b{opacity:.92}
-.ws-st{fill:none;stroke:#fff;stroke-width:1.7;stroke-linecap:round;stroke-dasharray:14 22;stroke-opacity:.85;animation:ws-fall .5s linear infinite;animation-delay:var(--ph-fall,0s)}
-.ws-st1{stroke-dasharray:9 19;animation-duration:.42s;stroke-opacity:.6}
-.ws-st2{stroke-dasharray:18 17;animation-duration:.58s;stroke-opacity:.5}
-@keyframes ws-fall{to{stroke-dashoffset:-36}}
-.ws-foam{animation:ws-foam .9s ease-in-out infinite;animation-delay:var(--ph-splash,0s);transform-box:fill-box;transform-origin:center}
-@keyframes ws-foam{0%,100%{opacity:.8;transform:scale(.92)}50%{opacity:1;transform:scale(1.06)}}
-.ws-ring{fill:none;stroke:#e9f6ff;stroke-width:1.8;opacity:0;transform-box:fill-box;transform-origin:center;
-  animation:ws-ring 1.6s ease-out infinite;animation-delay:var(--ph-splash,0s)}
-.ws-ring-b{animation-delay:calc(var(--ph-splash,0s) - .8s)}
-@keyframes ws-ring{0%{opacity:.85;transform:scale(.3)}100%{opacity:0;transform:scale(1.25)}}
-.ws-spr{fill:#e9f6ff;opacity:0;animation:ws-spr .8s ease-out infinite;animation-delay:calc(var(--ph-splash,0s) - var(--di,0) * .2s)}
-@keyframes ws-spr{0%{opacity:.95;transform:translate(0,0)}60%{opacity:.8}100%{opacity:0;transform:translate(var(--sx),-26px)}}
+.ws-bridge{position:absolute;display:block;box-sizing:border-box;border:2px solid rgba(42,55,65,.85);border-radius:1px;
+  background:rgba(180,207,223,.3)}
+.ws-bridge::before,.ws-bridge::after{content:"";position:absolute;inset:0;pointer-events:none}
+.ws-lh .ws-bridge{left:0;width:100%;height:var(--pw);top:calc(var(--tw)*.034 - var(--pw)/2)}
+.ws-lv .ws-bridge{top:0;height:100%;width:var(--pw);left:calc(var(--tw)*var(--vx)/100 - var(--pw)/2)}
+.ws-lh .ws-bridge::before{background:linear-gradient(#fff,#fff) 0 20%/100% 2px no-repeat;opacity:.6}
+.ws-lv .ws-bridge::before{background:linear-gradient(#fff,#fff) 20% 0/2px 100% no-repeat;opacity:.6}
+.ws-bridge.is-on{background-color:#2b86cf}
+.ws-lh .ws-bridge.is-on{background-image:url(/art/water/flow-h.webp);background-size:calc(var(--tw)*.6) calc(var(--tw)*.096);background-position:0 40%;
+  animation:ws-bg-h 7s linear infinite;animation-delay:var(--ph-tx,0s)}
+.ws-lv .ws-bridge.is-on{background-image:url(/art/water/flow-v.webp);background-size:calc(var(--tw)*.096) calc(var(--tw)*.6);background-position:40% 0;
+  animation:ws-bg-v 7s linear infinite;animation-delay:var(--ph-tx,0s)}
+.ws-lh .ws-bridge.is-on::after{background:linear-gradient(180deg,rgba(2,26,51,.5),rgba(2,26,51,0) 12%,rgba(255,255,255,.4) 24%,rgba(255,255,255,0) 42%,rgba(2,26,51,.2) 78%,rgba(2,26,51,.55))}
+.ws-lv .ws-bridge.is-on::after{background:linear-gradient(90deg,rgba(2,26,51,.5),rgba(2,26,51,0) 12%,rgba(255,255,255,.4) 24%,rgba(255,255,255,0) 42%,rgba(2,26,51,.2) 78%,rgba(2,26,51,.55))}
+@keyframes ws-bg-h{to{background-position:calc(var(--tw)*.6) 40%}}
+@keyframes ws-bg-v{to{background-position:40% calc(var(--tw)*.6)}}
+.ws-bridge.is-unread{opacity:.6}
+/* what sits in the scenes */
+.ws-flange{fill:#2b3640;stroke:#10161b;stroke-width:2}
+.ws-emit{fill:#1d2830;stroke:#0b1014;stroke-width:1.5}
+.ws-drop-c{fill:#6fbcf2;opacity:0}
+.ws-art.is-live .ws-drop-c{animation:ws-drip 1.5s ease-in infinite;animation-delay:calc(var(--ph-drop,0s) - var(--di,0) * .5s)}
+@keyframes ws-drip{0%{translate:0 -4px;opacity:0}15%{opacity:.95}85%{opacity:.85}100%{translate:0 24px;opacity:0}}
+.ws-glow{transform-box:fill-box;transform-origin:center;animation:ws-glow2 2.6s ease-in-out infinite;animation-delay:var(--ph-glow,0s)}
+@keyframes ws-glow2{0%,100%{opacity:.5}50%{opacity:1}}
+.ws-foam{animation:ws-foam 1.2s ease-in-out infinite;animation-delay:var(--ph-splash,0s)}
+@keyframes ws-foam{0%,100%{opacity:.78}50%{opacity:1}}
+.ws-ring{fill:none;stroke:#eaf7ff;stroke-width:2;opacity:0;transform-box:fill-box;transform-origin:center;
+  animation:ws-ring 2s ease-out infinite;animation-delay:var(--ph-splash,0s)}
+.ws-ring-b{animation-delay:calc(var(--ph-splash,0s) - 1s)}
+@keyframes ws-ring{0%{opacity:.8;transform:scale(.35)}100%{opacity:0;transform:scale(1.15)}}
 /* unreadable: grey and hatched, nothing moving */
-.ws-tile.is-unread .ws-img,.ws-tile.is-unread .ws-art{filter:grayscale(1) brightness(1.3);opacity:.7}
+.ws-tile.is-unread .ws-art{filter:grayscale(1);opacity:.55}
 .ws-tile.is-unread::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
-  background:repeating-linear-gradient(135deg,transparent 0 8px,rgba(180,190,200,.22) 8px 10px)}
+  background:repeating-linear-gradient(135deg,transparent 0 8px,color-mix(in srgb,var(--faint) 26%,transparent) 8px 10px)}
 .ws-cant{position:absolute;right:12px;bottom:12px;z-index:3;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:750;
   color:var(--warn);background:var(--panel);border:1px solid var(--warn-line)}
 /* motor cards: all alike */
@@ -1709,19 +1681,15 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 @media (prefers-reduced-motion:reduce){
   .wscene *,.wscene *::before,.wscene *::after{animation:none!important;transition:none!important}
   .ws-badge.is-on::after,.ws-crop::after{display:none}
-  .ws-drop-c,.ws-spr,.ws-ring,.ws-bub,.ws-glint{display:none}
-  .ws-st{stroke-dasharray:none}
-  .ws-bridge.is-on .ws-p-flow{background-image:none}
-  .ws-beds.is-fed::before{background:#2f8fd8!important}
+  .ws-drop-c,.ws-ring{display:none}
 }
-/* The sump's pipe comes down the soil beside it and ends in the valves panel. */
+/* The sump's pipe comes down beside it and ends in the valves panel. */
 .ws-beds{position:relative;margin-top:16px}
-.ws-beds::before{content:"";position:absolute;top:-16px;left:calc(92% - var(--pw,12px)/2);width:var(--pw,12px);height:16px;
-  background:linear-gradient(90deg,#10161b 0,#4b5b66 18%,#7a8b96 34%,#4b5b66 62%,#2c3841 88%,#10161b 100%)}
-.ws-beds.is-fed::before{background:repeating-linear-gradient(180deg,rgba(235,247,255,.85) 0 8px,transparent 8px 20px),
-  linear-gradient(90deg,#0a3556 0,#2f8fd8 18%,#8fd0fb 34%,#2f8fd8 62%,#1b5f9e 88%,#0a3556 100%);
-  animation:ws-feed .6s linear infinite;animation-delay:var(--ph-fall,0s)}
-@keyframes ws-feed{to{background-position:0 20px,0 0}}
+.ws-beds::before,.ws-beds::after{content:"";position:absolute;top:-16px;left:calc(92% - var(--pw,12px)/2);width:var(--pw,12px);height:16px;pointer-events:none}
+.ws-beds::before{box-sizing:border-box;border:2px solid rgba(42,55,65,.85);background:rgba(180,207,223,.3)}
+.ws-beds.is-fed::before{background:#2b86cf url(/art/water/flow-v.webp) 40% 0/calc(var(--tw,360px)*.096) calc(var(--tw,360px)*.6);
+  animation:ws-bg-v 7s linear infinite;animation-delay:var(--ph-tx,0s)}
+.ws-beds.is-fed::after{background:linear-gradient(90deg,rgba(2,26,51,.5),rgba(2,26,51,0) 12%,rgba(255,255,255,.4) 24%,rgba(255,255,255,0) 42%,rgba(2,26,51,.2) 78%,rgba(2,26,51,.55))}
 @container (min-width:880px){.ws-beds{margin-top:0}}
 
 /* ---------- Controller page, chunk 5 (2026-11-01) ---------- */
