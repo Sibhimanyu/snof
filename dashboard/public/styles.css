@@ -1767,14 +1767,11 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 /* All devices: the status sits next to the name, rooms are headed, filters stay in view. */
 .toolbar-row:has(.seg[aria-label="Filter by status"]){position:sticky;top:var(--bar-h);z-index:5;margin:0 calc(var(--gutter) * -1) 12px;
   padding:10px var(--gutter);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-.dgroups{max-width:760px}
+.dgroups{max-width:none}
+.dgroup-set{break-inside:avoid}
+@media (min-width:1000px){ .dgroups{column-count:2;column-gap:0;column-rule:1px solid var(--line-soft)} .dgroup,.dgroup-solo{break-inside:avoid} .dgroup-set:last-child .dgroup:last-child,.dgroup-set{border-bottom:1px solid var(--line-soft)} }
 .dgroup-room{padding:16px 22px 6px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);background:var(--panel)}
 .dgroups > .dgroup-room:first-child{padding-top:18px}
-@media (min-width:700px){
-  .dgroup-main{display:grid;grid-template-columns:minmax(160px,1.6fr) minmax(90px,1fr);align-items:center;gap:14px}
-  .dgroup-main:has(> .dgroup-name:only-child){display:flex}
-  .dgroup-meta{font-size:13px}
-}
 .dgroups .row{min-height:52px}
 
 /* Climate: running ACs as a grid of cards; an AC that is off is one quiet line. */

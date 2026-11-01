@@ -1622,14 +1622,18 @@ function devicesView(all) {
   // filter was ~170 rows of "unavailable".
   const filtering = !!(search || domainFilter);
   const byRoom = statusFilter === 'all';
-  let lastRoom = null;
   if (byRoom) groups.sort((a, b) => areaName(a.area).localeCompare(areaName(b.area), undefined, NATURAL) ||
     a.name.localeCompare(b.name, undefined, NATURAL));
-  const body = groups.map((g) => {
-    const roomHead = byRoom && g.area !== lastRoom ? `<h3 class="dgroup-room">${escapeHtml(areaName(g.area))}</h3>` : '';
-    lastRoom = g.area;
-    return roomHead + deviceGroup(g);
-  }).join('');
+  // One set per room, so a room's heading and its devices stay together
+  // when the list runs in two columns on a wide screen.
+  const sets = [];
+  for (const g of groups) {
+    const last = sets[sets.length - 1];
+    if (byRoom && last && last.area === g.area) last.items.push(g); else sets.push({ area: g.area, items: [g] });
+  }
+  const body = byRoom
+    ? sets.map((st) => `<div class="dgroup-set"><h3 class="dgroup-room">${escapeHtml(areaName(st.area))}</h3>${st.items.map(deviceGroup).join('')}</div>`).join('')
+    : groups.map(deviceGroup).join('');
   function deviceGroup(g) {
     // No device id (an older bridge, or the synthetic fixture): a plain row.
     if (g.id === g.ents[0].key && !g.ents[0].device) return `<div class="list dgroup-solo">${row(g.ents[0], true)}</div>`;
