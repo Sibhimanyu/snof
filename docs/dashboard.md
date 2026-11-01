@@ -69,7 +69,7 @@ devices. Unavailable devices are now excluded outright, and the section shows an
 explicit empty state if nothing is operable.
 
 ## Shell chrome
-  bottom tabs. Admin stays in the account menu (it opens upward).
+
 - **Home and Water on a wide screen (chunks 3 and 4).** Home's water card
   holds both drawings of the same stations: the vertical rows and
   `waterChain()` (four equal stations on one horizontal pipe, green only

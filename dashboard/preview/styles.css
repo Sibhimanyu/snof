@@ -1382,74 +1382,6 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .uh-do{font-size:14px;font-weight:600;color:var(--text)}
 .uh-btn{align-self:stretch;min-height:48px;font-size:15.5px}
 .uh-inline{color:var(--warn)}
-<<<<<<< HEAD
-=======
-
-/* ---------- desktop shell (>= 901px): sidebar + page bar ----------
-   The top bar is drawn as a fixed left sidebar; nothing in the DOM moves.
-   >= 1100px it is 240px wide; 901-1099px it is a 72px icon rail. Phones and
-   tablets (<= 900px) keep the top bar and bottom tabs untouched. */
-.nav-ico{display:none}
-@media (min-width:901px){
-  :root{--bar-h:0px;--side-w:72px}
-  #app{padding-left:var(--side-w)}
-  .topbar{position:fixed;left:0;top:0;bottom:0;width:var(--side-w);z-index:50;padding-top:0;
-    background:var(--panel);border-bottom:0;border-right:1px solid var(--line);
-    -webkit-backdrop-filter:none;backdrop-filter:none}
-  .topbar-in{max-width:none;height:100%;margin:0;padding:calc(18px + var(--sat)) 12px calc(16px + var(--sab));
-    display:flex;flex-direction:column;align-items:stretch;gap:22px}
-  .brand{justify-self:auto;align-self:center;padding:2px 4px}
-  .topnav{flex-direction:column;align-items:stretch;gap:4px;padding:0;background:none;border-radius:0}
-  .topnav-item{min-height:44px;padding:0;gap:12px;justify-content:center;border-radius:var(--r);font-size:14.5px}
-  .topnav-item::before{display:none}
-  .topnav-item.on{background:var(--seg-track);box-shadow:none}
-  .nav-ico{display:block;flex:none;width:21px;height:21px}
-  .topnav-item.on .nav-ico{color:var(--accent)}
-  .topbar-right{margin-top:auto;display:grid;grid-template-columns:minmax(0,1fr);justify-self:auto;gap:8px;justify-items:stretch}
-  #m-bridge{display:inline-flex;grid-row:1;justify-self:center;padding:11px;gap:8px}
-  #theme-btn{grid-row:2;justify-self:center}
-  .acct{grid-row:3}
-  .acct-btn{width:100%;justify-content:center;padding:4px}
-  .acct-menu{top:auto;bottom:calc(100% + 10px);left:0;right:auto;transform-origin:bottom left}
-  /* Icon rail: labels stay for screen readers, drawn off-screen. */
-  .nav-label,.brand .wordmark,.brand .wordmark-sub,.acct-name,#m-bridge-text{
-    position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-
-  .main{min-height:100dvh}
-  .view{padding-top:0}
-  /* The page's own head is its bar: title left, actions right, sticky. */
-  body[data-route] .view .page-head{position:sticky;top:0;z-index:20;flex-wrap:nowrap;align-items:center;gap:12px 24px;
-    min-height:80px;margin:0 calc(-1 * var(--gutter)) 28px;padding:14px var(--gutter);
-    background:var(--glass);border-bottom:1px solid var(--glass-line);
-    -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
-  .page-title{margin-top:0;font-size:28px;line-height:1.1}
-  .page-head .pill-head{display:none}
-  /* Search sits in the page bar's right end: a zero-height sticky strip, so
-     it stays put while the page scrolls and still lives outside #view. */
-  .searchbar{--sw:min(360px,34vw);position:sticky;top:0;z-index:25;height:0;padding:0;margin:0 auto;max-width:var(--maxw)}
-  .searchbar #search{position:absolute;top:18px;right:var(--gutter);width:var(--sw);max-width:none}
-  .search-icon{left:auto!important;right:calc(var(--gutter) + var(--sw) - 31px);top:40px!important}
-  body[data-route="areas"] .view .page-head,body[data-route="devices"] .view .page-head,
-  body[data-route="area"] .view .page-head{padding-right:calc(var(--gutter) + min(360px,34vw) + 24px)}
-}
-@media (min-width:1100px){
-  :root{--side-w:240px}
-  .topbar-in{padding-left:16px;padding-right:16px}
-  .brand{align-self:flex-start;gap:12px}
-  .brand .wordmark,.brand .wordmark-sub,.nav-label,.acct-name,#m-bridge-text{
-    position:static;width:auto;height:auto;overflow:visible;clip-path:none}
-  .brand .wordmark-sub{display:none}
-  .acct-name{display:block}
-  .topnav-item{justify-content:flex-start;padding:0 14px}
-  .topbar-right{grid-template-columns:minmax(0,1fr) auto}
-  #m-bridge{grid-column:1 / -1;justify-self:start;padding:8px 14px}
-  .acct{grid-row:2;grid-column:1}
-  #theme-btn{grid-row:2;grid-column:2;justify-self:auto}
-  .acct-btn{justify-content:flex-start;padding:4px 10px 4px 4px;gap:10px}
-  .acct-btn .avatar{order:-1}
-  .acct-btn .acct-name{flex:1;text-align:left;max-width:none}
-}
-
 /* ---------- Home on a wide screen (chunk 3) ----------
    Water leads across the full width, Power beside Irrigation + Security
    stacked to its height (rows share height, so no card is stretched past its
@@ -1478,7 +1410,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 }
 .home-low{display:block}
 .home-low .tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
-@media (min-width:1280px){
+@media (min-width:1100px){
   .home-low.two{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:0 28px;align-items:start}
   /* Around the farm: one row per system beside the switches. */
   .home-low.two .sys-sec{margin-top:0}
@@ -1502,18 +1434,18 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .wsum-facts{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:auto;padding-top:12px;font-size:14px;font-weight:650;color:var(--text);font-variant-numeric:tabular-nums}
 .wsum-facts span{display:flex;flex-direction:column;gap:1px}
 .wsum-facts small{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
-@media (max-width:1279px){
+@media (max-width:1099px){
   .wmd.is-motor .wmd-list,.wmd.is-water .wmd-detail{display:none}
 }
 /* The controller's page beside the list: one column until the pane is wide. */
-@media (min-width:1280px) and (max-width:1799px){
+@media (min-width:1100px) and (max-width:1439px){
   .wmd-detail .irr-grid{grid-template-columns:minmax(0,1fr)}
 }
 .wmd-detail .now-top{flex-wrap:wrap}
 .wmd-detail .now-checked{flex:1 1 auto;margin-left:0}
-@media (min-width:1280px){
+@media (min-width:1100px){
   .wmd{display:grid;grid-template-columns:minmax(330px,380px) minmax(0,1fr);gap:20px;align-items:start}
-  .wmd-list{position:sticky;top:104px}
+  .wmd-list{position:sticky;top:84px}
   .wmd-list .wp-go{display:none}
   .wmd-list .wp-row{grid-template-columns:56px minmax(0,1fr) auto}
   .wmd-list .wp-branch{grid-template-columns:56px 50px minmax(0,1fr) auto}
@@ -1548,7 +1480,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .wm-acts{margin-left:auto}
 .wm-acts .now-actions{margin:0}
 .wm-acts .now-actions .btn{flex:none;min-height:36px;padding:0 18px;font-size:13.5px}
-@media (max-width:1279px) and (min-width:621px){ .wm-hero{grid-template-columns:minmax(0,5fr) minmax(0,7fr)} }
+@media (max-width:1099px) and (min-width:621px){ .wm-hero{grid-template-columns:minmax(0,5fr) minmax(0,7fr)} }
 @media (max-width:760px) and (min-width:621px){ .wm-hero{grid-template-columns:1fr} }
 @media (max-width:620px){
   .wm-hero{grid-template-columns:1fr;padding:18px 16px;gap:16px}
@@ -1562,4 +1494,3 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   .wm-acts .now-actions .btn{width:100%;min-height:48px;font-size:15.5px}
   .wm-acts .btn-ghost{min-height:48px;padding:0 18px}
 }
->>>>>>> 9e6cc86 (Web Home and Water on desktop: horizontal water chain, Home grid, two-pane Water, motor page hero with readings)
