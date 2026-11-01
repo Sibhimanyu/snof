@@ -69,7 +69,22 @@ devices. Unavailable devices are now excluded outright, and the section shows an
 explicit empty state if nothing is operable.
 
 ## Shell chrome
-
+  bottom tabs. Admin stays in the account menu (it opens upward).
+- **Home and Water on a wide screen (chunks 3 and 4).** Home's water card
+  holds both drawings of the same stations: the vertical rows and
+  `waterChain()` (four equal stations on one horizontal pipe, green only
+  where `on` says a current reading flows); a container query on `.flow`
+  shows the chain from 680px. Rows are Water (full width), then Power beside
+  Irrigation + Security (rows share the Power card's height), then
+  `homeLow()`: Switches with "Around the farm" as a column beside them from
+  1280px, stacked below. From 1280px Water and every `#/motor/<key>` page are
+  two panes (`waterFrame()`): the water path (selected source marked
+  `.is-sel`) left, right either the four equal summary cards (`#/water`) or
+  the source's page; narrower, one or the other, as on a phone. URLs are
+  unchanged. A motor's page is a hero (state, "For ... since", reading
+  tiles `.wm-metrics`, no drop-down) plus a Control card; its on/off button
+  (`motorControls(m, 'button')`) and Refresh sit in the page head, the refusal
+  reason (`.wm-why`) in the card. Control logic is untouched.
 - `.topbar` is one bar on every width: wordmark, `.topnav` (the five
   destinations, green underline on the current one), theme button, account.
   Below 900px `.topnav` hides, the bridge pill `#m-bridge` takes its place,
