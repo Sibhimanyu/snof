@@ -3179,12 +3179,8 @@ function waterView() {
   const w = state.water || {};
   const st = state.meta?.water || {};
   const refresh = `<button class="btn btn-ghost btn-sm" data-act="water-refresh"${gate.ok ? '' : ' disabled'}>Refresh</button>`;
-  const livesky = isAdmin ? liveskyState() : { kind: 'ok' };
-  const niagaraErr = st.niagara && st.niagara.ok === false ? st.niagara.error : '';
   return head('Water', w.pulledAt ? `Read ${agoText(w.pulledAt)}` : 'Not read yet', refresh) +
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
-    (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
-    (niagaraErr ? `<p class="more-note note-off">${escapeHtml(niagaraErr)} Showing the last readings.</p>` : '') +
     waterFrame('', true);
 }
 
@@ -3201,6 +3197,133 @@ function motorGlance(m) {
   return out;
 }
 
+/* ---- the water's journey, drawn ----
+ * Owner, 2026-11-01: "can be far more refreshing and interesting to watch.
+ * graphical". River -> River Motor -> Thoppu (well, two motors) -> Wellmotor
+ * 75HP -> the farm's sump, SibhiSump, and the beds it waters. Three places,
+ * the pipes between them, and one equal card per motor underneath. Water
+ * moves in a pipe only while its motor runs on a current reading (the same
+ * `flowing` flag as the rows); a source that cannot be read is hatched and
+ * grey, with the reason and no state. All motion is CSS; every animation
+ * takes its phase from the clock (--ph-*), so the page re-rendering on new
+ * data never restarts it, and prefers-reduced-motion leaves it static. */
+const WS_SECS = (v) => { const p = String(v || '').split(':').map(Number); return p.length === 3 && p.every(Number.isFinite) ? p[0] * 3600 + p[1] * 60 + p[2] : null; };
+/** A pipe: rim, body and (while water moves) the dashes that run along it. */
+const wsPipe = (d, on, unread, thin, ns) => {
+  const a = ns ? ' vector-effect="non-scaling-stroke"' : '';
+  return `<g class="ws-pipe${on ? ' is-on' : ''}${unread ? ' is-unread' : ''}${thin ? ' is-thin' : ''}"><path class="ws-p-rim"${a} d="${d}"/><path class="ws-p-body"${a} d="${d}"/><path class="ws-p-flow"${a} d="${d}"/></g>`;
+};
+/** A sine ridge of period 80 (so an 80px shift loops seamlessly). */
+function wsWave(y, amp, to = null) {
+  let d = `M-160,${y} q20,${-amp} 40,0`;
+  for (let i = 0; i < 23; i++) d += ' t40,0';
+  return to == null ? d : `${d} V${to} H-160 Z`;
+}
+/** A tank (the well, the sump) with water in it, cut away. */
+function wsTank(id, x, y, w, h, level, lid) {
+  const wy = +(h * (1 - level)).toFixed(1);
+  return `<defs><linearGradient id="wsg-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--water-2)"/><stop offset="1" style="stop-color:var(--water)"/></linearGradient>
+    <clipPath id="wsc-${id}"><rect x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="12"/></clipPath></defs>
+    <rect class="ws-t-body" x="${x}" y="${y}" width="${w}" height="${h}" rx="15"/>
+    <g clip-path="url(#wsc-${id})"><g transform="translate(${x} ${y})">
+      <path class="ws-wave ws-wave-b" d="${wsWave(wy - 5, 5, h)}"/>
+      <path class="ws-wave ws-wave-a" d="${wsWave(wy, 4, h)}" style="fill:url(#wsg-${id})"/>
+      <rect x="9" y="10" width="7" height="${h - 24}" rx="3.5" fill="#fff" opacity=".13"/></g></g>
+    <rect class="ws-t-rim" x="${x}" y="${y}" width="${w}" height="${h}" rx="15"/>
+    ${lid ? `<rect class="ws-lid" x="${x - 8}" y="${y - 9}" width="${w + 16}" height="14" rx="7"/>` : ''}`;
+}
+/** The three places. Each draws its pipe twice, across (wide) and down
+ *  (narrow); CSS shows one. `inOn` / `outOn`: water in the pipe before / after. */
+function wsArt(kind, o) {
+  const hv = (hIn, hOut, vIn, vOut) =>
+    `<g class="ws-h">${hIn ? wsPipe(hIn, o.inOn, o.unread) : ''}${hOut ? wsPipe(hOut, o.outOn, o.unread) : ''}</g>` +
+    `<g class="ws-v">${vIn ? wsPipe(vIn, o.inOn, o.unread) : ''}${vOut ? wsPipe(vOut, o.outOn, o.unread) : ''}</g>`;
+  const open = `<svg class="ws-art${o.live ? ' is-live' : ''}" viewBox="0 0 480 156" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">`;
+  if (kind === 'river') {
+    const bank = 'M-400,26 H266 Q308,26 308,68 V160 H-400Z';
+    return open + `<defs><linearGradient id="wsg-r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--water-2)"/><stop offset="1" style="stop-color:var(--water)"/></linearGradient>
+      <clipPath id="wsc-r"><path d="${bank}"/></clipPath></defs>
+      <g clip-path="url(#wsc-r)"><rect x="-400" y="20" width="900" height="150" fill="url(#wsg-r)"/>
+        <rect x="-400" y="26" width="900" height="22" fill="#fff" opacity=".1"/>
+        <path class="ws-ripple ws-r1" d="${wsWave(56, 5)}"/><path class="ws-ripple ws-r2" d="${wsWave(90, 7)}"/>
+        <path class="ws-ripple ws-r3" d="${wsWave(122, 6)}"/></g>
+      <path class="ws-bank" d="${bank}"/>
+      <path class="ws-reeds" d="M328,70 v-26 M337,70 v-36 M346,70 v-22 M356,70 v-30 M365,70 v-18"/>
+      ${hv('', 'M240,78 H880', '', 'M240,78 V560')}
+      <rect class="ws-grate" x="226" y="64" width="28" height="28" rx="8"/><path class="ws-grate-l" d="M233,72 v12 M240,72 v12 M247,72 v12"/></svg>`;
+  }
+  if (kind === 'thoppu') {
+    return open + `${hv('M-400,78 H240', 'M240,78 H880', 'M240,-400 V78', 'M240,78 V560')}
+      ${wsPipe('M282,112 V134 H340', o.dripOn, o.unread, true)}
+      ${wsTank('t', 185, 26, 110, 86, 0.6, false)}
+      ${[298, 319, 340].map((x, i) => `<circle class="ws-emit" cx="${x}" cy="134" r="3.4"/>` + (o.dripOn ? `<circle class="ws-drop-c" style="--di:${i}" cx="${x}" cy="138" r="2.6"/>` : '')).join('')}
+      <rect class="ws-soil" x="-400" y="150" width="1300" height="8"/></svg>`;
+  }
+  return open + `${hv('M-400,78 H240', '', 'M240,-400 V78', '')}
+    ${wsTank('f', 185, 24, 110, 86, 0.55, true)}
+    <rect class="ws-soil" x="-400" y="150" width="1300" height="8"/></svg>`;
+}
+/** The motor: a housing with a rotor that spins while it runs, and a ring of
+ *  what is left of the run where the controller says. */
+function wsBadge(on, unread, frac) {
+  const r = 47, c = 2 * Math.PI * r;
+  const blades = [0, 1, 2, 3, 4, 5].map((k) => `<path d="M50 50 L50 24 Q64 31 57 50Z" transform="rotate(${k * 60} 50 50)"/>`).join('');
+  const ring = frac == null ? '' : `<circle class="ws-ring-t" cx="50" cy="50" r="${r}"/><circle class="ws-ring-f" cx="50" cy="50" r="${r}" stroke-dasharray="${(c * Math.max(0, Math.min(1, frac))).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 50 50)"/>`;
+  return `<span class="ws-badge${on ? ' is-on' : ''}${unread ? ' is-unread' : ''}"><svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">${ring}
+    <circle class="ws-house" cx="50" cy="50" r="35"/><g class="ws-rotor">${blades}</g><circle class="ws-hub" cx="50" cy="50" r="6"/></svg></span>`;
+}
+function waterScene(cells) {
+  const [river, drip, supply, dcon] = cells;
+  const extras = cells.slice(4);
+  const byKey = Object.fromEntries(waterMotors().map((m) => [m.key, m]));
+  const s = irrNowState();
+  const unread = (c) => !!c.warn;
+  const current = (c) => !c.warn && !c.age;
+  const signIn = (c) => {
+    if (!isOwner() || !c.warn) return '';
+    const go = (key) => `<a class="btn btn-primary btn-sm ws-signin" href="#/motor/${key}">Sign in</a>`;
+    if (c.key === 'river' && ['none', 'expired'].includes(liveskyState().kind)) return go('river');
+    if (c.key === DCON_KEY && String(c.line).includes('signed SNOF out')) return go(DCON_KEY);
+    return '';
+  };
+  const fracOf = (c) => {
+    if (!c.flowing) return null;
+    if (c.key === DCON_KEY) { const pl = irrig().program?.plannedMin; return s.running && s.left != null && pl ? s.left / pl : null; }
+    const m = byKey[c.key], l = WS_SECS(m?.zoneLeft), r = WS_SECS(m?.zoneRun);
+    return l != null && r != null && l + r > 0 ? l / (l + r) : null;
+  };
+  const card = (c) => `<article class="ws-card${c.flowing ? ' is-on' : ''}${unread(c) ? ' is-unread' : ''}">
+    ${wsBadge(c.flowing, unread(c), fracOf(c))}
+    <div class="ws-body"><div class="ws-top"><a class="ws-name" href="#/motor/${encodeURIComponent(c.key)}">${escapeHtml(c.name)}</a>
+      <span class="tag${c.warn ? ' tag-warn' : c.flowing ? ' tag-on' : ''}">${escapeHtml(c.word)}</span></div>
+      ${c.line ? `<small class="ws-line">${escapeHtml(c.line)}</small>` : ''}
+      ${c.age ? `<em class="ws-age">${escapeHtml(c.age)}</em>` : ''}${signIn(c)}</div></article>`;
+  // The beds the controller is watering now, as their crops.
+  const beds = () => {
+    if (unread(dcon)) return `<div class="ws-beds is-unread"><strong>Valves</strong><span>Can't read</span></div>`;
+    if (!dcon.flowing) return `<div class="ws-beds is-idle"><strong>Valves</strong><span>${current(dcon) ? 'All closed' : `Not current · ${escapeHtml(dcon.age)}`}</span></div>`;
+    const chips = String(s.valves || '').split(/,\s*/).filter(Boolean).slice(0, IRR_MAX_VALVES).map((v) => {
+      const art = valveArt(v, 'irrigation');
+      return `<span class="ws-chip"><span class="ws-crop">${art ? artImg(art, 'ws-crop-img') : arrow('i-valve')}</span><em>${escapeHtml(v)}</em></span>`;
+    }).join('');
+    return `<div class="ws-beds is-on"><div class="ws-beds-h"><strong>Watering now</strong>${s.left != null && s.left > 0 ? `<span>${escapeHtml(fmtMin(s.left))} left</span>` : ''}</div><div class="ws-chips">${chips}</div></div>`;
+  };
+  const place = (label, kind, o) => `<div class="ws-tile${o.unread ? ' is-unread' : ''}"><span class="ws-place">${label}</span>${wsArt(kind, o)}${o.unread ? `<span class="ws-cant">Can't read</span>` : ''}</div>`;
+  const link = (on, un) => `<div class="ws-link" aria-hidden="true">
+    <svg class="ws-lh" viewBox="0 0 100 156" preserveAspectRatio="none">${wsPipe('M0,78 H100', on, un, false, true)}</svg>
+    <svg class="ws-lv" viewBox="0 0 100 64" preserveAspectRatio="none">${wsPipe('M50,0 V64', on, un, false, true)}</svg></div>`;
+  const thoppu = [drip, supply, ...extras];
+  const ph = (sec) => `-${((Date.now() % (sec * 1000)) / 1000).toFixed(2)}s`;
+  const phases = `--ph-flow:${ph(1.2)};--ph-spin:${ph(1.6)};--ph-drop:${ph(1.4)};--ph-a:${ph(6)};--ph-b:${ph(9)};--ph-r1:${ph(8)};--ph-r2:${ph(11)};--ph-glow:${ph(2.4)}`;
+  return `<section class="wscene" style="${phases}" aria-label="Where the water goes"><div class="ws-grid">
+    <div class="ws-stage">${place('River', 'river', { live: current(river), unread: unread(river), outOn: river.flowing })}${card(river)}</div>
+    ${link(river.flowing, unread(river))}
+    <div class="ws-stage">${place('Thoppu', 'thoppu', { live: thoppu.some((c) => c.flowing), unread: thoppu.every(unread), inOn: river.flowing, outOn: supply.flowing, dripOn: drip.flowing })}${thoppu.map(card).join('')}</div>
+    ${link(supply.flowing, unread(supply))}
+    <div class="ws-stage">${place('Farm', 'farm', { live: dcon.flowing, unread: unread(dcon), inOn: supply.flowing })}${card(dcon)}${beds()}</div>
+  </div></section>`;
+}
+
 /** Water, two panes on a wide screen (>= 1100px): the path on the left with
  *  the open source marked, its page on the right. Narrower, one or the other,
  *  as before (CSS hides the pane that does not belong). Every source is a row
@@ -3209,21 +3332,8 @@ function motorGlance(m) {
 function waterFrame(sel, summary, detail = '') {
   const cells = [];
   const list = waterPath({ sel, cellsOut: cells });
-  let pane = detail;
-  if (summary) {
-    const byKey = Object.fromEntries(waterMotors().map((m) => [m.key, m]));
-    pane = `<div class="wsum">${cells.map((c) => {
-      const glance = motorGlance(byKey[c.key]);
-      return `<a class="panel wsum-card${c.flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(c.key)}">` +
-        `<span class="wsum-top"><span class="wp-st${c.flowing ? ' is-on' : ''}"><img src="/art/${c.flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span>` +
-        `<span class="tag${c.warn ? ' tag-warn' : c.flowing ? ' tag-on' : ''}">${escapeHtml(c.word)}</span></span>` +
-        `<strong class="wsum-name">${escapeHtml(c.name)}</strong>` +
-        (c.line ? `<span class="wsum-line">${escapeHtml(c.line)}</span>` : '') +
-        (c.age ? `<em class="wsum-age">${escapeHtml(c.age)}</em>` : '') +
-        (glance.length ? `<span class="wsum-facts">${glance.map(([k, v]) => `<span><small>${escapeHtml(k)}</small>${escapeHtml(v)}</span>`).join('')}</span>` : '') +
-        `</a>`;
-    }).join('')}</div>`;
-  }
+  if (summary) return waterScene(cells);
+  const pane = detail;
   return `<div class="wmd ${summary ? 'is-water' : 'is-motor'}"><div class="wmd-list">${list}</div><div class="wmd-detail">${pane}</div></div>`;
 }
 

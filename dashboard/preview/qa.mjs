@@ -517,15 +517,15 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // on the water's path, the main farm's controller among them, each opening
   // its own page — no jump to another tab, no second copy of the motors.
   const [p,c]=await open('?live=1#/water');
-  await p.waitForSelector('#view .wpath');
-  const r=await p.evaluate(()=>{const t=[...document.querySelectorAll('#view .wp-motor')];
-    const st=new Set(t.map(x=>Math.round(x.querySelector('.wp-st').getBoundingClientRect().width)));
-    const hrefs=t.map(x=>x.getAttribute('href'));
+  await p.waitForSelector('#view .wscene');
+  const r=await p.evaluate(()=>{const t=[...document.querySelectorAll('#view .ws-card')];
+    const st=new Set(t.map(x=>Math.round(x.querySelector('.ws-badge').getBoundingClientRect().width)));
+    const hrefs=t.map(x=>x.querySelector('.ws-name').getAttribute('href'));
     return {n:t.length, hrefs, once:new Set(hrefs).size===hrefs.length, stations:[...st],
       dup:document.querySelectorAll('#view .mtile, #view .fm, #view .wstage').length};});
   check('the Water tab shows every motor once, as equal rows, the controller included', r.n>=4&&r.once&&r.stations.length===1&&r.hrefs.includes('#/motor/dcon')&&r.dup===0, JSON.stringify(r));
   check('every row opens a motor page, none another tab', r.hrefs.every(h=>h.startsWith('#/motor/')), r.hrefs.join(' '));
-  await p.click('#view .wp-motor[href="#/motor/dcon"]'); await p.waitForTimeout(400);
+  await p.click('#view .ws-name[href="#/motor/dcon"]'); await p.waitForTimeout(400);
   const d=await p.evaluate(()=>({hash:location.hash, tab:document.querySelector('.tab-item.on, .topnav-item.on')?.textContent||'', now:!!document.querySelector('#view .now')}));
   check("the controller's page holds its controls, under the Water tab", d.hash==='#/motor/dcon'&&/Water/.test(d.tab)&&d.now, JSON.stringify(d));
   await c.close();
@@ -546,19 +546,21 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // The water's path: a motor shows water moving only while it runs on a
   // current reading, and a stale reading turns its pipe grey.
   const [p,c]=await open('?live=1#/water');
-  await p.waitForSelector('#view .wpath');
+  await p.waitForSelector('#view .wscene');
   const r=await p.evaluate(()=>{const now=serverNow(), iso=(ms)=>new Date(ms).toISOString();
     state.meta=Object.assign({},state.meta,{water:{enabled:true,livesky:{ok:true,at:now-5000,signedInAt:now-864e5,expires:now+864e5},niagara:{ok:true,at:now-5000}}});
     state.water={pulledAt:now-5000,river:{name:'River Motor',vendor:'livesky',running:true,connected:true,reportedAt:iso(now-20e3)},
       motors:{wellmotor75hp:{name:'Wellmotor75HP',vendor:'niagara',role:'main-farm',running:false},
               'well-motor':{name:'Well motor',vendor:'niagara',role:'drip',running:true,program:'P1',zone:3}}};
     render();
-    const on=(k)=>!!document.querySelector(`#view .wp-motor.is-on[href="#/motor/${k}"]`);
-    const riverPipe=()=>!!document.querySelector('#view .wp-motor[href="#/motor/river"] .wp-rail.up-on');
+    const card=(k)=>document.querySelector(`#view .ws-card:has(.ws-name[href="#/motor/${k}"])`);
+    const on=(k)=>!!card(k)?.classList.contains('is-on');
+    // pipe 1 (River -> Thoppu) is the first link; the drip pipe is the thin one.
+    const riverPipe=()=>!!document.querySelector('#view .ws-link .ws-lh .ws-pipe.is-on');
     const a={river:on('river'), drip:on('well-motor'), supply:on('wellmotor75hp'), pipe:riverPipe(),
-      stub:!!document.querySelector('#view .wp-stub.is-on')};
+      stub:!!document.querySelector('#view .ws-pipe.is-thin.is-on')};
     state.water.river.reportedAt=iso(now-3600e3); render();
-    return {...a, staleRiver:on('river'), stalePipe:riverPipe(), word:document.querySelector('#view .wp-motor[href="#/motor/river"] .tag').textContent};});
+    return {...a, staleRiver:on('river'), stalePipe:riverPipe(), word:card('river').querySelector('.tag').textContent};});
   check('running motors show water moving, a stopped one does not', r.river&&r.drip&&!r.supply&&r.pipe&&r.stub, JSON.stringify(r));
   check('a stale reading stops the flow and says what the motor was doing', !r.staleRiver&&!r.stalePipe&&r.word==='Was running', JSON.stringify(r));
   await c.close();
@@ -687,12 +689,25 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('Home draws the water chain across, four equal stations, the rail hidden', h.n>=4&&h.shown==='grid'&&h.rail==='none'&&h.w===1, JSON.stringify(h));
   check('chain pipe is green only beside running motors', h.on[0]&&h.gaps>=2, JSON.stringify(h));
   await p.goto(p.url().replace('#/','#/water')); await p.waitForTimeout(300);
-  const w=await p.evaluate(()=>({cols:getComputedStyle(document.querySelector('#view .wmd')).gridTemplateColumns.split(' ').length, cards:document.querySelectorAll('#view .wsum-card').length}));
-  check('Water is a list with a four-card summary beside it', w.cols===2&&w.cards>=4, JSON.stringify(w));
+  const w=await p.evaluate(()=>({cols:getComputedStyle(document.querySelector('#view .ws-grid')).gridTemplateColumns.split(' ').length, cards:document.querySelectorAll('#view .ws-card').length,
+    moving:document.querySelectorAll('#view .ws-pipe.is-on .ws-p-flow').length>0}));
+  check('Water is the drawn journey: three places, pipes between, four equal motor cards, flow on the running ones', w.cols===5&&w.cards>=4&&w.moving, JSON.stringify(w));
   await p.goto(p.url().replace('#/water','#/motor/river')); await p.waitForTimeout(300);
   const m=await p.evaluate(()=>({sel:document.querySelector('#view .wp-motor.is-sel')?.getAttribute('href'), metrics:document.querySelectorAll('#view .wm-metrics > div').length,
     details:document.querySelectorAll('#view .wdetails').length}));
   check("a motor's page keeps the list beside it, its readings shown, not folded away", m.sel==='#/motor/river'&&m.metrics>=2&&m.details===0, JSON.stringify(m));
+  await c.close();
+}
+{
+  // Water, drawn: a source that cannot be read is hatched with its reason and
+  // no state; the owner gets a Sign in link to the page that holds the card.
+  const [p,c]=await open('?live=1&livesky=expired&owner=1#/water');
+  await p.waitForSelector('#view .wscene');
+  const r=await p.evaluate(()=>{const k=document.querySelector('#view .ws-card:has(.ws-name[href="#/motor/river"])');
+    return {un:k.classList.contains('is-unread'), tag:k.querySelector('.tag').textContent, line:k.querySelector('.ws-line').textContent,
+      sign:k.querySelector('.ws-signin')?.getAttribute('href'), tile:!!document.querySelector('#view .ws-tile.is-unread'),
+      moving:!!document.querySelector('#view .ws-link .ws-pipe.is-on')};});
+  check("an unreadable river motor is hatched, says why, shows no state, and offers Sign in", r.un&&r.tag==="Can't read"&&/expired/.test(r.line)&&r.sign==='#/motor/river'&&r.tile&&!r.moving, JSON.stringify(r));
   await c.close();
 }
 await b.close();
