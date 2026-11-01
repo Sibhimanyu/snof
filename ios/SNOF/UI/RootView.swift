@@ -164,6 +164,18 @@ struct AccountSheet: View {
                         Text("Add people and grant or revoke view and control.")
                     }
                 }
+                if store.isAdmin {
+                    Section("Farm box") {
+                        let box = store.farmBox
+                        Text(box.version)
+                        if let note = box.note {
+                            Text(note).font(Theme.meta).foregroundStyle(Theme.muted)
+                        }
+                        if let to = box.updateTo {
+                            Button("Update to \(to)") { Task { await store.requestAddonUpdate() } }
+                        }
+                    }
+                }
                 Section("Bridge") {
                     LabeledContent("Status", value: store.bridgeStatus.label)
                     LabeledContent("Device control", value: store.meta.bridge?.control == false ? "Switched off" : store.meta.bridge?.control == true ? "On" : "Unknown")

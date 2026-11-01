@@ -59,6 +59,31 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(s?.rows.first?["on"], "1")
     }
 
+    func testFarmBoxRow() {
+        let now = 1_000_000_000_000.0
+        func row(_ b: [String: Any], asked: Double? = nil) -> FarmBoxRow {
+            FarmBoxRow.make(bridge: Parse.meta(["bridge": b]).bridge, nowMs: now, askedAtMs: asked)
+        }
+        let base: [String: Any] = ["lastSeen": 1, "version": "0.10.11", "versionLatest": "0.10.12",
+                                   "updateAvailable": true, "remoteUpdate": true]
+        XCTAssertEqual(row(base), FarmBoxRow(version: "Add-on 0.10.11", note: nil, updateTo: "0.10.12"))
+        var off = base; off["remoteUpdate"] = false
+        XCTAssertEqual(row(off).note, "Remote updates are off on the farm box")
+        XCTAssertNil(row(off).updateTo)
+        var busy = base; busy["update"] = ["state": "updating", "at": now - 5_000]
+        XCTAssertEqual(row(busy).note, "Updating…")
+        XCTAssertNil(row(busy).updateTo)
+        XCTAssertEqual(row(base, asked: now - 10_000).note, "Updating…")
+        var done = base; done["updateAvailable"] = false
+        done["update"] = ["state": "done", "to": "0.10.12", "at": now - 60_000]
+        XCTAssertEqual(row(done).note, "Updated to 0.10.12")
+        var failed = done; failed["update"] = ["state": "failed", "reason": "boom", "at": now - 60_000]
+        XCTAssertEqual(row(failed).note, "Update failed: boom")
+        var old = done; old["update"] = ["state": "failed", "reason": "boom", "at": now - 7_200_000]
+        XCTAssertNil(row(old).note)
+        XCTAssertEqual(row(["lastSeen": 1]).version, "Add-on version not reported yet")
+    }
+
     func testBridgeControlAbsentIsNotFalse() {
         let m = Parse.meta(["bridge": ["lastSeen": 1, "heartbeatSeconds": 30]])
         XCTAssertNil(m.bridge?.control)

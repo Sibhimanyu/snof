@@ -1080,6 +1080,22 @@ final class FarmStore {
     }
 
     /// true when the invite was written, so the form can clear.
+    /// Farm box add-on update (admins). The box re-checks everything.
+    private(set) var addonUpdateAsked: Double?
+    var farmBox: FarmBoxRow { FarmBoxRow.make(bridge: meta.bridge, nowMs: nowMs + skewMs, askedAtMs: addonUpdateAsked) }
+
+    func requestAddonUpdate() async {
+        guard isAdmin, let uid = user?.uid else { return }
+        do {
+            try await backend.requestAddonUpdate(uid: uid)
+            addonUpdateAsked = nowMs + skewMs
+            show(.ok, "Update requested.")
+        } catch {
+            show(.err, (error as? BackendError) == .refused ? "The database refused that update."
+                 : "Could not ask for the update: \(error.localizedDescription)")
+        }
+    }
+
     func invite(email raw: String, tier: AccessTier) async -> Bool {
         guard isAdmin else { return false }
         let email = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

@@ -226,6 +226,10 @@ final class FirebaseBackend: FarmBackend {
         try await push("farms/\(Farm.slug)/water_requests", ["uid": uid, "at": ServerValue.timestamp()])
     }
 
+    func requestAddonUpdate(uid: String) async throws {
+        _ = try await push("farms/\(Farm.slug)/addon_update_requests", ["uid": uid, "at": ServerValue.timestamp()])
+    }
+
     /// The function lives beside the database (asia-southeast1). The project
     /// id comes from GoogleService-Info.plist; nothing here is hardcoded.
     func waterSession(_ body: [String: Any]) async throws -> [String: Any] {

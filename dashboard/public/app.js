@@ -3590,6 +3590,51 @@ function mobitechPanel() {
     </section>`;
 }
 
+/* ---- Farm box add-on update (admins) ----
+ * The bridge publishes its version, the newest one in the repo, whether remote
+ * update is switched on (meta/bridge.version / versionLatest / updateAvailable
+ * / remoteUpdate) and, once one is pressed, meta/bridge.update. The button
+ * appends {uid, at} to addon_update_requests; the box re-checks everything. */
+let addonUpdateAsked = 0;
+function farmBoxRow() {
+  const hb = state.meta?.bridge || {};
+  const up = hb.update || {};
+  const recent = up.at && (serverNow() - up.at) < 3600e3;
+  const updating = up.state === 'updating' && recent;
+  let note = '';
+  let action = '';
+  if (updating || (addonUpdateAsked && serverNow() - addonUpdateAsked < 120e3 && up.state !== 'refused')) {
+    note = 'Updating…';
+  } else if (hb.updateAvailable === true) {
+    if (hb.remoteUpdate === true) {
+      action = `<button class="btn btn-primary" data-act="addon-update">Update to ${escapeHtml(hb.versionLatest || '')}</button>`;
+    } else {
+      note = 'Remote updates are off on the farm box';
+    }
+  }
+  if (!note && !action && recent) {
+    if (up.state === 'done') note = `Updated to ${up.to || hb.version || ''}`;
+    else if (up.state === 'failed' || up.state === 'refused') note = `Update ${up.state}: ${up.reason || 'no reason given'}`;
+  }
+  const meta = hb.version ? `Add-on ${hb.version}` : 'Add-on version not reported yet';
+  return `<div class="list"><div class="row">
+    <span class="row-main"><span class="row-name">Farm box</span>
+      <span class="row-meta">${escapeHtml(meta)}</span></span>
+    ${note ? `<span class="more-note">${escapeHtml(note)}</span>` : ''}${action}
+  </div></div>`;
+}
+
+function requestAddonUpdate() {
+  if (!isAdmin || !currentUser) return;
+  try {
+    Promise.resolve(firebase.database().ref(`farms/${FARM}/addon_update_requests`).push({
+      uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP,
+    })).then(() => { addonUpdateAsked = serverNow(); toast('ok', 'Update requested.'); render(); })
+      .catch((err) => toast('err', err.code === 'PERMISSION_DENIED'
+        ? 'The database refused that update.' : `Could not ask for the update: ${err.message}`));
+  } catch (err) { toast('err', 'Could not ask for the update.'); }
+}
+
 function adminView() {
   const acl = state.acl || {};
   const directory = acl.directory || {};
@@ -3632,6 +3677,7 @@ function adminView() {
     : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
 
   return head('Admin', '', '') +
+    sectionHead('n-admin', 'Farm box') + farmBoxRow() +
     sectionHead('n-admin', 'Add a person') + addForm +
     sectionHead('n-admin', 'People') + list +
     `<p class="more-note">Only the farm owner can make someone an admin.</p>`;
@@ -3978,6 +4024,9 @@ function wire(all) {
       if (!['admin-add-email', 'admin-add-tier'].includes(document.activeElement?.id)) endInteract();
     }, 300);
   }
+  view.querySelectorAll('[data-act="addon-update"]').forEach((btn) => {
+    btn.onclick = () => requestAddonUpdate();
+  });
   view.querySelectorAll('[data-act="admin-invite"]').forEach((btn) => {
     btn.onclick = () => sendInvite();
   });

@@ -58,6 +58,8 @@ class Config:
     dcon_command_auth: str = field(default="", repr=False)
     dcon_user_slot: str = ""
     irrigation_max_minutes: int = 60
+    # Remote add-on update (bridge/updater.py). Off unless the options turn it on.
+    allow_remote_update: bool = False
 
     # Resolved at construction, not user-facing.
     ha_ws_url: str = field(default="", repr=False)
@@ -139,6 +141,7 @@ def load() -> Config:
         dcon_command_auth=(opts.get("dcon_command_auth") or "").strip(),
         dcon_user_slot=(opts.get("dcon_user_slot") or "").strip().upper(),
         irrigation_max_minutes=max(1, min(180, int(opts.get("irrigation_max_minutes", 60)))),
+        allow_remote_update=bool(opts.get("allow_remote_update", False)),
         ha_ws_url=ws_url,
         ha_token=token,
     )
