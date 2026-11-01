@@ -35,6 +35,7 @@ from firebase_functions.params import SecretParam, StringParam
 
 import dcon
 import irrigation_control
+import mobitech_signin
 import motor_control
 import reports
 import water
@@ -457,3 +458,63 @@ def water_session(req: https_fn.Request) -> https_fn.Response:
         return _json({"ok": True, "expires": (exp or 0) * 1000, "device": water.scrub(device)})
 
     return _json({"ok": False, "error": "Unknown action."}, 400)
+
+
+@https_fn.on_request(
+    region="asia-southeast1",
+    memory=options.MemoryOption.MB_256,
+    # verify = login + proof, each up to the relay's 45 s wait.
+    timeout_sec=120,
+    max_instances=1,
+    concurrency=1,
+    cors=options.CorsOptions(cors_origins=["https://snof-live.web.app", "https://snof-live.firebaseapp.com"],
+                             cors_methods=["post"]),
+)
+def mobitech_session(req: https_fn.Request) -> https_fn.Response:
+    """Sign SNOF in to Mobitech with an SMS code. The owner only.
+
+    POST {"action": "send_code", "mobile"} | {"action": "verify", "mobile", "code"},
+    with the caller's Firebase ID token as Authorization: Bearer. Answers
+    {"ok": true} (verify: + "name") or {"ok": false, "error"}; the Mobitech
+    token goes to /private/mobitech and is never returned. The three calls go
+    through the NUC's relay (docs/dcon-off-the-nuc.md), or direct once
+    DCON_TRANSPORT=direct."""
+    from firebase_admin import auth as fb_auth
+
+    if req.method != "POST":
+        return _json({"ok": False, "error": "POST only."}, 405)
+    store = _db()
+    header = req.headers.get("Authorization", "")
+    try:
+        claims = fb_auth.verify_id_token(header.removeprefix("Bearer ").strip())
+        uid = claims["uid"]
+    except Exception:          # noqa: BLE001 — any failure is "not signed in"
+        return _json({"ok": False, "error": "Sign in to SNOF first."}, 401)
+    if store.reference(f"acl/admins/{uid}").get() is not True or \
+            not water.is_owner(claims, store.reference("acl/owner/email").get()):
+        return _json({"ok": False, "error": "Only the farm owner signs SNOF in to Mobitech."}, 403)
+
+    body = req.get_json(silent=True) or {}
+    action = body.get("action")
+    root = f"farms/{FARM_SLUG.value}"
+    if action not in ("send_code", "verify"):
+        return _json({"ok": False, "error": "Unknown action."}, 400)
+    mobile = mobitech_signin.mobile10(body.get("mobile"))
+    if not mobile:
+        return _json({"ok": False, "error": "Enter the 10-digit mobile number on the Mobitech account."}, 400)
+    code = None
+    if action == "verify":
+        code = mobitech_signin.code_digits(body.get("code"))
+        if not code:
+            return _json({"ok": False, "error": "Enter the code from the SMS."}, 400)
+
+    if DCON_TRANSPORT.value == "direct":
+        transport = dcon.DirectTransport(DCON_BASE.value, "-", "-")
+    else:
+        transport = dcon.RelayTransport(store, wait=45.0, bridge_path=f"{root}/meta/bridge")
+    src = dcon.Dcon(transport)
+    if action == "send_code":
+        out, status = mobitech_signin.send_code(store, src, mobile)
+    else:
+        out, status = mobitech_signin.verify(store, root, src, mobile, code, uid)
+    return _json(out, status)

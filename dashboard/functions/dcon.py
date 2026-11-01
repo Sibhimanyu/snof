@@ -13,9 +13,16 @@ Two ways to make them:
 * **Direct**, kept for the day Mobitech stops refusing cloud addresses, or a
   proxy it accepts sits in between. Same eight calls, same spelling.
 
-Either way the only endpoint is <base>/v1/http/. The vendor's write endpoint
-is not reachable from this module: there is no method for it and no way to
-pass a path. Keep it that way — see reports.py.
+Either way the endpoints are <base>/v1/http/ and, for the SMS code only,
+<base>/v1/otp/. The vendor's command endpoint is not reachable from this
+module: there is no method for it and no way to pass a path. Keep it that way
+— see reports.py.
+
+Besides the reads there are three sign-in calls (owner's decision, 2026-11-01:
+the web dashboard signs SNOF in to Mobitech through the relay, because a
+browser cannot and Google Cloud is refused): otp, login, prove. They are
+spelled and reduced exactly as addon/snof_bridge/bridge/relay.py does — keep
+the two identical. Their answers hold only a few fields, never the token.
 
 Besides these eight, the survey found logs?method=valve_log (get_all_valve
 under another name) and logs?method=flow_log (always empty: no flow meter).
@@ -26,6 +33,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
+import re
 import time
 from typing import Any
 
@@ -38,6 +46,53 @@ RELAY_POLL_SECONDS = 0.5
 # every 30 s; past these the relay is not listening, whatever Mobitech does.
 RELAY_IDLE_LIMIT_SECONDS = 150
 BRIDGE_SILENT_LIMIT_SECONDS = 180
+
+
+SIGNIN_CALLS = frozenset({"otp", "login", "prove"})
+_UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+
+
+def _enc(value: str) -> str:
+    return "".join(c if c in _UNRESERVED else "".join(f"%{b:02X}" for b in c.encode())
+                   for c in value)
+
+
+def signin_request(call: str, args: dict) -> tuple[str, str]:
+    """(path, body) for a sign-in call, as the iOS app and the relay spell it."""
+    if call == "otp":
+        return "/v1/otp/", '{"mobile":"91%s"}' % args["mobile"]
+    if call == "login":
+        fields = [("action", "login"), ("type", "otp"), ("otp", args["code"]),
+                  ("mobile", args["mobile"]), ("token", args["token"]),
+                  ("product", "DCON"), ("app_id", "com.mobitech.drip")]
+        return "/v1/http/?", "&".join(f"{k}={_enc(v)}" for k, v in fields)
+    if call == "prove":
+        return "/v1/http/", f"action=dashboard&p=app&token_id={_enc(args['token'])}&product=DCON"
+    raise DconError(f"unknown call {call}")
+
+
+def _words(value: Any, limit: int) -> str:
+    return re.sub(r"\d{6,}", "", str(value or ""))[:limit]
+
+
+def reduce_signin(call: str, status: int, text: str, token: str = "") -> dict:
+    """Same allow-list as the relay's: all a sign-in call may hand back."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        body = {}
+    if call == "otp":
+        return {"message": _words(body.get("message"), 120)}
+    if call == "prove":
+        return {"serves": status < 400 and any(isinstance(v, dict) for v in body.values())}
+    state = str(body.get("state") or "")[:16]
+    out: dict = {"state": state, "idOk": bool(token) and body.get("id", token) == token,
+                 "name": _words(body.get("name"), 64), "uname": _words(body.get("uname"), 64)}
+    if state != "ok":
+        out["message"] = _words(body.get("msg") or body.get("message") or body.get("reason"), 120)
+    return out
 
 
 class DconError(RuntimeError):
@@ -102,6 +157,19 @@ class DirectTransport:
     def call(self, call: str, args: dict) -> Any:
         import requests
 
+        if call in SIGNIN_CALLS:
+            path, body = signin_request(call, args)
+            try:
+                resp = self._http.post(self._url.removesuffix("/v1/http/") + path,
+                                       data=body.encode(), timeout=TIMEOUT_SECONDS,
+                                       headers={"content-type": "application/x-www-form-urlencoded"})
+            except requests.RequestException as err:
+                raise DconError(f"DCON {call}: {type(err).__name__}") from None
+            if resp.status_code >= 400:
+                raise DconError(f"DCON {call}: HTTP {resp.status_code}")
+            return _answer(call, resp.status_code,
+                           json.dumps(reduce_signin(call, resp.status_code, resp.text,
+                                                    args.get("token", ""))))
         method, fields = self._fields(call, args)
         try:
             if method == "POST":
@@ -213,3 +281,13 @@ class Dcon:
 
     def pressure_range(self, start: str, end: str) -> Any:
         return self._t.call("pressure_range", {"from": start, "to": end})
+
+    # Signing in (mobitech_session only). Answers are already reduced.
+    def otp(self, mobile: str) -> Any:
+        return self._t.call("otp", {"mobile": mobile})
+
+    def login(self, mobile: str, code: str, token: str) -> Any:
+        return self._t.call("login", {"mobile": mobile, "code": code, "token": token})
+
+    def prove(self, token: str) -> Any:
+        return self._t.call("prove", {"token": token})

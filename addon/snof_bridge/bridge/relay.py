@@ -11,16 +11,28 @@ is accepted, so the NUC does the fetching and nothing else:
     Function ◀─reads, parses, builds the report, deletes the result
 
 Everything that makes a report — parsing, joining, charts — stays in the
-Function. This module knows eight read calls by name and how to spell each
+Function. This module knows eight read calls (and the three sign-in calls below) by name and how to spell each
 one; it never sees a report type.
 
 Safety, in the same spirit as commands.py:
   * off unless `dcon_relay` is true in the add-on options
   * a job names a call from a fixed allow-list; there is no way to pass a URL,
-    a path, an action or a method, and the only endpoint is /v1/http/ — the
-    vendor's write endpoint is not reachable from here
+    a path, an action or a method, and the only endpoints are /v1/http/ (every
+    read, and the two sign-in calls) and /v1/otp/ (the SMS code) — the vendor's
+    command endpoint is not reachable from here
   * arguments are strict dates or timestamps; anything else is refused
   * the serial and token are the add-on's own, never taken from a job
+
+    ONE documented, narrow exception (owner's decision, 2026-11-01, so the web
+    dashboard can sign SNOF in to Mobitech: a browser cannot, no CORS header,
+    and Google Cloud is refused): three SIGNIN_CALLS, `otp`, `login` and
+    `prove`. They take a 10-digit mobile, a 4-8 digit code and a device token
+    from the job, because that is the whole point of them. The token is one
+    the `mobitech_session` Cloud Function has just minted (the owner-only
+    path; rules never let a client near /relay), its shape is checked here,
+    and it is only ever sent to Mobitech's own sign-in and dashboard calls.
+    Their answers are cut down on the NUC (reduce_*) to a few fields; the
+    code and the token are never logged and never echoed back.
   * jobs older than JOB_MAX_AGE_SECONDS are dropped, and every job is deleted
     whether it ran or not
   * /relay is outside /farms, so the RTDB rules' default deny keeps it
@@ -56,6 +68,11 @@ SEEN_LIMIT = 512
 
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _STAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+_MOBILE = re.compile(r"^\d{10}$")
+_CODE = re.compile(r"^\d{4,8}$")
+# A device token as the Mobitech app (and SNOF) registers one: an FCM-shaped
+# token + "@ios", url-safe characters and ":" only, at least 40 long in all.
+_TOKEN = re.compile(r"^[A-Za-z0-9_:\-]{36,400}@ios$")
 
 # call -> (HTTP method, the argument names it takes, and their shape)
 CALLS = {
@@ -67,7 +84,12 @@ CALLS = {
     "electricity":    ("GET", {"since": _STAMP}),
     "pressure_now":   ("GET", {"since": _STAMP}),
     "pressure_range": ("GET", {"from": _DATE, "to": _DATE}),
+    # Signing in (docs/mobitech-app.md); see the module docstring.
+    "otp":            ("POST", {"mobile": _MOBILE}),
+    "login":          ("POST", {"mobile": _MOBILE, "code": _CODE, "token": _TOKEN}),
+    "prove":          ("POST", {"token": _TOKEN}),
 }
+SIGNIN_CALLS = frozenset({"otp", "login", "prove"})
 
 # What survives of the dashboard payload. `users` maps names to mobile numbers,
 # `sim` is the controller's own number, packets 1/4/8 are SMS recipient lists
@@ -138,6 +160,60 @@ def form_for(call: str, args: dict, serial: str, token: str,
                 "from": f"{args['from']} 00:00:00", "to": f"{args['to']} 23:59:59",
                 "product": product}
     raise ValueError(call)
+
+
+_UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+
+
+def _enc(value: str) -> str:
+    """Percent-encode as the iOS app does: everything but A-Z a-z 0-9 - . _ ~"""
+    return "".join(c if c in _UNRESERVED else "".join(f"%{b:02X}" for b in c.encode())
+                   for c in value)
+
+
+def signin_request(call: str, args: dict) -> tuple[str, str]:
+    """(path, body) for a sign-in call, byte for byte what the iOS app sends
+    (Mobitech.swift codeRequest / loginRequest / dashboardRequest). The body
+    is sent as-is with content-type application/x-www-form-urlencoded."""
+    if call == "otp":
+        # A JSON object as the whole form body, with the 91 country code.
+        return "/v1/otp/", '{"mobile":"91%s"}' % args["mobile"]
+    if call == "login":
+        fields = [("action", "login"), ("type", "otp"), ("otp", args["code"]),
+                  ("mobile", args["mobile"]), ("token", args["token"]),
+                  ("product", "DCON"), ("app_id", "com.mobitech.drip")]
+        return "/v1/http/?", "&".join(f"{k}={_enc(v)}" for k, v in fields)
+    if call == "prove":
+        return "/v1/http/", f"action=dashboard&p=app&token_id={_enc(args['token'])}&product=DCON"
+    raise ValueError(call)
+
+
+def _words(value: Any, limit: int) -> str:
+    """Mobitech's own text, cut to `limit` with any run of 6+ digits removed."""
+    return re.sub(r"\d{6,}", "", str(value or ""))[:limit]
+
+
+def reduce_signin(call: str, status: int, text: str, token: str = "") -> dict:
+    """What leaves the NUC from a sign-in call. Allow-lists only: the login
+    answer also carries the mobile number, the mail and a user id, and the
+    dashboard answer carries the phone book."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        body = {}
+    if call == "otp":
+        return {"message": _words(body.get("message"), 120)}
+    if call == "prove":
+        return {"serves": status < 400 and any(isinstance(v, dict) for v in body.values())}
+    # login
+    state = str(body.get("state") or "")[:16]
+    out: dict = {"state": state, "idOk": bool(token) and body.get("id", token) == token,
+                 "name": _words(body.get("name"), 64), "uname": _words(body.get("uname"), 64)}
+    if state != "ok":
+        out["message"] = _words(body.get("msg") or body.get("message") or body.get("reason"), 120)
+    return out
 
 
 def trim_dashboard(body: Any) -> Any:
@@ -215,6 +291,15 @@ class DconRelay:
         import aiohttp
 
         cfg = self._cfg
+        if call in SIGNIN_CALLS:
+            path, body = signin_request(call, args)
+            headers = {"content-type": "application/x-www-form-urlencoded"}
+            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
+            async with self._session.post(f"{cfg.dcon_base}{path}", data=body.encode(),
+                                          headers=headers, timeout=timeout) as resp:
+                text = await resp.text()
+                return resp.status, json.dumps(
+                    reduce_signin(call, resp.status, text, args.get("token", "")))
         method = CALLS[call][0]
         # Only the dashboard call carries the token; the rest need none.
         token = await self._token() if call == "dashboard" else cfg.dcon_token_id
@@ -239,7 +324,9 @@ class DconRelay:
             checked = validate(job)
             if checked is None:
                 self.refused += 1
-                _LOGGER.warning("Refused relay job %s: %r", job_id, job)
+                # The call name only: a sign-in job carries a code and a token.
+                _LOGGER.warning("Refused relay job %s (call %r)", job_id,
+                                job.get("call") if isinstance(job, dict) else None)
                 result = {"ok": False, "status": 0, "error": "refused by the relay"}
             else:
                 call, args = checked
