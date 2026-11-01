@@ -558,7 +558,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     // pipe 1 (River -> Thoppu) is the first link; the drip pipe is the thin one.
     const riverPipe=()=>!!document.querySelector('#view .ws-link .ws-lh .ws-pipe.is-on');
     const a={river:on('river'), drip:on('well-motor'), supply:on('wellmotor75hp'), pipe:riverPipe(),
-      stub:!!document.querySelector('#view .ws-pipe.is-thin.is-on')};
+      stub:!!document.querySelector('#view .ws-pipe.is-mid.is-on')};
     state.water.river.reportedAt=iso(now-3600e3); render();
     return {...a, staleRiver:on('river'), stalePipe:riverPipe(), word:card('river').querySelector('.tag').textContent};});
   check('running motors show water moving, a stopped one does not', r.river&&r.drip&&!r.supply&&r.pipe&&r.stub, JSON.stringify(r));
