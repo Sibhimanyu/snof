@@ -201,3 +201,7 @@ Hard-won constraints:
   "2h", "3d"), matching iOS `Water.ago`/`Format.age`. A reading that is not
   current never looks live: see docs/water.md and docs/irrigation.md "Cut
   short, or caught part-way".
+
+## Controller page layout (2026-11-01)
+
+`#/motor/dcon`: Now hero (time-left ring while watering), Watered and Pump & power side by side, Reports as a compact list with the opened report beside it from 900px of pane width (inline below), the Mobitech account last. Run valves opens as a right drawer (bottom sheet on phones) over the page; same buttons, same lock and gates. Layout only: no command, lock or request code moved.
