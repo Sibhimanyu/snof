@@ -1,5 +1,9 @@
 # Getting into the NUC and deploying the add-on
 
+> Since 2026-11-01 the primary path is section 0 (install from the repo, update
+> from the apps). Sections 1 to 6 are the fallback and the original setup; the
+> `local_snof_bridge` names in them apply to the local add-on only.
+
 How the bridge was first deployed to the Home Assistant NUC on 2026-09-21, the
 things that went wrong, and the procedure that is known to work. Written so the
 next person (or session) does not rediscover any of it.
@@ -16,11 +20,92 @@ next person (or session) does not rediscover any of it.
 | Add-on source on the NUC | `/addons/snof_bridge/` (root-owned) |
 | Supervisor API from SSH | works with `$(cat /run/s6/container_environment/HASSIO_TOKEN)`; see 6a |
 | Add-on config/credentials | `/addon_configs/local_snof_bridge/` (root-owned, created on first start) |
-| Add-on slug | `local_snof_bridge`; container `app_local_snof_bridge` |
+| Add-on slug | local copy: `local_snof_bridge`, container `app_local_snof_bridge`. From the repo: `<hash>_snof_bridge` (see section 0); filter containers with `name=snof_bridge` |
 
 Two facts about the SSH add-on drive most of the gotchas below: it has
 `sftp: false` (so `scp` does not work), and its **protection mode** blocks the
 `ha` CLI from talking to the Supervisor (so installs/updates go through the UI).
+
+## 0. Install from the repo, update from the apps (primary path, from 2026-11-01)
+
+The bridge is installed from this GitHub repo as a custom add-on repository,
+and an admin updates it from the web or iOS app. `scripts/deploy-addon.sh`
+(sections 2 to 6) stays as the fallback. The add-on still builds on the NUC
+from its Dockerfile; nothing is prebuilt or published.
+
+How it works. `repository.yaml` at the repo root makes the repo a Supervisor
+repository. The Supervisor finds add-ons by globbing `**/config.*` (yaml, yml,
+json) and ignoring any path that has a part starting with `.` or named
+`rootfs`. In this repo that finds only `addon/snof_bridge/config.yaml`
+(`.impeccable/config.json` is skipped because of its leading dot). Do not add
+another `config.json/yaml` outside a dot-folder.
+
+The repo is public (since 2026-11-01), so Home Assistant adds it with the plain
+URL `https://github.com/Sibhimanyu/snof`, no token. Because the repo is public,
+nothing secret may ever be committed: credentials live only in the add-on
+options, Secret Manager, and `~/.config/snof`.
+
+### Install (or the one-time migration from the local add-on)
+
+1. HA > Settings > Apps > App store > menu (three dots) > **Repositories** >
+   paste `https://github.com/Sibhimanyu/snof` > Add. Wait for it to clone.
+2. Find **SNOF Firebase Bridge** under "SNOF add-ons" and **Install**. It builds
+   on the NUC; the first build takes a few minutes.
+3. **Migrating only:** open the old (local) add-on's Configuration and copy its
+   options across by hand (`firebase_db_url`, `farm_slug`, `allow_control`,
+   `dcon_*`, `allow_irrigation_control`, ...). Leave **`allow_remote_update`
+   off for now**.
+4. **Migrating only:** the slug changes from `local_snof_bridge` to
+   `<hash>_snof_bridge` (the hash is 8 hex chars of the repo URL, so it can
+   never be guessed; read it from `ha apps list` or the add-on's URL), and the
+   config folder with it. `serviceAccount.json` is **not** copied for you. Find
+   the new folder and stream the key in:
+   ```bash
+   ssh ha-nuc 'ls -d /addon_configs/*snof_bridge*'
+   cat ~/.config/snof/serviceAccount.json \
+     | ssh ha-nuc 'sudo tee /addon_configs/<hash>_snof_bridge/serviceAccount.json > /dev/null'
+   ssh ha-nuc 'sudo chmod 600 /addon_configs/<hash>_snof_bridge/serviceAccount.json'
+   ```
+5. Start the new add-on and read its log (`Streaming live state changes`, and
+   with the options on, the `Watching ...` lines):
+   `ssh ha-nuc 'sudo docker logs $(sudo docker ps -q --filter name=snof_bridge | head -1) 2>&1 | tail -30'`
+   (while both exist, `--filter name=snof_bridge` matches both; pick the one
+   whose name is not `*_local_snof_bridge`).
+6. **Migrating only:** once the new one is healthy, **stop and uninstall the
+   local add-on** so two bridges never run at once (two bridges would both
+   consume the command and irrigation queues; the stale one could act on a
+   command the other already ran, and the `/relay` and heartbeat would flap).
+   Then delete `/addons/snof_bridge` on the NUC so the local copy cannot come
+   back, and check `ha apps list` shows only the repo one.
+7. In the new add-on's Configuration set `allow_remote_update: true` if you
+   want the apps to be able to update it, and restart. It needs `hassio_api`
+   (already in `config.yaml`, role **manager**: the least role that may
+   reload the store and update an add-on; the Supervisor's default role gets
+   `/info` only, and `/addons/self/update` is excluded from the self-access
+   bypass).
+
+### Update from the apps
+
+Push to `main` with a bumped `version:` in `addon/snof_bridge/config.yaml`.
+The bridge asks the Supervisor to reload the store at most every 6 h and reads
+its own version at most every 10 min, so within hours the apps show the farm
+box row (web: account menu > Admin > Farm box; iOS: Account > Farm box) with
+"Update to X". An admin presses it:
+
+1. The app appends `{uid, at}` to `farms/<slug>/addon_update_requests` (rules:
+   admins only, `at` = server time, nothing else).
+2. The bridge re-checks admin, age (120 s), `allow_remote_update`, and that the
+   Supervisor says an update exists; one update per 10 min. Every request node
+   is deleted whether it ran or not.
+3. It writes `meta/bridge/update = {state: "updating", from, to, at, by}` and
+   calls `POST /store/addons/<slug>/update`. The Supervisor stops the container
+   mid-update; that is expected and the apps show "Updating...".
+4. On the next start the bridge settles the node: `done` if it is now running
+   `to`, otherwise `failed`. Refusals and failures write `refused` / `failed`
+   with a reason.
+
+To update by hand instead: HA > Settings > Apps > SNOF Firebase Bridge >
+Update (confirm in the dialog).
 
 ## 1. First-time SSH access
 

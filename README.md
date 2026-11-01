@@ -156,7 +156,7 @@ offer the update at all.
 Verify the new code really landed rather than trusting the button:
 
 ```bash
-ssh ha-nuc 'sudo docker ps --filter name=app_local_snof_bridge --format "{{.Image}}"'
+ssh ha-nuc 'sudo docker ps --filter name=snof_bridge --format "{{.Image}}"'
 ```
 
 ### Deploying the dashboard

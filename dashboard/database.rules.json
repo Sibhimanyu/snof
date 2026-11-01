@@ -143,6 +143,22 @@
           }
         },
 
+        // Add-on update requests: an admin asks the farm box to update its own
+        // add-on (docs/nuc-access-and-deploy.md). Admins only, shape {uid, at}
+        // and nothing else, at = server now. The bridge re-reads acl/admins,
+        // drops anything older than 120 s, deletes every node, and does nothing
+        // unless allow_remote_update is on and an update exists. Append-only:
+        // no client edits or deletes. (Reads cascade from the farm's viewer
+        // read; the nodes hold only a uid and a time, and live seconds.)
+        "addon_update_requests": {
+          "$req": {
+            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['uid','at'])",
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "at": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+
         // Report requests for the Mobitech DCON irrigation controller.
         // Same shape of trust as commands: a
         // controller may append a request and nothing else. A Cloud Function

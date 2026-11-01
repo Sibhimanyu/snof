@@ -66,6 +66,14 @@ public enum Parse {
             bridge?.irrigationControl = bool(b["irrigationControl"])
             bridge?.irrigationMaxMinutes = double((b["irrigationControlStatus"] as? [String: Any])?["maxMinutes"])
                 .map { Int($0) }
+            bridge?.version = string(b["version"])
+            bridge?.versionLatest = string(b["versionLatest"])
+            bridge?.updateAvailable = bool(b["updateAvailable"])
+            bridge?.remoteUpdate = bool(b["remoteUpdate"])
+            if let u = b["update"] as? [String: Any] {
+                bridge?.update = FarmBoxUpdate(state: string(u["state"]), from: string(u["from"]), to: string(u["to"]),
+                                               reason: string(u["reason"]), at: double(u["at"]))
+            }
         }
         let cloud = d["irrigationControl"] as? [String: Any]
         let reports = d["reports"] as? [String: Any]

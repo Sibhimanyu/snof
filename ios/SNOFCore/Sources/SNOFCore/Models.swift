@@ -92,6 +92,13 @@ public struct BridgeMeta: Hashable, Sendable {
     public var irrigationControl: Bool?
     /// The bridge's own cap on a manual run.
     public var irrigationMaxMinutes: Int?
+    /// Add-on version running, the newest in the repo, whether an admin may
+    /// update it from the app (`allow_remote_update`), and the last update.
+    public var version: String?
+    public var versionLatest: String?
+    public var updateAvailable: Bool?
+    public var remoteUpdate: Bool?
+    public var update: FarmBoxUpdate?
 
     public init(status: String? = nil, lastSeen: Double? = nil, heartbeatSeconds: Double? = nil,
                 control: Bool? = nil,

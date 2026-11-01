@@ -485,6 +485,8 @@ final class DemoBackend: FarmBackend {
         return key
     }
 
+    func requestAddonUpdate(uid: String) async throws {}
+
     func requestWaterRefresh(uid: String) async throws {
         if flag("wateroff") { return }
         var w = tree["water"] as? [String: Any] ?? [:]

@@ -103,6 +103,9 @@ protocol FarmBackend: AnyObject {
     /// Append to /farms/<farm>/water_requests: "pull the water chain now".
     /// Any viewer; the function pulls at most once per 15 s whoever asks.
     func requestWaterRefresh(uid: String) async throws
+    /// Append to /farms/<farm>/addon_update_requests: "update the farm box's add-on".
+    /// Admins only; the box re-checks and does nothing unless remote update is on.
+    func requestAddonUpdate(uid: String) async throws
     /// POST to the water_session function (Livesky sign-in, admins only)
     /// with this user's Firebase ID token. Returns its JSON answer; throws
     /// with the function's own error text when it refuses.

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logging.disable(logging.CRITICAL)
 
 from bridge.commands import CommandConsumer  # noqa: E402
+from bridge import updater  # noqa: E402  (pure decisions, aiohttp imported lazily)
 from bridge import relay  # noqa: E402  (pure validation, aiohttp imported lazily)
 from bridge.mapper import StateMapper, filter_attributes  # noqa: E402
 from bridge.registry import Registry  # noqa: E402
@@ -706,6 +707,50 @@ def test_relay_reduces_signin_answers_to_an_allow_list():
     assert relay.reduce_signin("otp", 200, '{"message":"Success","otp":"123456"}') == {"message": "Success"}
     assert relay.reduce_signin("otp", 200, "garbage") == {"message": ""}
 
+
+
+def test_update_request_decisions():
+    info = {"slug": "abc_snof_bridge", "version": "0.10.11", "versionLatest": "0.10.12", "updateAvailable": True}
+    now = 1_000_000_000_000
+    ok = {"uid": "u1", "at": now - 5_000}
+
+    def chk(req=ok, admin=True, allowed=True, inf=info, last=None, now_s=10_000.0):
+        return updater.check_request(req, now, admin, allowed, inf, last, now_s)
+
+    assert chk() is None
+    assert "off" in chk(allowed=False)
+    assert chk(admin=False) == "not an admin"
+    assert "stale" in chk(req={"uid": "u1", "at": now - 121_000})
+    assert "stale" in chk(req={"uid": "u1", "at": now + 90_000})
+    for bad in (None, "x", {}, {"uid": "u1"}, {"uid": "u1", "at": now, "x": 1},
+                {"uid": "a/b", "at": now}, {"uid": "", "at": now}, {"uid": 5, "at": now}):
+        assert chk(req=bad) is not None, bad
+    assert chk(req={"uid": "u1", "at": True}) == "no timestamp"
+    assert chk(inf=None) is not None
+    assert chk(inf=dict(info, updateAvailable=False)) == "already up to date"
+    assert "10 minutes" in chk(last=10_000.0 - 599)
+    assert chk(last=10_000.0 - 601) is None
+
+
+def test_update_info_and_settling():
+    body = {"result": "ok", "data": {"slug": "abc_snof_bridge", "version": "0.10.11",
+                                      "version_latest": "0.10.12", "update_available": True}}
+    got = updater.parse_self_info(body)
+    assert got == {"slug": "abc_snof_bridge", "version": "0.10.11",
+                   "versionLatest": "0.10.12", "updateAvailable": True}
+    same = {"data": {"slug": "s", "version": "1", "version_latest": "1", "update_available": False}}
+    assert updater.parse_self_info(same)["updateAvailable"] is False
+    assert updater.parse_self_info({"data": {"slug": "s"}}) is None
+    assert updater.parse_self_info("nope") is None
+    assert updater.heartbeat_fields(None, False) == {
+        "version": None, "versionLatest": None, "updateAvailable": None, "remoteUpdate": False}
+    assert updater.heartbeat_fields(got, True)["remoteUpdate"] is True
+    node = {"state": "updating", "from": "0.10.11", "to": "0.10.12", "at": 1, "by": "u1"}
+    assert updater.finish_state(node, "0.10.12", 5)["state"] == "done"
+    assert updater.finish_state(node, "0.10.11", 5)["state"] == "failed"
+    assert updater.finish_state(node, None, 5)["state"] == "failed"
+    assert updater.finish_state({"state": "done"}, "0.10.12", 5) is None
+    assert updater.finish_state(None, "0.10.12", 5) is None
 
 
 if __name__ == "__main__":

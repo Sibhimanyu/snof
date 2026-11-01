@@ -80,6 +80,14 @@ Architecture and data shape are in README.md.
   owner can sign in from the dashboard. It is not a precedent: no other new
   DCON code goes in the add-on, and it moves to direct calls at cut-over.
 
+- **Add-on update** (owner, 2026-11-01) is a fourth writable path,
+  `/farms/<slug>/addon_update_requests` `{uid, at}`: admins only in the rules,
+  re-checked by `bridge/updater.py` (admin, age 120 s, an update exists, one
+  per 10 min, node always deleted), and `allow_remote_update` in the add-on
+  options, **off by default**. It can only update this add-on, from the repo,
+  through the Supervisor (`hassio_role: manager`). Progress is
+  `meta/bridge/update`.
+
 - **Never commit `serviceAccount.json`** or any `*-firebase-adminsdk-*.json`.
   It is a full-admin credential. It lives at `~/.config/snof/serviceAccount.json`
   (mode 0600) and is passed via `GOOGLE_APPLICATION_CREDENTIALS`.
@@ -160,19 +168,28 @@ Architecture and data shape are in README.md.
 
 ## Deploying the add-on (easy to get silently wrong)
 
-Full runbook with every failure mode: `docs/nuc-access-and-deploy.md`. Summary:
+Primary path (owner, 2026-11-01): the NUC installs the add-on from **this
+repo** as a custom add-on repository (`repository.yaml` at the root; URL
+`https://github.com/Sibhimanyu/snof`, no token: the repo is public), and admins
+press "Update" in the web/iOS Farm box row. Runbook and one-time migration from
+the local add-on: `docs/nuc-access-and-deploy.md` section 0. Summary:
 
-1. Bump `version:` in `addon/snof_bridge/config.yaml` — Supervisor will not offer
-   an update otherwise.
-2. `./scripts/deploy-addon.sh ha-nuc /addons/snof_bridge`
-3. HA UI → Settings → **Apps** → *Check for updates* → SNOF Firebase Bridge →
-   **Update** → **Update again in the confirmation dialog**. The first click only
-   opens the dialog. Skipping the confirm leaves the old image running with no
-   error anywhere. This cost four hours once.
-4. Verify inside the container, do not trust the button:
-   `ssh ha-nuc 'sudo docker ps --filter name=app_local_snof_bridge --format "{{.Image}}"'`
+1. Bump `version:` in `addon/snof_bridge/config.yaml` and merge to `main` -
+   Supervisor will not offer an update otherwise.
+2. The bridge notices within hours (store reload every 6 h) and the apps show
+   "Update to X"; an admin presses it. Needs `allow_remote_update: true` (off
+   by default) and the `manager` role (`hassio_api`). Or HA UI > Apps >
+   SNOF Firebase Bridge > Update, **confirming in the dialog**.
+3. Verify inside the container, do not trust the button. The slug is
+   `<hash>_snof_bridge` from the repo (`local_snof_bridge` for the fallback), so
+   filter loosely:
+   `ssh ha-nuc 'sudo docker ps --filter name=snof_bridge --format "{{.Names}} {{.Image}}"'`
 
-Bridge logs: `ssh ha-nuc 'sudo docker logs app_local_snof_bridge 2>&1 | tail -30'`
+Fallback (no repo access): `./scripts/deploy-addon.sh ha-nuc /addons/snof_bridge`,
+then Check for updates > Update > **Update again in the confirmation dialog**
+(the first click only opens the dialog). Never run both add-ons at once.
+
+Bridge logs: `ssh ha-nuc 'sudo docker logs $(sudo docker ps -q --filter name=snof_bridge | head -1) 2>&1 | tail -30'`
 
 ## Environment facts
 
