@@ -838,9 +838,17 @@ input[type=range][disabled]{opacity:.42}
 .hrow-chev{width:16px;height:16px;color:var(--faint);flex:none}
 .ov-main > * + *{margin-top:14px}
 
-.irr-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;align-items:start}
-.irr-col{display:flex;flex-direction:column;gap:14px;min-width:0}
-.irr-wide{margin-top:14px}
+/* The controller's page (2026-11-01): Now on top, Watered + Pump beside each
+   other, Reports as list + one report beside it, the account last. The
+   container is .irr-page (not .wmd-detail, whose containment would trap the
+   Run valves drawer). */
+.irr-page{container-type:inline-size;display:flex;flex-direction:column;gap:14px;min-width:0}
+.irr-duo{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:stretch}
+.irr-duo:empty{display:none}
+@container (min-width:720px){
+  .irr-duo{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+  .irr-duo > :only-child{grid-column:1 / -1}
+}
 @media (min-width:901px){ .watered .crop-list{display:grid;grid-template-columns:1fr 1fr;column-gap:0}
   .watered .crop-row{border-right:1px solid var(--line-soft)} .watered .crop-row:nth-child(2n){border-right:0}
   .watered .crop-row:nth-last-child(2):nth-child(odd){border-bottom:0} }
@@ -862,6 +870,17 @@ input[type=range][disabled]{opacity:.42}
 .now-next span{margin-right:8px;font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
 .now-actions{display:flex;gap:10px;margin-top:6px}
 .now-actions .btn{flex:1}
+.now-main{display:flex;align-items:center;gap:22px;min-width:0}
+.now-text{display:flex;flex-direction:column;gap:8px;min-width:0;flex:1}
+.now .ring{width:112px;height:112px}
+.now .ring-mid strong{font-size:19px}
+.now .ring-mid small{font-size:12px}
+@container (min-width:720px){
+  .now{padding:24px 28px}
+  .now-title{font-size:clamp(26px,3cqi,34px)}
+  .now-actions{margin-top:10px;max-width:420px}
+}
+@media (max-width:480px){ .now .ring{width:88px;height:88px} .now .ring-mid strong{font-size:16px} .now-main{gap:16px} }
 .now .more-note{margin:0;padding:0;border:0}
 
 .irr-mod .panel-head{border-bottom:0;padding-bottom:4px}
@@ -895,11 +914,12 @@ input[type=range][disabled]{opacity:.42}
 .run-amt{flex:none;font-size:13px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 .run-amt.warn{color:var(--warn)}
 
-.irr-reports{margin-top:28px}
+.irr-reports{margin-top:6px}
 .panel-head.bare{padding:0 0 12px;border:0}
 .irr-reports .rep-builder{margin-bottom:14px}
 
-details.acct-sec{margin-top:28px}
+details.acct-sec{margin-top:0;padding:0 20px;background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-xl);box-shadow:var(--shadow-card)}
+details.acct-sec[open]{padding-bottom:14px}
 details.acct-sec > summary,.wdetails > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
   font-size:13px;font-weight:700;color:var(--muted);min-height:44px}
 details.acct-sec > summary{font-size:15px;font-weight:700;color:var(--text)}
@@ -912,7 +932,6 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .wdetails .mb-facts{padding:4px 0 6px}
 
 @media (max-width:900px){
-  .irr-grid{grid-template-columns:minmax(0,1fr)}
   .hrow{padding:12px 16px}
   .hrow-main{grid-template-columns:minmax(0,1fr)}
   .hrow-title{grid-row:auto}
@@ -1437,10 +1456,6 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 @media (max-width:1099px){
   .wmd.is-motor .wmd-list,.wmd.is-water .wmd-detail{display:none}
 }
-/* The controller's page beside the list: one column until the pane is wide. */
-@media (min-width:1100px) and (max-width:1439px){
-  .wmd-detail .irr-grid{grid-template-columns:minmax(0,1fr)}
-}
 .wmd-detail .now-top{flex-wrap:wrap}
 .wmd-detail .now-checked{flex:1 1 auto;margin-left:0}
 @media (min-width:1100px){
@@ -1671,3 +1686,48 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   box-shadow:inset 3px 0 0 var(--water-deep),inset -3px 0 0 var(--water-deep);animation:ws-feed .6s linear infinite;animation-delay:var(--ph-fall,0s)}
 @keyframes ws-feed{to{background-position:0 12px}}
 @container (min-width:640px){.ws-beds{margin-top:0}}
+
+/* ---------- Controller page, chunk 5 (2026-11-01) ---------- */
+/* Reports: rows in a compact list; wide, the opened one shows beside it. */
+.rep-pane-head{display:none}
+.rep-list{display:block}
+@container (min-width:900px){
+  .rep-list{display:grid;grid-template-columns:minmax(300px,340px) minmax(0,1fr);
+    grid-template-rows:repeat(8,min-content) 1fr;column-gap:16px;row-gap:0;align-items:start}
+  .rep-card,.rep-card:last-child{display:contents}
+  .rep-row{grid-column:1;background:var(--panel);border:1px solid var(--edge);border-bottom-color:var(--line-soft);
+    padding-bottom:10px;min-width:0}
+  .rep-card:first-child .rep-row{border-top-left-radius:var(--r-xl);border-top-right-radius:var(--r-xl)}
+  .rep-card:last-child .rep-row{border-bottom-color:var(--edge);border-bottom-left-radius:var(--r-xl);border-bottom-right-radius:var(--r-xl)}
+  .rep-card.is-sel .rep-row{background:var(--panel-2);box-shadow:inset 3px 0 0 var(--brand)}
+  .rep-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 10px;min-height:48px;padding:12px 16px 2px}
+  .rep-head .rep-when{grid-column:1 / -1;margin:0;width:auto}
+  .rep-summary{padding:0 16px}
+  .rep-chev{display:none}
+  .rep-body,.rep-body[hidden]{display:none;grid-column:2;grid-row:1 / -1;padding:18px 22px 22px;
+    background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-xl);box-shadow:var(--shadow-card);min-width:0}
+  .rep-card.is-sel .rep-body,.rep-card.is-sel .rep-body[hidden]{display:block!important}
+  .rep-pane-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:12px;margin-bottom:6px;border-bottom:1px solid var(--line-soft)}
+  .rep-pane-head .rep-title{font-size:17px}
+  .rep-card .list{margin-left:-22px;margin-right:-22px}
+  .rep-card .list .row{padding-left:22px;padding-right:22px}
+  .rep-body > .list:last-child{margin-bottom:-22px}
+}
+
+/* Run valves: a drawer from the right, a sheet from the bottom on a phone. */
+.run-scrim{position:fixed;inset:0;z-index:60;background:rgba(15,20,25,.38);animation:run-fade .2s var(--ease)}
+.run-drawer{position:fixed;top:0;right:0;bottom:0;z-index:61;width:min(440px,100vw);display:flex;flex-direction:column;
+  background:var(--panel);box-shadow:-18px 0 48px rgba(15,20,25,.22);animation:run-in .26s var(--ease)}
+.run-drawer > .panel{flex:1;display:flex;flex-direction:column;min-height:0;overflow:auto;border:0;border-radius:0;box-shadow:none;padding-top:8px}
+.run-drawer .panel-head{padding-top:14px}
+.run-drawer .valve-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));align-content:start}
+.run-drawer .run-bar{order:2;position:sticky;bottom:0;margin-top:auto;background:var(--panel);padding-bottom:calc(16px + var(--sab))}
+.run-drawer .run-bar .btn-primary{flex:1 1 140px}
+@keyframes run-in{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+@keyframes run-fade{from{opacity:0}to{opacity:1}}
+@media (max-width:700px){
+  .run-drawer{top:auto;left:0;width:100%;max-height:86vh;border-radius:22px 22px 0 0;box-shadow:0 -12px 40px rgba(15,20,25,.25);animation:run-up .26s var(--ease)}
+  @keyframes run-up{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+}
+@media (prefers-reduced-motion:reduce){.run-scrim,.run-drawer{animation:none}}
+@media (max-width:480px){ .now-top .btn{margin-left:auto} }

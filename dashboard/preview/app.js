@@ -2111,7 +2111,7 @@ function dayRange(from, to) {
   return `${a.d} ${MONTHS[a.mo]}${a.y !== b.y ? yr(a) : ''} – ${b.d} ${MONTHS[b.mo]}${yr(b)}`;
 }
 
-function irrReportCard(key, rep, open = true) {
+function irrReportCard(key, rep, open = true, sel = false) {
   // The app's own name for the type first, so a rename reaches old reports too.
   const label = IRR_TYPES.find((t) => t.type === rep.type)?.label || rep.label || rep.type || 'Report';
   const when = rep.at ? agoText(rep.at) : '';
@@ -2139,7 +2139,8 @@ function irrReportCard(key, rep, open = true) {
   summary = summary.replace(/(^|\D)1 entries\b/g, '$11 entry');
   // The header is the toggle; closed, a card is one line plus its summary.
   // The body stays in the page, hidden, so nothing re-lays-out on open.
-  return `<section class="rep-card${open ? ' open' : ''}" data-rep="${escapeHtml(key)}">
+  return `<section class="rep-card${open ? ' open' : ''}${sel ? ' is-sel' : ''}" data-rep="${escapeHtml(key)}">
+    <div class="rep-row">
     <button class="rep-head" data-act="rep-open" data-rep="${escapeHtml(key)}" aria-expanded="${open}">
       <span class="rep-title">${escapeHtml(label)}</span>${statusTag}
       <span class="rep-when">${escapeHtml([from ? dayRange(from, to) : '', when].filter(Boolean).join(' · '))}</span>
@@ -2147,7 +2148,9 @@ function irrReportCard(key, rep, open = true) {
     </button>
     ${summary ? `<p class="rep-summary">${escapeHtml(summary)}</p>` : ''}
     ${rep.status === 'error' && rep.error ? `<p class="rep-summary rep-err">${escapeHtml(rep.error)}</p>` : ''}
-    <div class="rep-body"${open ? '' : ' hidden'}>${body}</div>
+    </div>
+    <div class="rep-body"${open ? '' : ' hidden'}>
+      <div class="rep-pane-head"><span class="rep-title">${escapeHtml(label)}</span>${statusTag}<span class="rep-when">${escapeHtml([from ? dayRange(from, to) : '', when].filter(Boolean).join(' · '))}</span></div>${body}</div>
   </section>`;
 }
 
@@ -2674,16 +2677,25 @@ function irrNowModule() {
       : refusal && refusal !== 'Only farm admins can open or close valves.' && !both ? `<p class="more-note note-off">${escapeHtml(refusal)}</p>`
       : mobitechState().kind !== 'ok' ? `<p class="more-note note-off">${escapeHtml(mobitechState().text)}</p>`
       : s.running && s.manual ? '<p class="more-note">One manual run at a time.</p>' : ''}` : '';
+  // Time left, drawn: only from the figures irrNowState() already worked out.
+  const planned = c.program?.plannedMin;
+  const dial = s.running && s.left != null && planned
+    ? ring(1 - s.left / planned, 'is-on', fmtMin(s.left), 'left') : '';
   // When the controller cannot be read, motorView() shows unreadHero() instead.
-  return `<section class="panel now${s.running ? ' is-on' : ''}" aria-label="Now">
+  return `<section class="panel now${s.running ? ' is-on' : ''}${dial ? ' has-ring' : ''}" aria-label="Now">
     <div class="now-top">
       <p class="now-label"><span class="dot"></span>${s.running ? 'Watering now' : 'Not watering'}</p>
       ${s.checked ? `<span class="now-checked">checked ${escapeHtml(s.checked)}</span>` : ''}${refresh}
     </div>
+    <div class="now-main">
+      ${dial}
+      <div class="now-text">
     ${empty ? `<h2 class="now-title">No data yet</h2><p class="now-detail">${canControl ? 'Press Refresh to ask the controller.' : 'Nothing has been pulled yet.'}</p>`
       : `<h2 class="now-title">${escapeHtml(s.title)}</h2>${s.detail ? `<p class="now-detail">${escapeHtml(s.detail)}</p>` : ''}`}
     ${faults.map((f) => `<span class="tag tag-bad">${escapeHtml(f)}</span>`).join('')}
     ${next && next.name ? `<p class="now-next"><span>Next</span>${escapeHtml([next.name, next.plannedMin != null ? fmtMin(next.plannedMin) : ''].filter(Boolean).join(' · '))}</p>` : ''}
+      </div>
+    </div>
     ${controls}${readNote}
   </section>`;
 }
@@ -2865,12 +2877,17 @@ function irrReportsModule() {
       <button class="btn btn-primary" data-act="irr-gen"${pending || !reachable.ok ? ' disabled' : ''}>${pending ? 'Working…' : 'Generate'}</button>
     </div>${reachable.ok ? '' : `<p class="more-note note-off">${escapeHtml(reachable.why)}</p>`}` : '';
   const toggle = canControl ? ['#', irrBuilderOpen ? 'Close' : 'New report', 'data-act="irr-builder"'] : null;
+  // On a wide page the list is the master and one report shows beside it:
+  // the one opened last, else the first. (Narrow: each opens in place.)
+  const rows = reports.slice().reverse();
+  const openKeys = new Set(rows.map(([k]) => k).filter((k) => reportOpen.get(k) === true));
+  const selKey = [...reportOpen.keys()].filter((k) => openKeys.has(k)).pop() || '';
   return `<section class="irr-reports" aria-label="Reports">` +
     `<div class="panel-head bare"><h2 class="panel-title">Reports<span class="n">${reports.length || ''}</span></h2>` +
     (toggle ? `<a class="panel-link" href="#" ${toggle[2]}>${escapeHtml(toggle[1])}</a>` : '') + `</div>` +
     builder +
     (reports.length
-      ? reports.slice().reverse().map(([k, r]) => irrReportCard(k, r, reportOpen.get(k) === true)).join('')
+      ? `<div class="rep-list">${rows.map(([k, r], i) => irrReportCard(k, r, reportOpen.get(k) === true, k === selKey || (!selKey && i === 0))).join('')}</div>`
       : `<p class="more-note">No reports yet.</p>`) +
     `</section>`;
 }
@@ -3422,10 +3439,15 @@ function motorView(key) {
             canControl ? `<button class="btn btn-primary uh-btn" data-act="irr-refresh">Try again</button>` : '');
       return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false, hero + (out ? '' : account));
     }
+    // Run valves is a drawer over the page (admins, while picking), not a
+    // block that pushes the page down. Same module, same buttons.
+    const picker = irrValvesModule();
+    const drawer = picker ? `<div class="run-scrim" data-act="run-cancel"></div>` +
+      `<aside class="run-drawer" role="dialog" aria-label="Run valves">${picker}</aside>` : '';
     return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false,
-      `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
-      `<div class="irr-col">${irrSupplyModule()}</div></div>` + `<div class="irr-wide">${irrCropsModule()}</div>` +
-      irrReportsModule() + account);
+      `<div class="irr-page"><div class="irr-hero">${irrNowModule()}</div>` +
+      `<div class="irr-duo">${irrCropsModule()}${irrSupplyModule()}</div>` +
+      irrReportsModule() + account + `</div>` + drawer);
   }
   const m = waterMotors().find((x) => x.key === key);
   if (!m) return head('Motor', '', '', back) + emptyBlock('No reading from this motor', 'It appears after the next water pull.');
@@ -4094,7 +4116,9 @@ function wire(all) {
 
   view.querySelectorAll('[data-act="rep-open"]').forEach((btn) => {
     btn.onclick = () => {
-      reportOpen.set(btn.dataset.rep, btn.getAttribute('aria-expanded') !== 'true');
+      const was = btn.getAttribute('aria-expanded') !== 'true';
+      reportOpen.delete(btn.dataset.rep);   // the newest choice is the last key
+      reportOpen.set(btn.dataset.rep, was);
       render();
     };
   });
