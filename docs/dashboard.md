@@ -205,3 +205,27 @@ Hard-won constraints:
 ## Controller page layout (2026-11-01)
 
 `#/motor/dcon`: Now hero (time-left ring while watering), Watered and Pump & power side by side, Reports as a compact list with the opened report beside it from 900px of pane width (inline below), the Mobitech account last. Run valves opens as a right drawer (bottom sheet on phones) over the page; same buttons, same lock and gates. Layout only: no command, lock or request code moved.
+
+## Water art (2026-11-01)
+
+`#/water` draws three cutaway scenes (River well, Thoppu well, Farm sump) over
+generated raster art in `dashboard/public/art/water/{river,thoppu,farm}.webp`
+(1200 x 800, about 325 KB together). Owner's brief: realistic, an Indian open
+dug well and not a tank, a river that feels like a river, motors as
+submersibles standing in the water (river well 6 HP, two at Thoppu, one in the
+shallower farm sump), the river well fed by an underground pipe.
+
+Provenance: generated with Codex (`codex exec`, built-in image generation),
+one prompt per scene sharing one style paragraph (dusk blue-hour light, front
+cutaway, ground line a quarter down, dark gradient above ground, no pipes, no
+streams, no splashes, no bubbles, calm water), then converted with
+`cwebp -q 72 -resize 1200 800`. The prompts live only in the PR description;
+re-run them to change the art. Anything state-dependent is drawn on top in
+`wsArt()` in the art's own 1000 x 666 units: pipes, the glassy pour with foam
+and rings, bubbles round a running motor, surface ripples and glints, the
+river's moving surface. Each motion needs its motor running on a current
+reading; idle is dry and still. A source that cannot be read is greyed and
+hatched with its reason. There is no level sensor, so the water sits at a
+fixed natural depth and each scene says "No level reading". If a scene is
+regenerated, re-check the coordinates in `wsArt()` (motor tops, surface
+ellipses, pour x).

@@ -3269,66 +3269,97 @@ function motorGlance(m) {
  * takes its phase from the clock (--ph-*), so the page re-rendering on new
  * data never restarts it, and prefers-reduced-motion leaves it static. */
 const WS_SECS = (v) => { const p = String(v || '').split(':').map(Number); return p.length === 3 && p.every(Number.isFinite) ? p[0] * 3600 + p[1] * 60 + p[2] : null; };
-/** A pipe: rim, body and (while water moves) the dashes that run along it. */
-const wsPipe = (d, on, unread, thin, ns) => {
-  const a = ns ? ' vector-effect="non-scaling-stroke"' : '';
-  return `<g class="ws-pipe${on ? ' is-on' : ''}${unread ? ' is-unread' : ''}${thin ? ` is-${thin === true ? 'thin' : thin}` : ''}"><path class="ws-p-rim"${a} d="${d}"/><path class="ws-p-body"${a} d="${d}"/><path class="ws-p-flow"${a} d="${d}"/></g>`;
+/* The scenes are generated raster art (art/water/*.webp, docs/dashboard.md,
+ * "Water art"): cutaway views, with no pipes, no streams and calm water, so
+ * everything that depends on state is drawn live on top in the art's own
+ * 1000 x 666 units. Water moves only while its motor runs on a current
+ * reading; otherwise the pipes are dull and dry and the water is still. */
+/** A pipe, layered into a cylinder: rim, body, shade, highlight, and (while
+ *  water moves) the streaks that run along it. */
+const wsPipe = (d, on, unread, size) => {
+  const p = (c) => `<path class="${c}" d="${d}"/>`;
+  return `<g class="ws-pipe${on ? ' is-on' : ''}${unread ? ' is-unread' : ''}${size ? ` is-${size}` : ''}">${p('ws-p-rim')}${p('ws-p-body')}${p('ws-p-shade')}${p('ws-p-hi')}${p('ws-p-flow')}</g>`;
 };
 /** A sine ridge of period 80 (so an 80px shift loops seamlessly). */
-function wsWave(y, amp, to = null) {
+function wsWave(y, amp) {
   let d = `M-160,${y} q20,${-amp} 40,0`;
   for (let i = 0; i < 23; i++) d += ' t40,0';
-  return to == null ? d : `${d} V${to} H-160 Z`;
+  return d;
 }
-/** A tank (the well, the sump): an open-topped outline. There is no level
- *  sensor, so it holds no water and says so (owner, 2026-11-01). */
-function wsTank() {
-  return `<path class="ws-t-body" d="M195,80 V130 a16,16 0 0 0 16,16 H269 a16,16 0 0 0 16,-16 V80Z"/>
-    <path class="ws-t-rim" d="M195,80 V130 a16,16 0 0 0 16,16 H269 a16,16 0 0 0 16,-16 V80"/>
-    <path class="ws-t-lip" d="M187,80 H203 M277,80 H293"/>
-    <text class="ws-t-note" x="240" y="108" text-anchor="middle">No level</text><text class="ws-t-note" x="240" y="122" text-anchor="middle">reading</text>`;
+/** Bubbles rising off a submerged motor, a few at different speeds. */
+function wsBubbles(cx, y0, rise, n, spread) {
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    const dx = ((i * 37) % spread) - spread / 2, r = 2.6 + (i % 3) * 1.3;
+    s += `<circle class="ws-bub" style="--bd:${i};--bh:${rise + (i % 4) * 16}px" cx="${cx + dx}" cy="${y0 - (i % 3) * 9}" r="${r}"/>`;
+  }
+  return `<g class="ws-bubs"><ellipse class="ws-turb" cx="${cx}" cy="${y0 - 12}" rx="${spread * 0.9}" ry="${spread * 0.5}" fill="url(#wsg-turb)"/>${s}</g>`;
 }
-/** A pump: housing on a base, beside the source it draws from. */
-const wsPump = (cx, on, unread) =>
-  `<g class="ws-pump${on ? ' is-on' : ''}${unread ? ' is-unread' : ''}"><rect class="ws-pump-b" x="${cx - 14}" y="112" width="28" height="34" rx="8"/><circle class="ws-pump-c" cx="${cx}" cy="128" r="6"/><rect class="ws-pump-f" x="${cx - 18}" y="144" width="36" height="6" rx="3"/></g>`;
-/** An outlet above a tank's open top, and, while its motor runs, the stream
- *  falling in with a splash where it lands. Dry when idle. */
-const wsSpout = (pouring) =>
-  `<rect class="ws-nozzle" x="230" y="40" width="20" height="8" rx="3"/>` +
-  (pouring ? `<g class="ws-fall"><path class="ws-fall-l" d="M240,49 V79"/><circle class="ws-fall-d" style="--di:0" cx="236.5" cy="52" r="2"/><circle class="ws-fall-d" style="--di:1" cx="243.5" cy="52" r="2"/><ellipse class="ws-splash" cx="240" cy="80" rx="16" ry="3.5"/><ellipse class="ws-splash ws-splash-b" cx="240" cy="80" rx="16" ry="3.5"/></g>` : '');
-const WS_EMIT = [205, 230, 255];
-/** The three places, each drawn twice for its pipes: across (wide) and down
- *  (narrow); CSS shows one. Every motor stands at its source: its suction
- *  pipe leaves near the bottom, its delivery pipe rises, runs over and ends in
- *  an outlet above the next tank (owner, 2026-11-01). `inOn`: the motor that
- *  fills this place runs; `outOn`: this place's own motor runs. */
+/** The pipe's open end above a well, and (running) the glassy stream from it:
+ *  a column with a bright edge, streaks falling inside it, foam and rings
+ *  where it lands, spray, and a plume of air going down into the water. */
+function wsPour(x, yTop, yLand, on) {
+  const flange = `<rect class="ws-flange" x="${x - 17}" y="${yTop - 10}" width="34" height="11" rx="3"/>`;
+  if (!on) return flange;
+  const streaks = [-4.6, 0.4, 4.8].map((dx, i) => `<path class="ws-st ws-st${i}" d="M${x + dx},${yTop + 4} V${yLand}"/>`).join('');
+  const spray = [0, 1, 2, 3].map((i) => `<circle class="ws-spr" style="--di:${i};--sx:${(i % 2 ? 1 : -1) * (8 + i * 5)}px" cx="${x}" cy="${yLand - 4}" r="${1.6 + (i % 2)}"/>`).join('');
+  return flange + `<g class="ws-pour">
+    <path class="ws-stream-b" d="M${x - 9},${yTop + 2} L${x + 9},${yTop + 2} L${x + 12},${yLand} L${x - 12},${yLand}Z" fill="url(#wsg-stream)"/>
+    ${streaks}
+    <ellipse class="ws-foam" cx="${x}" cy="${yLand}" rx="52" ry="11" fill="url(#wsg-foam)"/>
+    <ellipse class="ws-ring" cx="${x}" cy="${yLand}" rx="46" ry="9"/><ellipse class="ws-ring ws-ring-b" cx="${x}" cy="${yLand}" rx="46" ry="9"/>
+    ${spray}</g>`;
+}
+const wsDefs = `<defs>
+  <linearGradient id="wsg-stream" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#d6efff" stop-opacity=".95"/><stop offset=".22" stop-color="#4aa8ee" stop-opacity=".7"/><stop offset=".6" stop-color="#6fbcf2" stop-opacity=".55"/><stop offset="1" stop-color="#e8f6ff" stop-opacity=".9"/></linearGradient>
+  <radialGradient id="wsg-foam"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".55" stop-color="#cfeaff" stop-opacity=".5"/><stop offset="1" stop-color="#cfeaff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="wsg-turb"><stop offset="0" stop-color="#bfe6ff" stop-opacity=".34"/><stop offset="1" stop-color="#bfe6ff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="wsg-glint"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+</defs>`;
+/** Light moving on a water surface inside `clip`: two ridges drifting
+ *  opposite ways and a couple of glints breathing. */
+const wsShimmer = (clip, y, h, glints) =>
+  `<g clip-path="url(#${clip})" class="ws-shim"><path class="ws-ripple ws-r1" d="${wsWave(y, 3.2)}"/><path class="ws-ripple ws-r2" d="${wsWave(y + h * 0.4, 3.6)}"/><path class="ws-ripple ws-r1" d="${wsWave(y + h * 0.75, 3)}"/>${glints.map(([gx, gy, k], i) => `<ellipse class="ws-glint" style="--gi:${i}" cx="${gx}" cy="${gy}" rx="${22 + k * 6}" ry="${3.4 + k}" fill="url(#wsg-glint)"/>`).join('')}</g>`;
+/** What is under the water is seen through it: a cool tint over whatever is
+ *  drawn there (pipes, the motors' own art). */
+const wsUnder = (x, y, w, h) => `<rect class="ws-under" x="${x}" y="${y}" width="${w}" height="${h}"/>`;
+const wsImg = (name) => `<img class="ws-img" src="/art/water/${name}.webp" alt="" width="1200" height="800" decoding="async" draggable="false">`;
+/** The three places. Each draws its own pipes twice, across (wide) and down
+ *  (narrow); CSS shows one. The pipes leave from the motors, which stand
+ *  submerged in the art, rise out of the water, run over, and end in an open
+ *  mouth above the next place's water (owner, 2026-11-01). `inOn`: the motor
+ *  that fills this place runs; `outOn`: this place's own motor runs. */
 function wsArt(kind, o) {
-  const open = `<svg class="ws-art${o.live ? ' is-live' : ''}" viewBox="0 0 480 176" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">`;
+  const open = `<svg class="ws-art${o.live ? ' is-live' : ''}" viewBox="0 0 1000 666" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">${wsDefs}`;
   const P = (d, on, size) => wsPipe(d, on, o.unread, size);
-  const soil = '<rect class="ws-soil" x="-400" y="166" width="1300" height="10"/></svg>';
+  const both = (wide, tall) => `<g class="ws-h">${wide}</g><g class="ws-v">${tall}</g>`;
   if (kind === 'river') {
-    // A flat stylised stream: no surface, no depth, so it reads as a river and
-    // not as a gauge. The pump stands on the bank and draws from near its bed.
-    const stream = 'M-400,96 H270 a25,25 0 0 1 0,50 H-400Z';
-    const common = `${P('M262,132 H303', o.outOn, 'mid')}${wsPump(316, o.outOn, o.unread)}`;
-    return open + `<defs><clipPath id="wsc-r"><path d="${stream}"/></clipPath></defs>
-      <path class="ws-stream" d="${stream}"/>
-      <g clip-path="url(#wsc-r)"><path class="ws-ripple ws-r1" d="${wsWave(112, 4)}"/><path class="ws-ripple ws-r2" d="${wsWave(134, 4)}"/></g>
-      <path class="ws-reeds" d="M372,146 v-14 M381,146 v-22 M390,146 v-12"/>
-      <g class="ws-h">${P('M316,112 V18 H880', o.outOn)}</g><g class="ws-v">${P('M316,112 V18 H350 V400', o.outOn)}</g>
-      ${common}<rect class="ws-grate" x="256" y="122" width="12" height="20" rx="4"/>` + soil;
+    // The river well draws from the river through an underground pipe: passive,
+    // so nothing moves there. Its 6 HP submersible lifts water out to Thoppu.
+    return wsImg('river') + open + `<defs><clipPath id="wsc-rs"><path d="M668,140 H1000 V232 H690Z"/></clipPath><clipPath id="wsc-rc"><path d="M722,238 H1000 V430 H780Z"/></clipPath></defs>
+      <g class="ws-flowwater"><g clip-path="url(#wsc-rs)" class="ws-shim"><path class="ws-ripple ws-r1" d="${wsWave(158, 3)}"/><path class="ws-ripple ws-r2" d="${wsWave(182, 3.4)}"/><path class="ws-ripple ws-r1" d="${wsWave(206, 3.6)}"/><path class="ws-ripple ws-r2" d="${wsWave(224, 3.2)}"/></g>
+        <g clip-path="url(#wsc-rc)"><rect class="ws-caus" x="700" y="238" width="420" height="200"/></g></g>
+      ${wsShimmer('wsc-rw', 244, 14, [[205, 248, 1], [262, 252, 0]])}
+      <defs><clipPath id="wsc-rw"><ellipse cx="217" cy="246" rx="104" ry="18"/></clipPath></defs>
+      ${both(P('M213,372 V34 H1040', o.outOn), P('M213,372 V34 H80 V700', o.outOn))}
+      ${wsUnder(112, 264, 210, 210)}
+      ${o.outOn ? wsBubbles(213, 478, 190, 13, 44) : ''}`;
   }
   if (kind === 'thoppu') {
-    const emit = WS_EMIT.map((x, i) => `<circle class="ws-emit" cx="${x}" cy="158" r="3.2"/>` + (o.dripOn ? `<circle class="ws-drop-c" style="--di:${i}" cx="${x}" cy="161" r="2.4"/>` : '')).join('');
-    // Wide: the well motor on the left feeds the drip line, the 75HP on the right
-    // carries water over to the farm. Narrow: swapped, so the pipe leaves on the
-    // side the next tile takes it from.
-    const wide = `${P('M-400,18 H240 V44', o.inOn)}${P('M316,112 V18 H880', o.outOn)}${P('M285,130 H303', o.outOn, 'mid')}${P('M195,130 H177', o.dripOn, 'mid')}${P('M164,149 V158 H258', o.dripOn, 'mid')}${wsPump(316, o.outOn, o.unread)}${wsPump(164, o.dripOn, o.unread)}`;
-    const tall = `${P('M350,-100 V18 H240 V44', o.inOn)}${P('M164,112 V18 H130 V400', o.outOn)}${P('M195,130 H177', o.outOn, 'mid')}${P('M285,130 H303', o.dripOn, 'mid')}${P('M316,149 V158 H202', o.dripOn, 'mid')}${wsPump(164, o.outOn, o.unread)}${wsPump(316, o.dripOn, o.unread)}`;
-    return open + `<g class="ws-h">${wide}</g><g class="ws-v">${tall}</g>${wsTank()}${wsSpout(o.inOn)}${emit}` + soil;
+    const emit = [238, 192, 150].map((x, i) => `<rect class="ws-emit" x="${x - 4}" y="119" width="8" height="8" rx="2"/>` + (o.dripOn ? `<circle class="ws-drop-c" style="--di:${i}" cx="${x}" cy="130" r="2.8"/>` : '')).join('');
+    return wsImg('thoppu') + open + `<defs><clipPath id="wsc-tw"><ellipse cx="495" cy="268" rx="182" ry="35"/></clipPath></defs>
+      ${o.live ? wsShimmer('wsc-tw', 250, 36, [[440, 262, 1], [560, 276, 1], [370, 270, 0]]) : wsShimmer('wsc-tw', 250, 36, [])}
+      ${both(`${P('M-40,34 H400 V60', o.inOn)}${P('M535,398 V34 H1040', o.outOn)}${P('M460,436 V112 H128', o.dripOn, 'mid')}`,
+             `${P('M80,-40 V34 H400 V60', o.inOn)}${P('M535,398 V34 H920 V700', o.outOn)}${P('M460,436 V112 H128', o.dripOn, 'mid')}`)}
+      ${wsUnder(315, 296, 366, 270)}
+      ${o.dripOn ? wsBubbles(460, 556, 150, 10, 34) : ''}${o.outOn ? wsBubbles(535, 562, 190, 13, 46) : ''}
+      ${emit}${wsPour(400, 60, 272, o.inOn)}`;
   }
-  return open + `<g class="ws-h">${P('M-400,18 H240 V44', o.inOn)}</g><g class="ws-v">${P('M130,-100 V18 H240 V44', o.inOn)}</g>
-    ${P('M285,130 H303', o.outOn, 'mid')}${P('M316,149 V230', o.outOn)}${wsPump(316, o.outOn, o.unread)}${wsTank()}${wsSpout(o.inOn)}` + soil;
+  return wsImg('farm') + open + `<defs><clipPath id="wsc-fw"><path d="M262,222 Q500,206 738,222 L742,264 H258Z"/></clipPath></defs>
+    ${wsShimmer('wsc-fw', 226, 36, o.live ? [[380, 240, 1], [590, 250, 1]] : [])}
+    ${both(`${P('M-40,34 H400 V60', o.inOn)}${P('M490,366 V84 H920 V700', o.outOn)}`, `${P('M920,-40 V34 H400 V60', o.inOn)}${P('M490,366 V84 H920 V700', o.outOn)}`)}
+    ${wsUnder(255, 266, 490, 250)}
+    ${o.outOn ? wsBubbles(490, 494, 170, 12, 38) : ''}${wsPour(400, 60, 246, o.inOn)}`;
 }
 /** The motor: a housing with a rotor that spins while it runs, and a ring of
  *  what is left of the run where the controller says. */
@@ -3375,21 +3406,19 @@ function waterScene(cells) {
     }).join('');
     return `<div style="--o:6" class="ws-beds is-on is-fed"><div class="ws-beds-h"><strong>Watering now</strong>${s.left != null && s.left > 0 ? `<span>${escapeHtml(fmtMin(s.left))} left</span>` : ''}</div><div class="ws-chips">${chips}</div></div>`;
   };
-  const place = (label, kind, o) => `<div class="ws-tile${o.unread ? ' is-unread' : ''}"><span class="ws-place">${label}</span>${wsArt(kind, o)}${o.unread ? `<span class="ws-cant">Can't read</span>` : ''}</div>`;
   // Across the gap (wide), or down the side the next place takes it from (narrow).
-  const link = (on, un, x, o) => `<div class="ws-link" style="--o:${o}" aria-hidden="true">
-    <svg class="ws-lh" viewBox="0 0 100 176" preserveAspectRatio="none">${wsPipe('M0,18 H100', on, un, false, true)}</svg>
-    <svg class="ws-lv" viewBox="0 0 480 56" preserveAspectRatio="xMidYMid slice">${wsPipe(`M${x},0 V56`, on, un)}</svg></div>`;
+  const bridge = (on, un) => `<span class="ws-pipe ws-bridge${on ? ' is-on' : ''}${un ? ' is-unread' : ''}"><i class="ws-p-flow"></i></span>`;
+  const link = (on, un, vx, o) => `<div class="ws-link" style="--o:${o};--vx:${vx}" aria-hidden="true"><div class="ws-lh">${bridge(on, un)}</div><div class="ws-lv">${bridge(on, un)}</div></div>`;
   const thoppu = [drip, supply, ...extras];
   const ph = (sec) => `-${((Date.now() % (sec * 1000)) / 1000).toFixed(2)}s`;
-  const phases = `--ph-flow:${ph(1.2)};--ph-spin:${ph(1.6)};--ph-drop:${ph(1.4)};--ph-a:${ph(6)};--ph-b:${ph(9)};--ph-r1:${ph(8)};--ph-r2:${ph(11)};--ph-glow:${ph(2.4)};--ph-fall:${ph(0.5)};--ph-splash:${ph(1)}`;
-  const tile = (label, kind, o, order) => `<div class="ws-tile${o.unread ? ' is-unread' : ''}" style="--o:${order}"><span class="ws-place">${label}</span>${wsArt(kind, o)}${o.unread ? `<span class="ws-cant">Can't read</span>` : ''}</div>`;
+  const phases = `--ph-flow:${ph(1.2)};--ph-spin:${ph(1.6)};--ph-drop:${ph(1.4)};--ph-a:${ph(6)};--ph-b:${ph(9)};--ph-r1:${ph(8)};--ph-r2:${ph(11)};--ph-glow:${ph(2.4)};--ph-fall:${ph(0.5)};--ph-splash:${ph(1)};--ph-bub:${ph(2.6)};--ph-glint:${ph(5)};--ph-caus:${ph(14)}`;
+  const tile = (label, kind, o, order) => `<div class="ws-tile${o.unread ? ' is-unread' : ''}" style="--o:${order}"><span class="ws-place">${label}<small>No level reading</small></span>${wsArt(kind, o)}${kind === 'thoppu' ? `<span class="ws-dripnote${o.dripOn ? ' is-on' : ''}">Thoppu drip</span>` : ''}${o.unread ? `<span class="ws-cant">Can't read</span>` : ''}</div>`;
   return `<section class="wscene" style="${phases}" aria-label="Where the water goes"><div class="ws-grid">
-    <div class="ws-stage">${tile('River', 'river', { live: current(river), unread: unread(river), outOn: river.flowing }, 1)}<div class="ws-cards" style="--o:11">${card(river)}</div></div>
-    ${link(river.flowing, unread(river), 350, 2)}
-    <div class="ws-stage">${tile('Thoppu', 'thoppu', { live: river.flowing || thoppu.some((c) => c.flowing), unread: thoppu.every(unread), inOn: river.flowing, outOn: supply.flowing, dripOn: drip.flowing }, 3)}<div class="ws-cards" style="--o:12">${thoppu.map(card).join('')}</div></div>
-    ${link(supply.flowing, unread(supply), 130, 4)}
-    <div class="ws-stage">${tile('Farm', 'farm', { live: supply.flowing || dcon.flowing, unread: unread(dcon), inOn: supply.flowing, outOn: dcon.flowing }, 5)}${beds()}<div class="ws-cards" style="--o:13">${card(dcon)}</div></div>
+    <div class="ws-stage">${tile('River well', 'river', { live: current(river), unread: unread(river), outOn: river.flowing }, 1)}<div class="ws-cards" style="--o:11">${card(river)}</div></div>
+    ${link(river.flowing, unread(river), 8, 2)}
+    <div class="ws-stage">${tile('Thoppu well', 'thoppu', { live: river.flowing || thoppu.some((c) => c.flowing), unread: thoppu.every(unread), inOn: river.flowing, outOn: supply.flowing, dripOn: drip.flowing }, 3)}<div class="ws-cards" style="--o:12">${thoppu.map(card).join('')}</div></div>
+    ${link(supply.flowing, unread(supply), 92, 4)}
+    <div class="ws-stage">${tile('Farm sump', 'farm', { live: supply.flowing || dcon.flowing, unread: unread(dcon), inOn: supply.flowing, outOn: dcon.flowing }, 5)}${beds()}<div class="ws-cards" style="--o:13">${card(dcon)}</div></div>
   </div></section>`;
 }
 
