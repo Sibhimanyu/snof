@@ -1523,34 +1523,53 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 :root[data-theme="dark"] .wscene{--land:#232325;--water-2:#4aa0e6;--water-deep:#1b5da6}
 @media (prefers-color-scheme:dark){:root:not([data-theme]) .wscene{--land:#232325;--water-2:#4aa0e6;--water-deep:#1b5da6}}
 .ws-grid{display:grid;grid-template-columns:minmax(0,1fr);row-gap:0;max-width:460px;margin:0 auto}
-.ws-stage{display:flex;flex-direction:column;gap:12px;min-width:0}
-.ws-tile{position:relative;height:156px;border-radius:var(--r-xl);overflow:hidden;background:var(--land);
+.ws-stage{display:contents}
+.ws-tile,.ws-link,.ws-beds,.ws-cards{order:var(--o,0)}
+.ws-cards{display:flex;flex-direction:column;gap:12px;margin-top:12px;min-width:0}
+.ws-tile{position:relative;height:176px;border-radius:var(--r-xl);overflow:hidden;background:var(--land);
   box-shadow:var(--shadow-card),inset 0 0 0 1px var(--edge)}
 .ws-art{display:block;width:100%;height:100%;overflow:hidden}
-.ws-place{position:absolute;left:12px;top:12px;z-index:2;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:750;
+.ws-place{position:absolute;left:12px;bottom:12px;z-index:2;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:750;
   letter-spacing:.01em;color:var(--text);background:var(--glass);border:1px solid var(--glass-line);
   -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 /* pipes */
 .ws-p-rim,.ws-p-body,.ws-p-flow{fill:none;stroke-linecap:butt}
-.ws-p-rim{stroke:var(--pipe-rim);stroke-width:19}
-.ws-p-body{stroke:var(--pipe);stroke-width:14}
-.ws-p-flow{stroke:transparent;stroke-width:5}
-.ws-pipe.is-thin .ws-p-rim{stroke-width:10}.ws-pipe.is-thin .ws-p-body{stroke-width:6}.ws-pipe.is-thin .ws-p-flow{stroke-width:2}
+.ws-p-rim{stroke:var(--pipe-rim);stroke-width:16}
+.ws-p-body{stroke:var(--pipe);stroke-width:11}
+.ws-p-flow{stroke:transparent;stroke-width:4}
+.ws-pipe.is-mid .ws-p-rim{stroke-width:11}.ws-pipe.is-mid .ws-p-body{stroke-width:7}.ws-pipe.is-mid .ws-p-flow{stroke-width:3}
+.ws-pipe.is-mid.is-on .ws-p-flow{stroke-dasharray:5 10}
 .ws-pipe.is-on .ws-p-rim{stroke:var(--water-deep)}
 .ws-pipe.is-on .ws-p-body{stroke:var(--water)}
 .ws-pipe.is-on .ws-p-flow{stroke:var(--water-dash);stroke-dasharray:9 15;animation:ws-flow 1.2s linear infinite;animation-delay:var(--ph-flow,0s)}
-.ws-pipe.is-on.is-thin .ws-p-flow{stroke-dasharray:4 10}
 .ws-pipe.is-unread .ws-p-body{stroke-dasharray:5 5;opacity:.7}
 @keyframes ws-flow{to{stroke-dashoffset:-24}}
 /* across (wide) or down (narrow) */
 .ws-link .ws-lh,.ws-h{display:none}
 .ws-link .ws-lv,.ws-v{display:block}
 .ws-link{height:56px;width:100%}
+.ws-link svg{display:block}
 .ws-link svg{display:block;width:100%;height:100%;overflow:visible}
 /* tanks, river */
 .ws-t-body{fill:var(--panel);stroke:none}
-.ws-t-rim{fill:none;stroke:var(--line-2);stroke-width:3.5}
-.ws-lid{fill:var(--panel-3);stroke:var(--line-2);stroke-width:2}
+.ws-t-rim{fill:none;stroke:var(--line-2);stroke-width:3.5;stroke-linejoin:round}
+.ws-t-lip{fill:none;stroke:var(--line-2);stroke-width:3.5;stroke-linecap:round}
+.ws-pump-b{fill:var(--panel-3);stroke:var(--line-2);stroke-width:2.5}
+.ws-pump-c{fill:var(--panel);stroke:var(--line-2);stroke-width:2}
+.ws-pump-f{fill:var(--line-2)}
+.ws-pump.is-on .ws-pump-b{stroke:var(--brand)}.ws-pump.is-on .ws-pump-c{fill:var(--brand);stroke:none}
+.ws-pump.is-unread{opacity:.6}
+.ws-nozzle{fill:var(--pipe);stroke:var(--pipe-rim);stroke-width:2.5}
+.ws-fall-l{fill:none;stroke:var(--water);stroke-width:5;stroke-linecap:round}
+.ws-fall-d{fill:var(--water-2);opacity:0}
+.ws-splash{fill:none;stroke:var(--water-2);stroke-width:2;opacity:.8;transform-box:fill-box;transform-origin:center}
+.ws-fall-l{stroke-dasharray:6 5;animation:ws-fall .5s linear infinite;animation-delay:var(--ph-fall,0s)}
+.ws-fall-d{animation:ws-fdrop .7s ease-in infinite;animation-delay:calc(var(--ph-fall,0s) - var(--di,0) * .33s)}
+.ws-splash{animation:ws-splash 1s ease-out infinite;animation-delay:var(--ph-splash,0s)}
+.ws-splash-b{animation-delay:calc(var(--ph-splash,0s) - .5s)}
+@keyframes ws-fall{to{stroke-dashoffset:-11}}
+@keyframes ws-fdrop{0%{opacity:0;transform:translateY(0)}15%{opacity:1}100%{opacity:.2;transform:translateY(24px)}}
+@keyframes ws-splash{0%{opacity:.85;transform:scale(.35,.6)}100%{opacity:0;transform:scale(1.5,1.2)}}
 .ws-stream{fill:var(--water);stroke:var(--water-deep);stroke-width:2.5}
 .ws-t-note{font-size:10.5px;font-weight:650;fill:var(--faint);letter-spacing:.01em}
 .ws-soil{fill:color-mix(in srgb,var(--text) 14%,var(--land))}
@@ -1570,7 +1589,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .ws-tile.is-unread .ws-art{filter:grayscale(1);opacity:.5}
 .ws-tile.is-unread::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(135deg,transparent 0 8px,color-mix(in srgb,var(--faint) 26%,transparent) 8px 10px)}
-.ws-cant{position:absolute;right:12px;top:12px;z-index:2;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:750;
+.ws-cant{position:absolute;right:12px;bottom:12px;z-index:2;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:750;
   color:var(--warn);background:var(--panel);border:1px solid var(--warn-line)}
 /* motor cards: all alike */
 .ws-card{position:relative;display:flex;align-items:center;gap:14px;padding:14px 16px;min-height:88px;border-radius:var(--r-xl);
@@ -1625,7 +1644,9 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   .ws-grid{max-width:none;grid-template-columns:minmax(0,1fr) clamp(44px,8cqw,92px) minmax(0,1fr) clamp(44px,8cqw,92px) minmax(0,1fr)}
   .ws-link .ws-lh,.ws-h{display:block}
   .ws-link .ws-lv,.ws-v{display:none}
-  .ws-link{height:156px}
+  .ws-link{height:176px;order:0}
+  .ws-stage{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .ws-cards{margin-top:0}
 }
 @container (min-width:640px) and (max-width:900px){
   .ws-card{flex-direction:column;text-align:center;padding:14px 10px}
@@ -1635,7 +1656,18 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 @media (prefers-reduced-motion:reduce){
   .wscene *,.wscene *::before,.wscene *::after{animation:none!important;transition:none!important}
   .ws-badge.is-on::after,.ws-crop::after{display:none}
-  .ws-drop-c{display:none}
+  .ws-drop-c,.ws-fall-d,.ws-splash{display:none}
+  .ws-fall-l{stroke-dasharray:none}
+  .ws-beds.is-fed::before{background:var(--water)!important}
 }
 /* A place nothing is moving in is drawn quieter: idle or an old reading. */
+/* A place nothing is moving in is drawn quieter: idle or an old reading. */
 .ws-art:not(.is-live){filter:saturate(.45) brightness(.98)}
+/* The farm pump's outlet pours into the valves panel just below it. */
+.ws-beds{position:relative;margin-top:12px}
+.ws-beds::before{content:"";position:absolute;top:-12px;left:calc(50% + 76px);width:16px;margin-left:-8px;height:12px;
+  background:var(--pipe);box-shadow:inset 3px 0 0 var(--pipe-rim),inset -3px 0 0 var(--pipe-rim)}
+.ws-beds.is-fed::before{background:repeating-linear-gradient(180deg,var(--water-dash) 0 4px,var(--water) 4px 12px);
+  box-shadow:inset 3px 0 0 var(--water-deep),inset -3px 0 0 var(--water-deep);animation:ws-feed .6s linear infinite;animation-delay:var(--ph-fall,0s)}
+@keyframes ws-feed{to{background-position:0 12px}}
+@container (min-width:640px){.ws-beds{margin-top:0}}
