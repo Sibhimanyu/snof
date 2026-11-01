@@ -275,6 +275,16 @@ body[data-route="areas"] .searchbar,body[data-route="devices"] .searchbar,
 body[data-route="area"] .searchbar{display:block}
 /* Wide screens: the search takes the empty right end of the title row, so
    the page still opens on where you are, not on a text box. */
+@media (min-width:901px){
+  .main{position:relative}
+  .searchbar{position:absolute;z-index:2;right:max(var(--gutter),calc((100% - var(--maxw)) / 2 + var(--gutter)));
+    top:94px;width:min(360px,34vw);max-width:none;margin:0;padding:0}
+  .search-icon{left:14px!important;top:22px!important}
+  body[data-route] .view .page-head{padding-right:min(380px,36vw)}
+  body[data-route="overview"] .view .page-head,body[data-route="irrigation"] .view .page-head,
+  body[data-route="sys"] .view .page-head,body[data-route="water"] .view .page-head,body[data-route="motor"] .view .page-head,
+  body[data-route="admin"] .view .page-head{padding-right:0}
+}
 @media (max-width:900px){
   body[data-route="areas"] .view,body[data-route="devices"] .view,body[data-route="area"] .view{padding-top:22px}
 }
@@ -1372,68 +1382,3 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .uh-do{font-size:14px;font-weight:600;color:var(--text)}
 .uh-btn{align-self:stretch;min-height:48px;font-size:15.5px}
 .uh-inline{color:var(--warn)}
-
-/* ---------- desktop shell (>= 901px): sidebar + page bar ----------
-   The top bar is drawn as a fixed left sidebar; nothing in the DOM moves.
-   >= 1100px it is 240px wide; 901-1099px it is a 72px icon rail. Phones and
-   tablets (<= 900px) keep the top bar and bottom tabs untouched. */
-.nav-ico{display:none}
-@media (min-width:901px){
-  :root{--bar-h:0px;--side-w:72px}
-  #app{padding-left:var(--side-w)}
-  .topbar{position:fixed;left:0;top:0;bottom:0;width:var(--side-w);z-index:50;padding-top:0;
-    background:var(--panel);border-bottom:0;border-right:1px solid var(--line);
-    -webkit-backdrop-filter:none;backdrop-filter:none}
-  .topbar-in{max-width:none;height:100%;margin:0;padding:calc(18px + var(--sat)) 12px calc(16px + var(--sab));
-    display:flex;flex-direction:column;align-items:stretch;gap:22px}
-  .brand{justify-self:auto;align-self:center;padding:2px 4px}
-  .topnav{flex-direction:column;align-items:stretch;gap:4px;padding:0;background:none;border-radius:0}
-  .topnav-item{min-height:44px;padding:0;gap:12px;justify-content:center;border-radius:var(--r);font-size:14.5px}
-  .topnav-item::before{display:none}
-  .topnav-item.on{background:var(--seg-track);box-shadow:none}
-  .nav-ico{display:block;flex:none;width:21px;height:21px}
-  .topnav-item.on .nav-ico{color:var(--accent)}
-  .topbar-right{margin-top:auto;display:grid;grid-template-columns:minmax(0,1fr);justify-self:auto;gap:8px;justify-items:stretch}
-  #m-bridge{display:inline-flex;grid-row:1;justify-self:center;padding:11px;gap:8px}
-  #theme-btn{grid-row:2;justify-self:center}
-  .acct{grid-row:3}
-  .acct-btn{width:100%;justify-content:center;padding:4px}
-  .acct-menu{top:auto;bottom:calc(100% + 10px);left:0;right:auto;transform-origin:bottom left}
-  /* Icon rail: labels stay for screen readers, drawn off-screen. */
-  .nav-label,.brand .wordmark,.brand .wordmark-sub,.acct-name,#m-bridge-text{
-    position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-
-  .main{min-height:100dvh}
-  .view{padding-top:0}
-  /* The page's own head is its bar: title left, actions right, sticky. */
-  body[data-route] .view .page-head{position:sticky;top:0;z-index:20;flex-wrap:nowrap;align-items:center;gap:12px 24px;
-    min-height:80px;margin:0 calc(-1 * var(--gutter)) 28px;padding:14px var(--gutter);
-    background:var(--glass);border-bottom:1px solid var(--glass-line);
-    -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
-  .page-title{margin-top:0;font-size:28px;line-height:1.1}
-  .page-head .pill-head{display:none}
-  /* Search sits in the page bar's right end: a zero-height sticky strip, so
-     it stays put while the page scrolls and still lives outside #view. */
-  .searchbar{--sw:min(360px,34vw);position:sticky;top:0;z-index:25;height:0;padding:0;margin:0 auto;max-width:var(--maxw)}
-  .searchbar #search{position:absolute;top:18px;right:var(--gutter);width:var(--sw);max-width:none}
-  .search-icon{left:auto!important;right:calc(var(--gutter) + var(--sw) - 31px);top:40px!important}
-  body[data-route="areas"] .view .page-head,body[data-route="devices"] .view .page-head,
-  body[data-route="area"] .view .page-head{padding-right:calc(var(--gutter) + min(360px,34vw) + 24px)}
-}
-@media (min-width:1100px){
-  :root{--side-w:240px}
-  .topbar-in{padding-left:16px;padding-right:16px}
-  .brand{align-self:flex-start;gap:12px}
-  .brand .wordmark,.brand .wordmark-sub,.nav-label,.acct-name,#m-bridge-text{
-    position:static;width:auto;height:auto;overflow:visible;clip-path:none}
-  .brand .wordmark-sub{display:none}
-  .acct-name{display:block}
-  .topnav-item{justify-content:flex-start;padding:0 14px}
-  .topbar-right{grid-template-columns:minmax(0,1fr) auto}
-  #m-bridge{grid-column:1 / -1;justify-self:start;padding:8px 14px}
-  .acct{grid-row:2;grid-column:1}
-  #theme-btn{grid-row:2;grid-column:2;justify-self:auto}
-  .acct-btn{justify-content:flex-start;padding:4px 10px 4px 4px;gap:10px}
-  .acct-btn .avatar{order:-1}
-  .acct-btn .acct-name{flex:1;text-align:left;max-width:none}
-}
