@@ -667,8 +667,6 @@ function render() {
     admin: 'Admin', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title,
     motor: r.arg === DCON_KEY ? dconTile().name : (waterMotors().find((m) => m.key === r.arg)?.name || 'Motor') }[r.name] || 'Home';
   document.title = `${pageName} · SNOF`;
-  el('brand-sub').textContent =
-    farmName.replace(/^Sibhi\s*/i, '').replace(/\s*and Farms$/i, '') || 'Live farm state';
   // The search bar lives outside #view and shows only where it filters.
   document.body.dataset.route = r.name;
 
