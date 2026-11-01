@@ -170,10 +170,9 @@ Architecture and data shape are in README.md.
 
 Primary path (owner, 2026-11-01): the NUC installs the add-on from **this
 repo** as a custom add-on repository (`repository.yaml` at the root; URL
-`https://<user>:<read-only token>@github.com/Sibhimanyu/snof`), and admins
-press "Update" in the web/iOS Farm box row. Runbook, one-time migration from
-the local add-on, and the token-expiry failure (silent): `docs/nuc-access-and-deploy.md`
-section 0. Summary:
+`https://github.com/Sibhimanyu/snof`, no token: the repo is public), and admins
+press "Update" in the web/iOS Farm box row. Runbook and one-time migration from
+the local add-on: `docs/nuc-access-and-deploy.md` section 0. Summary:
 
 1. Bump `version:` in `addon/snof_bridge/config.yaml` and merge to `main` -
    Supervisor will not offer an update otherwise.
@@ -186,7 +185,7 @@ section 0. Summary:
    filter loosely:
    `ssh ha-nuc 'sudo docker ps --filter name=snof_bridge --format "{{.Names}} {{.Image}}"'`
 
-Fallback (no repo/token): `./scripts/deploy-addon.sh ha-nuc /addons/snof_bridge`,
+Fallback (no repo access): `./scripts/deploy-addon.sh ha-nuc /addons/snof_bridge`,
 then Check for updates > Update > **Update again in the confirmation dialog**
 (the first click only opens the dialog). Never run both add-ons at once.
 

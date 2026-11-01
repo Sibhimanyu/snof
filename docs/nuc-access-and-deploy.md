@@ -40,21 +40,15 @@ json) and ignoring any path that has a part starting with `.` or named
 (`.impeccable/config.json` is skipped because of its leading dot). Do not add
 another `config.json/yaml` outside a dot-folder.
 
-The repo is private, so the URL carries a read-only token:
-
-```
-https://<github-username>:<token>@github.com/Sibhimanyu/snof
-```
-
-Create the token at GitHub > Settings > Developer settings > Fine-grained
-tokens: resource owner `Sibhimanyu`, **only** repository `snof`, permission
-**Contents: Read-only** (nothing else), and the longest expiry GitHub allows.
+The repo is public (since 2026-11-01), so Home Assistant adds it with the plain
+URL `https://github.com/Sibhimanyu/snof`, no token. Because the repo is public,
+nothing secret may ever be committed: credentials live only in the add-on
+options, Secret Manager, and `~/.config/snof`.
 
 ### Install (or the one-time migration from the local add-on)
 
 1. HA > Settings > Apps > App store > menu (three dots) > **Repositories** >
-   paste the URL above > Add. Wait for it to clone; a bad token shows an error
-   here (see "When the token expires").
+   paste `https://github.com/Sibhimanyu/snof` > Add. Wait for it to clone.
 2. Find **SNOF Firebase Bridge** under "SNOF add-ons" and **Install**. It builds
    on the NUC; the first build takes a few minutes.
 3. **Migrating only:** open the old (local) add-on's Configuration and copy its
@@ -112,18 +106,6 @@ box row (web: account menu > Admin > Farm box; iOS: Account > Farm box) with
 
 To update by hand instead: HA > Settings > Apps > SNOF Firebase Bridge >
 Update (confirm in the dialog).
-
-### When the token expires
-
-Updates stop **silently**: the running bridge keeps working, but the store can
-no longer fetch the repo, so no new version ever appears. It shows in HA under
-the Repositories dialog / Settings > System > Repairs as a repository error
-(and `ha store repositories` or the Supervisor log say the clone failed).
-Renew: create a new fine-grained token the same way, remove the repository in
-HA's Repositories dialog and add it again with the new URL (the URL itself
-holds the token, so re-adding is the sure way; the installed add-on and its
-options are untouched). Put the expiry date in docs/HANDOFF.md so it is not a
-surprise.
 
 ## 1. First-time SSH access
 
