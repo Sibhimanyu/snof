@@ -1554,6 +1554,9 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
   padding:5px 11px 6px;border-radius:14px;font-size:12.5px;font-weight:750;letter-spacing:.01em;color:#eef4f8;
   background:rgba(9,14,19,.62);border:1px solid rgba(255,255,255,.14);
   -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.ws-dripnote{position:absolute;z-index:3;left:5%;top:23%;font-size:10.5px;font-weight:650;letter-spacing:.02em;color:rgba(238,244,248,.62);
+  text-shadow:0 1px 3px rgba(0,0,0,.7);pointer-events:none}
+.ws-dripnote.is-on{color:#bfe3fb}
 .ws-place small{font-size:10.5px;font-weight:600;color:rgba(238,244,248,.55);letter-spacing:.01em}
 /* pipes: a cylinder out of a few strokes. Dull and dry until water moves. */
 .ws-p-rim,.ws-p-body,.ws-p-shade,.ws-p-hi,.ws-p-flow{fill:none;stroke-linecap:butt;stroke-linejoin:round}
@@ -1713,7 +1716,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 }
 /* The sump's pipe comes down the soil beside it and ends in the valves panel. */
 .ws-beds{position:relative;margin-top:16px}
-.ws-beds::before{content:"";position:absolute;top:-16px;left:calc(88% - var(--pw,12px)/2);width:var(--pw,12px);height:16px;
+.ws-beds::before{content:"";position:absolute;top:-16px;left:calc(92% - var(--pw,12px)/2);width:var(--pw,12px);height:16px;
   background:linear-gradient(90deg,#10161b 0,#4b5b66 18%,#7a8b96 34%,#4b5b66 62%,#2c3841 88%,#10161b 100%)}
 .ws-beds.is-fed::before{background:repeating-linear-gradient(180deg,rgba(235,247,255,.85) 0 8px,transparent 8px 20px),
   linear-gradient(90deg,#0a3556 0,#2f8fd8 18%,#8fd0fb 34%,#2f8fd8 62%,#1b5f9e 88%,#0a3556 100%);

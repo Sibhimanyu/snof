@@ -3341,23 +3341,23 @@ function wsArt(kind, o) {
         <g clip-path="url(#wsc-rc)"><rect class="ws-caus" x="700" y="238" width="420" height="200"/></g></g>
       ${wsShimmer('wsc-rw', 244, 14, [[205, 248, 1], [262, 252, 0]])}
       <defs><clipPath id="wsc-rw"><ellipse cx="217" cy="246" rx="104" ry="18"/></clipPath></defs>
-      ${both(P('M213,372 V34 H1040', o.outOn), P('M213,372 V34 H40 V700', o.outOn))}
+      ${both(P('M213,372 V34 H1040', o.outOn), P('M213,372 V34 H80 V700', o.outOn))}
       ${wsUnder(112, 264, 210, 210)}
       ${o.outOn ? wsBubbles(213, 478, 190, 13, 44) : ''}`;
   }
   if (kind === 'thoppu') {
-    const emit = [215, 130, 52].map((x, i) => `<rect class="ws-emit" x="${x - 4}" y="119" width="8" height="8" rx="2"/>` + (o.dripOn ? `<circle class="ws-drop-c" style="--di:${i}" cx="${x}" cy="130" r="2.8"/>` : '')).join('');
+    const emit = [238, 192, 150].map((x, i) => `<rect class="ws-emit" x="${x - 4}" y="119" width="8" height="8" rx="2"/>` + (o.dripOn ? `<circle class="ws-drop-c" style="--di:${i}" cx="${x}" cy="130" r="2.8"/>` : '')).join('');
     return wsImg('thoppu') + open + `<defs><clipPath id="wsc-tw"><ellipse cx="495" cy="268" rx="182" ry="35"/></clipPath></defs>
       ${o.live ? wsShimmer('wsc-tw', 250, 36, [[440, 262, 1], [560, 276, 1], [370, 270, 0]]) : wsShimmer('wsc-tw', 250, 36, [])}
-      ${both(`${P('M-40,34 H400 V60', o.inOn)}${P('M535,398 V34 H1040', o.outOn)}${P('M460,436 V112 H-40', o.dripOn, 'mid')}`,
-             `${P('M40,-40 V34 H400 V60', o.inOn)}${P('M535,398 V34 H880 V700', o.outOn)}${P('M460,436 V112 H-40', o.dripOn, 'mid')}`)}
+      ${both(`${P('M-40,34 H400 V60', o.inOn)}${P('M535,398 V34 H1040', o.outOn)}${P('M460,436 V112 H128', o.dripOn, 'mid')}`,
+             `${P('M80,-40 V34 H400 V60', o.inOn)}${P('M535,398 V34 H920 V700', o.outOn)}${P('M460,436 V112 H128', o.dripOn, 'mid')}`)}
       ${wsUnder(315, 296, 366, 270)}
       ${o.dripOn ? wsBubbles(460, 556, 150, 10, 34) : ''}${o.outOn ? wsBubbles(535, 562, 190, 13, 46) : ''}
       ${emit}${wsPour(400, 60, 272, o.inOn)}`;
   }
   return wsImg('farm') + open + `<defs><clipPath id="wsc-fw"><path d="M262,222 Q500,206 738,222 L742,264 H258Z"/></clipPath></defs>
     ${wsShimmer('wsc-fw', 226, 36, o.live ? [[380, 240, 1], [590, 250, 1]] : [])}
-    ${both(`${P('M-40,34 H400 V60', o.inOn)}${P('M490,366 V84 H880 V700', o.outOn)}`, `${P('M880,-40 V34 H400 V60', o.inOn)}${P('M490,366 V84 H880 V700', o.outOn)}`)}
+    ${both(`${P('M-40,34 H400 V60', o.inOn)}${P('M490,366 V84 H920 V700', o.outOn)}`, `${P('M920,-40 V34 H400 V60', o.inOn)}${P('M490,366 V84 H920 V700', o.outOn)}`)}
     ${wsUnder(255, 266, 490, 250)}
     ${o.outOn ? wsBubbles(490, 494, 170, 12, 38) : ''}${wsPour(400, 60, 246, o.inOn)}`;
 }
@@ -3412,12 +3412,12 @@ function waterScene(cells) {
   const thoppu = [drip, supply, ...extras];
   const ph = (sec) => `-${((Date.now() % (sec * 1000)) / 1000).toFixed(2)}s`;
   const phases = `--ph-flow:${ph(1.2)};--ph-spin:${ph(1.6)};--ph-drop:${ph(1.4)};--ph-a:${ph(6)};--ph-b:${ph(9)};--ph-r1:${ph(8)};--ph-r2:${ph(11)};--ph-glow:${ph(2.4)};--ph-fall:${ph(0.5)};--ph-splash:${ph(1)};--ph-bub:${ph(2.6)};--ph-glint:${ph(5)};--ph-caus:${ph(14)}`;
-  const tile = (label, kind, o, order) => `<div class="ws-tile${o.unread ? ' is-unread' : ''}" style="--o:${order}"><span class="ws-place">${label}<small>No level reading</small></span>${wsArt(kind, o)}${o.unread ? `<span class="ws-cant">Can't read</span>` : ''}</div>`;
+  const tile = (label, kind, o, order) => `<div class="ws-tile${o.unread ? ' is-unread' : ''}" style="--o:${order}"><span class="ws-place">${label}<small>No level reading</small></span>${wsArt(kind, o)}${kind === 'thoppu' ? `<span class="ws-dripnote${o.dripOn ? ' is-on' : ''}">Thoppu drip</span>` : ''}${o.unread ? `<span class="ws-cant">Can't read</span>` : ''}</div>`;
   return `<section class="wscene" style="${phases}" aria-label="Where the water goes"><div class="ws-grid">
     <div class="ws-stage">${tile('River well', 'river', { live: current(river), unread: unread(river), outOn: river.flowing }, 1)}<div class="ws-cards" style="--o:11">${card(river)}</div></div>
-    ${link(river.flowing, unread(river), 4, 2)}
+    ${link(river.flowing, unread(river), 8, 2)}
     <div class="ws-stage">${tile('Thoppu well', 'thoppu', { live: river.flowing || thoppu.some((c) => c.flowing), unread: thoppu.every(unread), inOn: river.flowing, outOn: supply.flowing, dripOn: drip.flowing }, 3)}<div class="ws-cards" style="--o:12">${thoppu.map(card).join('')}</div></div>
-    ${link(supply.flowing, unread(supply), 88, 4)}
+    ${link(supply.flowing, unread(supply), 92, 4)}
     <div class="ws-stage">${tile('Farm sump', 'farm', { live: supply.flowing || dcon.flowing, unread: unread(dcon), inOn: supply.flowing, outOn: dcon.flowing }, 5)}${beds()}<div class="ws-cards" style="--o:13">${card(dcon)}</div></div>
   </div></section>`;
 }
