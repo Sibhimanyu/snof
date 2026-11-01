@@ -282,7 +282,7 @@ body[data-route="area"] .searchbar{display:block}
   .search-icon{left:14px!important;top:22px!important}
   body[data-route] .view .page-head{padding-right:min(380px,36vw)}
   body[data-route="overview"] .view .page-head,body[data-route="irrigation"] .view .page-head,
-  body[data-route="sys"] .view .page-head,body[data-route="water"] .view .page-head,
+  body[data-route="sys"] .view .page-head,body[data-route="water"] .view .page-head,body[data-route="motor"] .view .page-head,
   body[data-route="admin"] .view .page-head{padding-right:0}
 }
 @media (max-width:900px){
@@ -515,7 +515,7 @@ input[type=range][disabled]{opacity:.42}
 /* ---------- Mobitech account ---------- */
 .mb-panel{padding:20px 22px;display:flex;flex-direction:column;gap:14px}
 .mb-panel .rep-builder{padding:0;border:0;background:transparent}
-.mb-panel .more-note{margin:0;padding:0;border:0}
+.mb-panel .more-note,.panel.mb-panel .more-note{margin:0;padding:0;border:0}
 .mb-lead{font-size:13.5px;color:var(--muted);max-width:70ch}
 .mb-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 20px;
   padding:14px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
@@ -848,6 +848,7 @@ input[type=range][disabled]{opacity:.42}
 @media (max-width:900px){ .head-actions .pill-head{display:none} }
 .now{display:flex;flex-direction:column;gap:8px;padding:20px 22px;background:var(--tint);border-color:var(--tint-line);box-shadow:none}
 .now-top{display:flex;align-items:center;gap:10px}
+@media (max-width:480px){ .now-top{flex-wrap:wrap} .now-checked{margin-left:0;flex:1 1 auto} .now-top .btn{flex:none} }
 .now-label{white-space:nowrap;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
 .now-label .dot{width:8px;height:8px;border-radius:50%;background:var(--line-2)}
 .now.is-on .now-label{color:var(--accent)}
@@ -901,7 +902,7 @@ input[type=range][disabled]{opacity:.42}
 details.acct-sec{margin-top:28px}
 details.acct-sec > summary,.wdetails > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
   font-size:13px;font-weight:700;color:var(--muted);min-height:44px}
-details.acct-sec > summary{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+details.acct-sec > summary{font-size:15px;font-weight:700;color:var(--text)}
 details.acct-sec > summary::-webkit-details-marker,.wdetails > summary::-webkit-details-marker{display:none}
 details.acct-sec > summary::after,.wdetails > summary::after{content:"";width:7px;height:7px;margin-left:2px;
   border-right:1.8px solid currentColor;border-bottom:1.8px solid currentColor;rotate:45deg;translate:0 -2px;transition:rotate .2s var(--ease)}
