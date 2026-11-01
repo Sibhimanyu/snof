@@ -807,7 +807,9 @@ function unreadController() {
   const e = irrig().meta?.errors?.controller;
   if (!e?.error) return '';
   if ((e.at || 0) < (irrig().program?.at || 0)) return '';
-  return unreadWords(e.error);
+  const words = unreadWords(e.error);
+  if (words.includes('signed SNOF out') && (state.mobitechStatus?.at || 0) > (e.at || 0)) return '';
+  return words;
 }
 /** Why a water motor cannot be read now, or ''. */
 function unreadMotor(m) {
@@ -3237,6 +3239,46 @@ function unreadHero(title, reason, action = '', footnote = '') {
   </section>`;
 }
 
+/* One sign-in card for a vendor session (Mobitech `mb`, Livesky `ls`), used
+ * whenever SNOF is signed out: a title, why in one line, then the number and
+ * the code as two steps. Never shows the dead session's facts as current.
+ * v: {p, title, reason, step, mobile, code, busy, error, last4, resendAt,
+ *     cancel}. The data-act names are `${p}-mobile|code|send|signin|back|
+ *     resend|cancel`, wired in wire(). */
+function signInCard(v) {
+  const p = v.p, dis = v.busy ? ' disabled' : '';
+  let body;
+  if (v.step === 'code') {
+    const tail = mobitechDigits(v.mobile).slice(-4);
+    body = `<p class="si-sent">Code sent to ${tail ? `…${escapeHtml(tail)}` : 'your number'}</p>
+      <div class="si-row">
+        <label class="rep-field"><span>Code from the SMS</span>
+          <input id="${p}-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
+                 value="${escapeHtml(v.code)}" data-act="${p}-code"></label>
+        <button class="btn btn-primary" data-act="${p}-signin"${dis}>${v.busy ? 'Signing in…' : 'Sign in'}</button>
+      </div>
+      ${v.error ? `<p class="si-err" role="alert">${escapeHtml(v.error)}</p>` : ''}
+      <div class="si-links">
+        <button class="si-link" data-act="${p}-back"${dis}>Change number</button>
+        <button class="si-link" data-act="${p}-resend" data-resend-at="${v.resendAt || 0}"${dis}>Resend code</button>
+      </div>`;
+  } else {
+    body = `<div class="si-row">
+        <label class="rep-field"><span>Mobile number</span>
+          <input id="${p}-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
+                 value="${escapeHtml(v.mobile)}" data-act="${p}-mobile"></label>
+        <button class="btn btn-primary" data-act="${p}-send"${dis}>${v.busy ? 'Sending…' : 'Send code'}</button>
+      </div>
+      ${v.error ? `<p class="si-err" role="alert">${escapeHtml(v.error)}</p>` : v.last4 ? `<p class="si-hint">Last used: number ending ${escapeHtml(v.last4)}</p>` : ''}
+      ${v.cancel ? `<div class="si-links"><button class="si-link" data-act="${p}-cancel"${dis}>Cancel</button></div>` : ''}`;
+  }
+  return `<section class="panel signin-card">
+    <h2 class="uh-title">${escapeHtml(v.title)}</h2>
+    ${v.reason ? `<p class="uh-reason">${escapeHtml(v.reason)}</p>` : ''}
+    ${body}
+  </section>`;
+}
+
 /** One motor's own page: its controls, readings and reports. */
 function motorView(key) {
   const back = `<a class="back" href="#/water">${arrow('i-back')}Water</a>`;
@@ -3249,16 +3291,18 @@ function motorView(key) {
     if (why) {
       // Nothing from before: the page leads to the fix (owner, 2026-09-26).
       const out = why.includes('signed SNOF out');
+      if (out && isOwner()) {
+        // One card: why, and the sign-in itself (owner, 2026-11-01).
+        return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false,
+          mobitechPanel("Mobitech ended SNOF's session because the account signed in somewhere else.", true));
+      }
       const hero = out
         ? unreadHero('SNOF is signed out of Mobitech',
-            'Mobitech ended SNOF\'s session because the account signed in somewhere else. Nothing here can be read until SNOF signs in again.',
-            isOwner() && mbStep === 'idle' ? `<button class="btn btn-primary uh-btn" data-act="mb-start">Sign in to Mobitech</button>` : '',
-            isOwner() ? '' : `${ownerName()} needs to sign in again.`)
+            "Mobitech ended SNOF's session because the account signed in somewhere else. Nothing here can be read until SNOF signs in again.",
+            '', `${ownerName()} needs to sign in again.`)
         : unreadHero("Can't read the controller", `${why}. Nothing here can be read until it answers.`,
             canControl ? `<button class="btn btn-primary uh-btn" data-act="irr-refresh">Try again</button>` : '');
-      // The sign-in form opens right under the card when asked for.
-      const form = out && isOwner() && mbStep !== 'idle' ? mobitechPanel() : account;
-      return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false, hero + form);
+      return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false, hero + (out ? '' : account));
     }
     return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false,
       `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
@@ -3279,15 +3323,15 @@ function motorView(key) {
   if (why) {
     // Nothing from before: the page leads to the fix (owner, 2026-09-26).
     const signIn = isRiver && ['none', 'expired'].includes(liveskyState().kind);
+    if (signIn && isOwner()) {
+      return head(m.name || 'Motor', sub, '', back) + waterFrame(key, false, liveskyPanel(`${why}.`, true));
+    }
     const hero = signIn
       ? unreadHero('SNOF is signed out of Livesky', `${why}. Nothing here can be read until SNOF signs in again.`,
-          isOwner() && lsStep === 'idle' ? `<button class="btn btn-primary uh-btn" data-act="ls-start">Sign in to Livesky</button>` : '',
-          isOwner() ? '' : `${ownerName()} needs to sign in again.`)
+          '', `${ownerName()} needs to sign in again.`)
       : unreadHero(`Can't read ${m.name || 'this motor'}`, `${why}. Nothing here can be read until it answers.`,
           `<button class="btn btn-primary uh-btn" data-act="water-refresh">Try again</button>`);
-    // The sign-in form opens right under the card when asked for.
-    const form = signIn && isOwner() && lsStep !== 'idle' ? liveskyPanel() : '';
-    return head(m.name || 'Motor', sub, '', back) + waterFrame(key, false, hero + form);
+    return head(m.name || 'Motor', sub, '', back) + waterFrame(key, false, hero);
   }
   // Refresh and the on/off button (armed motors only) sit in the page bar.
   const bar = `<div class="head-actions wm-acts">${motorControls(m, 'button')}<button class="btn btn-ghost btn-sm" data-act="water-refresh">Refresh</button></div>`;
@@ -3303,7 +3347,7 @@ function motorView(key) {
  * keeps the token in /private/livesky; this page only sends the number, the
  * code and the caller's Firebase ID token, and never sees the Livesky token. */
 let lsStep = 'idle';     // idle | mobile | code
-let lsMobile = '', lsCode = '', lsBusy = false, lsError = '', lsInfo = '';
+let lsMobile = '', lsCode = '', lsBusy = false, lsError = '', lsInfo = '', lsResendAt = 0;
 
 async function waterSession(body) {
   const projectId = firebase.app().options.projectId;
@@ -3324,7 +3368,7 @@ async function liveskySendCode() {
   lsBusy = true; lsError = ''; lsInfo = ''; render();
   try {
     await waterSession({ action: 'send_code', mobile });
-    lsStep = 'code'; lsCode = '';
+    lsStep = 'code'; lsCode = ''; lsResendAt = Date.now() + 30000;
     lsInfo = `Livesky sent a code to the number ending ${mobile.slice(-4)}.`;
   } catch (err) {
     lsError = `No code sent: ${err.message}`;
@@ -3368,47 +3412,32 @@ function liveskyState() {
   return { kind: 'ok', text: '' };
 }
 
-function liveskyPanel() {
+function liveskyPanel(reason = '', force = false) {
   const st = state.meta?.water?.livesky || {};
   const s = liveskyState();
-  const facts = st.signedInAt || st.expires ? `<div class="mb-facts">
+  const out = ['none', 'expired'].includes(s.kind);
+  const signedIn = !out && !force && (st.signedInAt || st.expires);
+  if (isOwner() && (force || out || lsStep !== 'idle')) {
+    return signInCard({ p: 'ls', title: signedIn ? 'Sign in to Livesky again' : 'Sign in to Livesky',
+      reason: signedIn ? '' : (reason || (s.kind === 'expired' ? `The Livesky session ended ${mbWhen(st.expires)}.` : 'SNOF is not signed in to Livesky, so the river motor cannot be read.')),
+      step: lsStep === 'code' ? 'code' : 'mobile', mobile: lsMobile, code: lsCode, busy: lsBusy, error: lsError,
+      last4: st.mobileLast4, resendAt: lsResendAt, cancel: !!signedIn });
+  }
+  // The ended session's facts are never shown as current.
+  const facts = !out && (st.signedInAt || st.expires) ? `<div class="mb-facts">
       ${st.mobileLast4 ? `<div><span>Number</span><strong>ending ${escapeHtml(st.mobileLast4)}</strong></div>` : ''}
       ${st.signedInAt ? `<div><span>Since</span><strong>${escapeHtml(mbWhen(st.signedInAt))}</strong></div>` : ''}
       ${st.expires ? `<div><span>Session ends</span><strong>${escapeHtml(mbWhen(st.expires))}</strong></div>` : ''}
       <div><span>Last reading</span><strong>${st.at ? escapeHtml(mbWhen(st.at)) : 'none yet'}</strong></div>
     </div>` : '';
   const status = s.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(s.text)}</p>`;
-  let form;
-  if (!isOwner()) {
-    form = `<p class="more-note">Only ${escapeHtml(owner?.name || 'the farm owner')} signs SNOF in to Livesky. Everyone uses that session.</p>`;
-  } else if (lsStep === 'mobile') {
-    form = `<div class="rep-builder" data-key="livesky">
-        <label class="rep-field"><span>Livesky mobile number</span>
-          <input id="ls-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
-                 value="${escapeHtml(lsMobile)}" data-act="ls-mobile"></label>
-        <button class="btn btn-primary" data-act="ls-send"${lsBusy ? ' disabled' : ''}>${lsBusy ? 'Sending…' : 'Send code'}</button>
-        <button class="btn btn-ghost" data-act="ls-cancel"${lsBusy ? ' disabled' : ''}>Cancel</button>
+  const form = !isOwner()
+    ? `<p class="more-note">Only ${escapeHtml(owner?.name || 'the farm owner')} signs SNOF in to Livesky. Everyone uses that session.</p>`
+    : `<div class="mb-actions">
+        <button class="btn btn-primary" data-act="ls-start">Sign in again</button>
+        <button class="btn btn-ghost" data-act="ls-signout"${lsBusy ? ' disabled' : ''}>Sign out</button>
       </div>`;
-  } else if (lsStep === 'code') {
-    form = `<div class="rep-builder" data-key="livesky">
-        <label class="rep-field"><span>Code from the SMS</span>
-          <input id="ls-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
-                 value="${escapeHtml(lsCode)}" data-act="ls-code"></label>
-        <button class="btn btn-primary" data-act="ls-signin"${lsBusy ? ' disabled' : ''}>${lsBusy ? 'Signing in…' : 'Sign in'}</button>
-        <button class="btn btn-ghost" data-act="ls-back"${lsBusy ? ' disabled' : ''}>Use another number</button>
-      </div>`;
-  } else {
-    const signedIn = st.signedInAt || st.expires;
-    form = `<div class="mb-actions">
-        <button class="btn btn-primary" data-act="ls-start">${signedIn ? 'Sign in again' : 'Sign in to Livesky'}</button>
-        ${signedIn ? `<button class="btn btn-ghost" data-act="ls-signout"${lsBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
-      </div>`;
-  }
-  return `<section class="panel mb-panel">
-      ${facts}${status}${form}
-      ${lsInfo ? `<p class="more-note">${escapeHtml(lsInfo)}</p>` : ''}
-      ${lsError ? `<p class="more-note note-off">${escapeHtml(lsError)}</p>` : ''}
-    </section>`;
+  return `<section class="panel mb-panel">${facts}${status}${form}</section>`;
 }
 
 /* ---- admin (add people, grant/revoke view + control) ---- */
@@ -3568,9 +3597,10 @@ function adminRow(uid, person) {
  * whether it lets one user keep two sessions (the phone may be signed out). */
 /** "98765 43210", "+91 98765 43210" -> "9876543210" (the Livesky number too). */
 const mobitechDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+let resendTimer = 0;
 let mbBusy = false, mbError = '', mbInfo = '';
 let mbStep = 'idle';     // idle | mobile | code
-let mbMobile = '', mbCode = '';
+let mbMobile = '', mbCode = '', mbResendAt = 0;
 
 /** Stop SNOF using its session. The Mobitech logout call needs the token,
  *  which no client can read, so the session stays registered at Mobitech
@@ -3606,7 +3636,7 @@ async function mobitechSendCode() {
   mbBusy = true; mbError = ''; mbInfo = ''; render();
   try {
     await mobitechSession({ action: 'send_code', mobile });
-    mbStep = 'code'; mbCode = '';
+    mbStep = 'code'; mbCode = ''; mbResendAt = Date.now() + 30000;
     mbInfo = `Mobitech sent a code to the number ending ${mobile.slice(-4)}.`;
   } catch (err) {
     mbError = `No code sent: ${err.message}`;
@@ -3622,6 +3652,7 @@ async function mobitechSignIn() {
     const j = await mobitechSession({ action: 'verify', mobile: mobitechDigits(mbMobile), code });
     mbStep = 'idle'; mbMobile = ''; mbCode = ''; mbInfo = '';
     toast('ok', `Signed SNOF in to Mobitech${j.name ? ` as ${j.name}` : ''}.`);
+    if (canControl) refreshIrrigation(true);
   } catch (err) {
     mbError = `Not signed in: ${err.message}`;
   }
@@ -3640,51 +3671,33 @@ function mobitechState() {
   return { kind: 'ok', text: '' };
 }
 
-function mobitechPanel() {
+function mobitechPanel(reason = '', force = false) {
   const st = state.mobitechStatus || {};
   const m = mobitechState();
+  const out = m.kind !== 'ok';
+  if (isOwner() && (force || out || mbStep !== 'idle')) {
+    const signedIn = !out && !force;
+    return signInCard({ p: 'mb', title: signedIn ? 'Sign in to Mobitech again' : 'Sign in to Mobitech',
+      reason: signedIn ? '' : (reason || (m.kind === 'rejected' ? `Mobitech rejected SNOF's session at ${mbWhen(st.lastRejected)}.` : 'SNOF is not signed in to Mobitech, so valve commands are off.')),
+      step: mbStep === 'code' ? 'code' : 'mobile', mobile: mbMobile, code: mbCode, busy: mbBusy, error: mbError,
+      last4: st.mobileLast4, resendAt: mbResendAt, cancel: signedIn });
+  }
   const who = st.at ? `${escapeHtml(st.name || st.user || 'the farm account')}${st.user && st.name ? ` (${escapeHtml(st.user)})` : ''}` : '';
-  const facts = st.at ? `<div class="mb-facts">
+  // The dead session's facts are never shown as current.
+  const facts = !out && st.at ? `<div class="mb-facts">
       <div><span>Signed in as</span><strong>${who}</strong></div>
       <div><span>Number</span><strong>ending ${escapeHtml(st.mobileLast4 || '····')}</strong></div>
       <div><span>Since</span><strong>${escapeHtml(mbWhen(st.at))}</strong></div>
       <div><span>Last command</span><strong>${st.lastOk ? `accepted ${escapeHtml(mbWhen(st.lastOk))}` : 'none yet'}</strong></div>
     </div>` : '';
   const status = m.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(m.text)}</p>`;
-  let form = '';
-  if (!isOwner()) {
-    form = `<p class="more-note">Only ${escapeHtml(owner?.name || 'the farm owner')} signs SNOF in to Mobitech. Everyone uses that session.</p>`;
-  } else {
-    // Same flow as the Livesky form; the function reaches Mobitech through
-    // the farm box (a browser cannot, and Google Cloud is refused).
-    if (mbStep === 'mobile') {
-      form = `<div class="rep-builder" data-key="mobitech">
-        <label class="rep-field"><span>Mobitech mobile number</span>
-          <input id="mb-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
-                 value="${escapeHtml(mbMobile)}" data-act="mb-mobile"></label>
-        <button class="btn btn-primary" data-act="mb-send"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Sending…' : 'Send code'}</button>
-        <button class="btn btn-ghost" data-act="mb-cancel"${mbBusy ? ' disabled' : ''}>Cancel</button>
+  const form = !isOwner()
+    ? `<p class="more-note">Only ${escapeHtml(owner?.name || 'the farm owner')} signs SNOF in to Mobitech. Everyone uses that session.</p>`
+    : `<div class="mb-actions">
+        <button class="btn btn-primary" data-act="mb-start">Sign in again</button>
+        <button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign out</button>
       </div>`;
-    } else if (mbStep === 'code') {
-      form = `<div class="rep-builder" data-key="mobitech">
-        <label class="rep-field"><span>Code from the SMS</span>
-          <input id="mb-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
-                 value="${escapeHtml(mbCode)}" data-act="mb-code"></label>
-        <button class="btn btn-primary" data-act="mb-signin"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Signing in…' : 'Sign in'}</button>
-        <button class="btn btn-ghost" data-act="mb-back"${mbBusy ? ' disabled' : ''}>Use another number</button>
-      </div>`;
-    } else {
-      form = `<div class="mb-actions">
-        <button class="btn btn-primary" data-act="mb-start">${st.at ? 'Sign in again' : 'Sign in to Mobitech'}</button>
-        ${st.at ? `<button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
-      </div>`;
-    }
-  }
-  return `<section class="panel mb-panel">
-      ${facts}${status}${form}
-      ${mbInfo ? `<p class="more-note">${escapeHtml(mbInfo)}</p>` : ''}
-      ${mbError ? `<p class="more-note note-off">${escapeHtml(mbError)}</p>` : ''}
-    </section>`;
+  return `<section class="panel mb-panel">${facts}${status}${form}</section>`;
 }
 
 /* ---- Farm box add-on update (admins) ----
@@ -4044,6 +4057,21 @@ function wire(all) {
   view.querySelectorAll('[data-act="mb-start"]').forEach((btn) => {
     btn.onclick = () => { mbStep = 'mobile'; mbError = ''; mbInfo = ''; render(); };
   });
+  view.querySelectorAll('[data-act="mb-resend"]').forEach((btn) => { btn.onclick = () => mobitechSendCode(); });
+  view.querySelectorAll('[data-act="ls-resend"]').forEach((btn) => { btn.onclick = () => liveskySendCode(); });
+  // Resend waits out the server's 30 s limit, counted down on the button.
+  clearInterval(resendTimer);
+  const resendBtns = view.querySelectorAll('[data-resend-at]');
+  if (resendBtns.length) {
+    const tick = () => resendBtns.forEach((btn) => {
+      const left = Math.ceil((Number(btn.dataset.resendAt) - Date.now()) / 1000);
+      const busy = btn.dataset.act === 'mb-resend' ? mbBusy : lsBusy;
+      btn.disabled = left > 0 || busy;
+      btn.textContent = left > 0 ? `Resend code (${left}s)` : 'Resend code';
+      if (left <= 0) clearInterval(resendTimer);
+    });
+    tick(); resendTimer = setInterval(tick, 500);
+  }
   view.querySelectorAll('[data-act="mb-cancel"]').forEach((btn) => {
     btn.onclick = () => { mbStep = 'idle'; mbMobile = ''; mbError = ''; render(); };
   });

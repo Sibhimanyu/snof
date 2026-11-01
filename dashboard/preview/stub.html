@@ -116,6 +116,13 @@
     data.mobitech_status={at:now-86400000,uid:'u1',name:'Sibhi',user:'sibhi',mobileLast4:'4321',lastOk:now-3600000};
     if(params.get('mobitech')==='rejected') data.mobitech_status.lastRejected=now-600000;
   }
+  // ?mbout=1: the owner's SNOF session ended elsewhere (controller read fails
+  // with "signed this session out"; the dead session's status line stays).
+  if(params.get('mbout')){
+    const now=Date.now();
+    data.mobitech_status={at:now-15*86400000,uid:'u1',name:'Sibhi',user:'sibhi',mobileLast4:'2360'};
+    data.irrigation.meta.errors={controller:{error:'DCON controller: Mobitech signed this session out (other mobile)',at:now-60000}};
+  }
   const M=(label,value,unit,note)=>({label,value,unit:unit||'',note:note||''});
   const SEC=(kind,title,rows,extra)=>({kind,title,note:'',source:'dcon',status:'ok',error:'',rows:rows||[],...(extra||{})});
   const PRESS=[{at:'2026-02-20 06:00',value:'1.8',unit:'bar'},{at:'2026-02-20 12:00',value:'2.4',unit:'bar'},
@@ -173,7 +180,7 @@
       data.entities[d]['gen_'+i]={name:n,entity_id:d+'.gen_'+i,state:st,attrs};
     }
   }
-  const user=params.get('gate')?null:{uid:'u1',email:'sibhi@example.com',displayName:'Sibhi Govindasamy'};
+  const user=params.get('gate')?null:{uid:'u1',email:'sibhi@example.com',displayName:'Sibhi Govindasamy',getIdToken:()=>Promise.resolve('x')};
   const denied=params.get('denied');
   const controller=params.get('viewer')?false:true;
   // ?replay=1: the whole farm tree exactly as production had it, from a local
@@ -190,6 +197,21 @@
   }
   const isAdmin=params.get('admin')==='0'?false:!params.get('viewer');
   const store={'acl/controllers/u1':controller,'acl/admins/u1':isAdmin,'.info/serverTimeOffset':0,'.info/connected':!params.get('offline')};
+  // ?owner=1 (or ?mbout=1): this account is the owner who signs SNOF in to
+  // vendors. The sign-in functions are faked: send_code works, verify
+  // refuses any code but 123456.
+  if(params.get('owner')||params.get('mbout')){
+    store['acl/owner']={email:'sibhi@example.com',name:'Sibhi'};
+    const realFetch=window.fetch;
+    window.fetch=function(u,o){
+      if(/cloudfunctions\.net\/(mobitech|water)_session/.test(String(u))){
+        const b=JSON.parse((o&&o.body)||'{}');
+        const bad=b.action==='verify'&&b.code!=='123456';
+        return Promise.resolve(new Response(JSON.stringify(bad?{ok:false,error:'That code was not right.'}:{ok:true}),{status:bad?400:200}));
+      }
+      return realFetch.apply(this,arguments);
+    };
+  }
   // A couple of other accounts, so the Admin page has something to list.
   data.acl={
     admins:{u1:true},
