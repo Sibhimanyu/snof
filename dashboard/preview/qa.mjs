@@ -594,7 +594,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     // The cooldown holds a start (never a stop).
     state.water.river.running=false; state.meta.motorControl.lastByMotor={river:serverNow()-30000}; render();
     return {t,cool:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,
-      why:document.querySelector('#view .wmotor-actions + .more-note')?.textContent||''};});
+      why:document.querySelector('#view .wm-why')?.textContent||''};});
   check('one press writes one command: motor, action, uid, at, clientAt and nothing else',
     writes.length===1&&/"motor":"river","action":"off","uid":"[^"]+","at":/.test(writes[0])&&!/valves|keyword|sentSms|status/.test(writes[0]), writes.join(' | '));
   check('the button closes while the motor confirms', busy===true);
@@ -602,7 +602,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('the per-motor cooldown closes the button, with the wait', after.cool===true&&/Wait \d+s/.test(after.why), after.why);
   check('a press carries its own time (clientAt), so a queued-offline write is refused', /"clientAt":\d{12,}/.test(writes[0]||''), writes[0]||'');
   const off=await p.evaluate(()=>{dbConnected=false;state.meta.motorControl.lastByMotor={};render();
-    return {d:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,why:document.querySelector('#view .wmotor-actions + .more-note')?.textContent||''};});
+    return {d:document.querySelector('#view [data-act="motor-cmd"]')?.disabled,why:document.querySelector('#view .wm-why')?.textContent||''};});
   check('no motor press while offline', off.d===true&&/Offline/.test(off.why), off.why);
   await c.close();
 }
@@ -672,6 +672,27 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   await p.goto(p.url().replace('#/','#/sys/solar')); await p.waitForTimeout(400);
   const secs=await p.evaluate(()=>[...document.querySelectorAll('.pw-sec .panel-title')].map(t=>t.textContent));
   check('the Power page has a panel per line', secs.length===3, secs.join(', '));
+  await c.close();
+}
+{
+  // Chunk 3 and 4 (2026-11-01): Home's water chain lies across a wide card,
+  // green only where a current reading says water flows; Water and a motor's
+  // page are two panes on a wide screen, each source one equal row/card.
+  const [p,c]=await open('?live=1&watering=1#/');
+  await p.waitForSelector('#view .wchain');
+  const h=await p.evaluate(()=>{const cs=[...document.querySelectorAll('#view .wchain .wc-cell')];
+    return {n:cs.length, shown:getComputedStyle(document.querySelector('#view .wchain')).display, rail:getComputedStyle(document.querySelector('#view .wpath.is-compact')).display,
+      on:cs.map(x=>x.classList.contains('is-on')), gaps:[...document.querySelectorAll('#view .wchain .wc-pipe i.on')].length,
+      w:new Set(cs.map(x=>Math.round(x.getBoundingClientRect().width))).size};});
+  check('Home draws the water chain across, four equal stations, the rail hidden', h.n>=4&&h.shown==='grid'&&h.rail==='none'&&h.w===1, JSON.stringify(h));
+  check('chain pipe is green only beside running motors', h.on[0]&&h.gaps>=2, JSON.stringify(h));
+  await p.goto(p.url().replace('#/','#/water')); await p.waitForTimeout(300);
+  const w=await p.evaluate(()=>({cols:getComputedStyle(document.querySelector('#view .wmd')).gridTemplateColumns.split(' ').length, cards:document.querySelectorAll('#view .wsum-card').length}));
+  check('Water is a list with a four-card summary beside it', w.cols===2&&w.cards>=4, JSON.stringify(w));
+  await p.goto(p.url().replace('#/water','#/motor/river')); await p.waitForTimeout(300);
+  const m=await p.evaluate(()=>({sel:document.querySelector('#view .wp-motor.is-sel')?.getAttribute('href'), metrics:document.querySelectorAll('#view .wm-metrics > div').length,
+    details:document.querySelectorAll('#view .wdetails').length}));
+  check("a motor's page keeps the list beside it, its readings shown, not folded away", m.sel==='#/motor/river'&&m.metrics>=2&&m.details===0, JSON.stringify(m));
   await c.close();
 }
 await b.close();

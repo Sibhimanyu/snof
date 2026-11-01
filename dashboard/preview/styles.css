@@ -1382,3 +1382,115 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .uh-do{font-size:14px;font-weight:600;color:var(--text)}
 .uh-btn{align-self:stretch;min-height:48px;font-size:15.5px}
 .uh-inline{color:var(--warn)}
+/* ---------- Home on a wide screen (chunk 3) ----------
+   Water leads across the full width, Power beside Irrigation + Security
+   stacked to its height (rows share height, so no card is stretched past its
+   content), then Switches with the farm's systems beside them. */
+@media (min-width:621px){
+  .vcards:has(> .flow){grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .vcards > .flow{grid-column:1 / -1}
+  .vcards:has(> .flow) > .power{grid-row:span 2}
+}
+.flow{container-type:inline-size}
+.wchain{display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);padding:4px 12px 12px}
+.wc-cell{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:6px 0 10px;border-radius:var(--r);color:inherit;min-width:0}
+.wc-cell:hover{background:var(--panel-2)}
+.wc-cell > strong,.wc-cell > small,.wc-state{padding:0 10px;max-width:100%}
+.wc-cell > strong{font-size:15px;font-weight:700;color:var(--text);overflow-wrap:anywhere}
+.wc-cell > small{font-size:12.5px;color:var(--muted)}
+.wc-pipe{display:flex;align-items:center;width:100%;height:48px;margin-bottom:6px}
+.wc-pipe i{flex:1;height:4px;background:var(--line-2)}
+.wc-pipe i.on{background:var(--brand)}
+.wc-pipe i.none{background:transparent}
+.wc-state{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:5px}
+.wc-state em{font-style:normal;font-size:11.5px;color:var(--faint);white-space:nowrap}
+@container (min-width:680px){
+  .wpath.is-compact{display:none}
+  .wchain{display:grid}
+}
+.home-low{display:block}
+.home-low .tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+@media (min-width:1100px){
+  .home-low.two{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:0 28px;align-items:start}
+  /* Around the farm: one row per system beside the switches. */
+  .home-low.two .sys-sec{margin-top:0}
+  .home-low.two .sys-grid{grid-template-columns:1fr}
+  .home-low.two .sys-tile{display:grid;grid-template-columns:36px minmax(0,1fr);column-gap:12px;row-gap:1px;align-content:center;min-height:66px;padding:10px 14px}
+  .home-low.two .sys-tile .sys-ico{grid-row:1 / 4;margin:0;align-self:center}
+}
+.sys-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+@media (max-width:620px){ .sys-grid{grid-template-columns:1fr 1fr} }
+
+/* ---------- Water: two panes, and the motor page (chunk 4) ---------- */
+.wmd-list .wpath{max-width:none}
+.wp-motor.is-sel{background:var(--panel-2);box-shadow:inset 3px 0 0 var(--brand)}
+.wsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;align-items:stretch}
+.wsum-card{display:flex;flex-direction:column;gap:4px;padding:18px 20px;color:inherit;min-width:0}
+.wsum-card:hover{box-shadow:var(--shadow-card-hover)}
+.wsum-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.wsum-name{font-size:17px;font-weight:750;letter-spacing:-.02em;color:var(--text)}
+.wsum-line{font-size:13px;color:var(--muted)}
+.wsum-age{font-style:normal;font-size:12px;color:var(--faint)}
+.wsum-facts{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:auto;padding-top:12px;font-size:14px;font-weight:650;color:var(--text);font-variant-numeric:tabular-nums}
+.wsum-facts span{display:flex;flex-direction:column;gap:1px}
+.wsum-facts small{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+@media (max-width:1099px){
+  .wmd.is-motor .wmd-list,.wmd.is-water .wmd-detail{display:none}
+}
+/* The controller's page beside the list: one column until the pane is wide. */
+@media (min-width:1100px) and (max-width:1439px){
+  .wmd-detail .irr-grid{grid-template-columns:minmax(0,1fr)}
+}
+.wmd-detail .now-top{flex-wrap:wrap}
+.wmd-detail .now-checked{flex:1 1 auto;margin-left:0}
+@media (min-width:1100px){
+  .wmd{display:grid;grid-template-columns:minmax(330px,380px) minmax(0,1fr);gap:20px;align-items:start}
+  .wmd-list{position:sticky;top:84px}
+  .wmd-list .wp-go{display:none}
+  .wmd-list .wp-row{grid-template-columns:56px minmax(0,1fr) auto}
+  .wmd-list .wp-branch{grid-template-columns:56px 50px minmax(0,1fr) auto}
+  .wmd-detail .unread-hero{max-width:640px}
+  /* The list is the way back to Water. */
+  body[data-route="motor"] .view .page-head .back{display:none}
+}
+.wmd-detail{min-width:0}
+.wm-hero{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:18px 28px;padding:22px 24px}
+.wm-state{display:flex;align-items:flex-start;gap:16px;min-width:0}
+.wm-art{width:56px;height:56px;padding:9px;border-radius:16px}
+.wm-word{display:flex;flex-direction:column;gap:5px;min-width:0}
+.wm-word > strong{font-size:30px;font-weight:750;letter-spacing:-.04em;line-height:1.05;color:var(--ink)}
+.wm-hero.is-on .wm-word > strong{color:var(--accent)}
+.wm-word > span{font-size:14px;color:var(--muted)}
+.wm-line{display:flex;flex-direction:column;gap:1px;margin-top:4px}
+.wm-line i{font-style:normal;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.wm-line b{font-size:15px;font-weight:650;color:var(--text)}
+.wm-line .as-of{font-size:12px;font-style:normal;font-weight:600;color:var(--warn)}
+.wm-word > small{font-size:12.5px;color:var(--faint)}
+.wm-metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;align-content:start}
+.wm-metrics > div{display:flex;flex-direction:column;gap:3px;min-width:0;padding:12px 14px;border-radius:var(--r);background:var(--panel-2)}
+.wm-metrics span{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.wm-metrics strong{font-size:16px;font-weight:700;letter-spacing:-.015em;color:var(--text);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.wm-metrics .as-of{font-size:12px;font-style:normal;font-weight:600;color:var(--warn)}
+.wm-notes{grid-column:1 / -1;display:flex;flex-direction:column;gap:6px}
+.wm-hero .wm-notes .more-note{margin:0}
+.wm-control{margin-top:14px;padding:18px 24px;display:flex;flex-direction:column;gap:10px}
+.wm-control .wzones{margin-top:0}
+.wm-control .more-note{margin:0;padding:0;border:0}
+/* Page bar: Refresh and the on/off button at the right edge. */
+.wm-acts{margin-left:auto}
+.wm-acts .now-actions{margin:0}
+.wm-acts .now-actions .btn{flex:none;min-height:36px;padding:0 18px;font-size:13.5px}
+@media (max-width:1099px) and (min-width:621px){ .wm-hero{grid-template-columns:minmax(0,5fr) minmax(0,7fr)} }
+@media (max-width:760px) and (min-width:621px){ .wm-hero{grid-template-columns:1fr} }
+@media (max-width:620px){
+  .wm-hero{grid-template-columns:1fr;padding:18px 16px;gap:16px}
+  .wm-word > strong{font-size:26px}
+  .wm-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wm-control{padding:16px}
+  /* On a phone the bar's buttons take a full row, the on/off one first and big. */
+  .page-head:has(.wm-acts){flex-wrap:wrap}
+  .wm-acts{flex:1 1 100%;margin-left:0;flex-direction:row-reverse;gap:10px}
+  .wm-acts .now-actions{flex:1}
+  .wm-acts .now-actions .btn{width:100%;min-height:48px;font-size:15.5px}
+  .wm-acts .btn-ghost{min-height:48px;padding:0 18px}
+}

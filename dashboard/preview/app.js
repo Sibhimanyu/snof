@@ -1421,7 +1421,15 @@ function overviewView(all) {
   const heard = !!(state.meta && (state.meta.bridge || state.meta.updatedAt));
   return head('Home', '', `<div class="head-actions">${pill}${refresh}</div>`) + (heard ? attentionPanel(attentionItems(all, systems)) : '') + haNote() +
     `<div class="vcards">${flowHero()}${powerPanel(systems)}${irrigationCard()}${securityCard(systems)}</div>` +
-    switchTiles(all) + systemsGrid(systems);
+    homeLow(switchTiles(all), systemsGrid(systems));
+}
+
+/** Switches and "Around the farm" share a row on a wide screen (switch tiles
+ *  two thirds, the farm's systems a column beside them), so neither leaves a
+ *  stripe of nothing; with only one of them it takes the full width. */
+function homeLow(sw, sys) {
+  if (!sw && !sys) return '';
+  return `<div class="home-low${sw && sys ? ' two' : ''}">${sw}${sys}</div>`;
 }
 
 /* ---- one system, in full ---- */
@@ -2544,7 +2552,7 @@ function zoneControls(m) {
 }
 
 /** The on/off control on a motor's card: only for an armed motor. */
-function motorControls(m) {
+function motorControls(m, part = 'both') {
   const key = m.key;
   if (!key || !motorArmed(key)) return '';
   const busy = motorCmd && motorCmdKey === key;
@@ -2552,9 +2560,12 @@ function motorControls(m) {
   const why = motorRefusal(key, action) || (!waterCurrent(m) ? 'The reading is not current. Refresh before switching.' : '')
     || (m.running == null ? "The motor's state is unknown." : '');
   const label = busy ? (motorCmdConfirming ? 'Confirming…' : 'Sending…') : action === 'on' ? 'Turn on' : 'Turn off';
-  return `<div class="now-actions wmotor-actions"><button class="btn ${action === 'on' ? 'btn-primary' : 'btn-danger'}" data-act="motor-cmd"` +
-    ` data-motor="${escapeHtml(key)}" data-action="${action}"${why ? ' disabled' : ''}>${label}</button></div>` +
-    (why ? `<p class="more-note${busy ? '' : ' note-off'}">${escapeHtml(why)}</p>` : '');
+  // `part` only chooses where the same markup is drawn: the button in the page
+  // bar and the reason in the card (the web's motor page); nothing else.
+  const button = `<div class="now-actions wmotor-actions"><button class="btn ${action === 'on' ? 'btn-primary' : 'btn-danger'}" data-act="motor-cmd"` +
+    ` data-motor="${escapeHtml(key)}" data-action="${action}"${why ? ' disabled' : ''}>${label}</button></div>`;
+  const note = why ? `<p class="more-note wm-why${busy ? '' : ' note-off'}">${escapeHtml(why)}</p>` : '';
+  return part === 'button' ? button : part === 'note' ? note : button + note;
 }
 
 /* ---- Refresh: three ordinary report requests ----
@@ -2999,6 +3010,30 @@ function waterMotorCard(m, vendorErr, onPage = false) {
   const sub = [m.vendor === 'livesky' ? 'Livesky' : 'Niagara', WATER_ROLE[m.role] || m.group].filter(Boolean).join(' · ');
   // Green only on a current reading, as on Home.
   const live = m.running === true && waterCurrent(m);
+  if (onPage) {
+    // The motor's own page: the state and how long on the left, every reading
+    // as a tile on the right (nothing folded away), the controls in a card of
+    // their own. The on/off button itself is drawn in the page bar (motorView).
+    const tile = ([k, v]) => {
+      const [main, asOf] = String(stale && timed.has(k) ? `${v} · as of ${agoText(reportAt)}` : v).split(' · as of ');
+      return `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(main)}</strong>${asOf ? `<em class="as-of">as of ${escapeHtml(asOf)}</em>` : ''}</div>`;
+    };
+    const lead = new Set(['Running for', 'Off for']);
+    const left = headline.filter(([k]) => lead.has(k));
+    const metrics = facts.filter(([k]) => !lead.has(k));
+    const ctl = motorControls(m, 'note') + zoneControls(m);
+    return `<article class="panel wmotor wm-hero${live ? ' is-on' : ''}">
+      <div class="wm-state">
+        <img class="wmotor-art wm-art" src="/art/${live ? 'motor-on' : 'motor-off'}.png" alt="" width="56" height="56">
+        <div class="wm-word"><strong>${escapeHtml(motorWord(m, waterCurrent(m)))}</strong>
+          ${left.map(([k, v]) => { const [main, asOf] = String(v).split(' · as of ');
+            return `<span class="wm-line"><i>${escapeHtml(k)}</i><b>${escapeHtml(main)}</b>${asOf ? `<em class="as-of">as of ${escapeHtml(asOf)}</em>` : ''}</span>`; }).join('')}
+          ${when ? `<small>Reported ${escapeHtml(agoText(when))}</small>` : ''}</div>
+      </div>
+      ${metrics.length ? `<div class="wm-metrics">${metrics.map(tile).join('')}</div>` : ''}
+      ${notes.length ? `<div class="wm-notes">${notes.join('')}</div>` : ''}
+    </article>` + (ctl ? `<section class="panel wm-control"><h2 class="panel-title">Control</h2>${ctl}</section>` : '');
+  }
   return `<article class="panel wmotor${live ? ' is-on' : ''}">
     <div class="wmotor-head">
       <img class="wmotor-art" src="/art/${live ? 'motor-on' : 'motor-off'}.png" alt="" width="44" height="44">
@@ -3064,7 +3099,8 @@ function motorLine(m, current) {
   }
   return WATER_WAY[m.key === 'river' ? 'river' : m.role] || m.group || '';
 }
-function waterPath({ compact = false } = {}) {
+function waterPath({ compact = false, sel = '', cellsOut = null } = {}) {
+  const cells = [];
   const motors = waterMotors();
   const river = motors.find((m) => m.key === 'river');
   const supply = motors.find((m) => m.role === 'main-farm');
@@ -3078,12 +3114,14 @@ function waterPath({ compact = false } = {}) {
   const rail = (up, down) => `<span class="wp-rail${up == null ? ' no-up' : up ? ' up-on' : ''}${down == null ? ' no-dn' : down ? ' dn-on' : ''}" aria-hidden="true"></span>`;
   const station = (flowing) => `<span class="wp-st${flowing ? ' is-on' : ''}"><img src="/art/${flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span>`;
   const place = (name, up, down) => compact ? '' : `<div class="wp-row wp-place">${rail(up, down)}<span class="wp-place-name">${escapeHtml(name)}</span></div>`;
-  const row = (key, name, line, word, flowing, age, up, down, branch = null, warn = false) =>
-    `<a class="wp-row wp-motor${branch != null ? ' wp-branch' : ''}${flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(key)}">` +
+  const row = (key, name, line, word, flowing, age, up, down, branch = null, warn = false) => {
+    cells.push({ key, name, line, word, flowing, age, warn });
+    return `<a class="wp-row wp-motor${branch != null ? ' wp-branch' : ''}${flowing ? ' is-on' : ''}${key === sel ? ' is-sel' : ''}" href="#/motor/${encodeURIComponent(key)}"${key === sel ? ' aria-current="page"' : ''}>` +
     (branch != null ? `${rail(up, down)}<span class="wp-stub${branch ? ' is-on' : ''}">${station(flowing)}</span>` : `<span class="wp-g">${rail(up, down)}${station(flowing)}</span>`) +
     `<span class="wp-text"><strong>${escapeHtml(name)}</strong>${line ? `<small>${escapeHtml(line)}</small>` : ''}</span>` +
     `<span class="wp-state"><span class="tag${warn ? ' tag-warn' : flowing ? ' tag-on' : ''}">${escapeHtml(word)}</span>${age ? `<em>${escapeHtml(age)}</em>` : ''}</span>` +
     `${arrow('i-arrow', 'wp-go')}</a>`;
+  };
   const motorRow = (m, fallbackKey, up, down, branch) => {
     if (!m) return row(fallbackKey, { river: 'River Motor', 'well-motor': 'Well motor', wellmotor75hp: 'Wellmotor75HP' }[fallbackKey] || 'Motor', 'No reading yet', 'No reading', false, '', up, down, branch);
     const why = unreadMotor(m);
@@ -3110,10 +3148,30 @@ function waterPath({ compact = false } = {}) {
     place('Farm', on.supply, on.farm) +
     row(DCON_KEY, t.name, t.unread || farmLine, t.word, on.farm, t.age, on.farm, null, null, !!t.unread);
   const extra = rest.map((m) => motorRow(m, m.key, null, null)).join('');
-  // Home: the same rows, without the place names, inside its own card.
-  if (compact) return `<div class="wpath is-compact">${rows}${extra}</div>`;
+  if (cellsOut) cellsOut.push(...cells);
+  // Home: the same rows, without the place names, inside its own card; on a
+  // wide card the same stations lie along one pipe (waterChain, CSS picks).
+  if (compact) return `<div class="wpath is-compact">${rows}${extra}</div>${waterChain(cells, on)}`;
   return `<section class="panel wpath" aria-label="Where the water goes">${rows}</section>` +
     (extra ? `<section class="panel wpath">${extra}</section>` : '');
+}
+
+/** The path laid out across: River, Thoppu's two motors, the farm's
+ *  controller: four equal stations on one pipe. A pipe stretch is green only
+ *  while the motor feeding it runs on a current reading (the same `on` flags
+ *  as the vertical rail). Shown only where the card is wide (container
+ *  query); the vertical rows stay for phones. */
+function waterChain(cells, on) {
+  // The pipe on each side of a station, in the order river, well motor, 75HP, farm.
+  const pipes = [[null, on.river], [on.river, on.supply || on.drip], [on.supply || on.drip, on.supply], [on.supply, null]];
+  return `<div class="wchain" role="list">${cells.map((c, i) => {
+    const [l, r] = pipes[i] || [null, null];
+    const pipe = (v) => (v == null ? ' none' : v ? ' on' : '');
+    return `<a class="wc-cell${c.flowing ? ' is-on' : ''}" role="listitem" href="#/motor/${encodeURIComponent(c.key)}">` +
+      `<span class="wc-pipe"><i class="wc-l${pipe(l)}"></i><span class="wp-st${c.flowing ? ' is-on' : ''}"><img src="/art/${c.flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span><i class="wc-r${pipe(r)}"></i></span>` +
+      `<strong>${escapeHtml(c.name)}</strong>${c.line ? `<small>${escapeHtml(c.line)}</small>` : ''}` +
+      `<span class="wc-state"><span class="tag${c.warn ? ' tag-warn' : c.flowing ? ' tag-on' : ''}">${escapeHtml(c.word)}</span>${c.age ? `<em>${escapeHtml(c.age)}</em>` : ''}</span></a>`;
+  }).join('')}</div>`;
 }
 
 function waterView() {
@@ -3127,7 +3185,46 @@ function waterView() {
     (gate.ok ? '' : `<p class="more-note note-off">${escapeHtml(gate.why)}</p>`) +
     (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
     (niagaraErr ? `<p class="more-note note-off">${escapeHtml(niagaraErr)} Showing the last readings.</p>` : '') +
-    waterPath();
+    waterFrame('', true);
+}
+
+/** What a source shows on a summary card: its electrics, only while the
+ *  reading is current (a stale reading is never drawn as a figure). */
+function motorGlance(m) {
+  if (!m || unreadMotor(m) || !waterCurrent(m)) return [];
+  const out = [];
+  const volts = joinNums(m.volts, 'V');
+  if (volts) out.push(['Voltage', volts]);
+  const amps = joinNums(m.amps, 'A');
+  if (amps && (m.running || (m.amps || []).some((a) => a > 0))) out.push(['Current', amps]);
+  if (m.pressureOut != null && m.running) out.push(['Outlet pressure', String(m.pressureOut)]);
+  return out;
+}
+
+/** Water, two panes on a wide screen (>= 1100px): the path on the left with
+ *  the open source marked, its page on the right. Narrower, one or the other,
+ *  as before (CSS hides the pane that does not belong). Every source is a row
+ *  of the same size; with none open the right pane is four equal cards, so no
+ *  motor gets more room (owner, 2026-09-25). URLs stay #/motor/<key>. */
+function waterFrame(sel, summary, detail = '') {
+  const cells = [];
+  const list = waterPath({ sel, cellsOut: cells });
+  let pane = detail;
+  if (summary) {
+    const byKey = Object.fromEntries(waterMotors().map((m) => [m.key, m]));
+    pane = `<div class="wsum">${cells.map((c) => {
+      const glance = motorGlance(byKey[c.key]);
+      return `<a class="panel wsum-card${c.flowing ? ' is-on' : ''}" href="#/motor/${encodeURIComponent(c.key)}">` +
+        `<span class="wsum-top"><span class="wp-st${c.flowing ? ' is-on' : ''}"><img src="/art/${c.flowing ? 'motor-on' : 'motor-off'}.png" alt="" width="26" height="26"></span>` +
+        `<span class="tag${c.warn ? ' tag-warn' : c.flowing ? ' tag-on' : ''}">${escapeHtml(c.word)}</span></span>` +
+        `<strong class="wsum-name">${escapeHtml(c.name)}</strong>` +
+        (c.line ? `<span class="wsum-line">${escapeHtml(c.line)}</span>` : '') +
+        (c.age ? `<em class="wsum-age">${escapeHtml(c.age)}</em>` : '') +
+        (glance.length ? `<span class="wsum-facts">${glance.map(([k, v]) => `<span><small>${escapeHtml(k)}</small>${escapeHtml(v)}</span>`).join('')}</span>` : '') +
+        `</a>`;
+    }).join('')}</div>`;
+  }
+  return `<div class="wmd ${summary ? 'is-water' : 'is-motor'}"><div class="wmd-list">${list}</div><div class="wmd-detail">${pane}</div></div>`;
 }
 
 /* A source that cannot be read, in place of its last reading (owner,
@@ -3163,12 +3260,12 @@ function motorView(key) {
             canControl ? `<button class="btn btn-primary uh-btn" data-act="irr-refresh">Try again</button>` : '');
       // The sign-in form opens right under the card when asked for.
       const form = out && isOwner() && mbStep !== 'idle' ? mobitechPanel() : account;
-      return head(t.name, t.sub, '', back) + hero + form;
+      return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false, hero + form);
     }
-    return head(t.name, t.sub, '', back) +
+    return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false,
       `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
       `<div class="irr-col">${irrSupplyModule()}</div></div>` + `<div class="irr-wide">${irrCropsModule()}</div>` +
-      irrReportsModule() + account;
+      irrReportsModule() + account);
   }
   const m = waterMotors().find((x) => x.key === key);
   if (!m) return head('Motor', '', '', back) + emptyBlock('No reading from this motor', 'It appears after the next water pull.');
@@ -3192,11 +3289,13 @@ function motorView(key) {
           `<button class="btn btn-primary uh-btn" data-act="water-refresh">Try again</button>`);
     // The sign-in form opens right under the card when asked for.
     const form = signIn && isOwner() && lsStep !== 'idle' ? liveskyPanel() : '';
-    return head(m.name || 'Motor', sub, '', back) + hero + form;
+    return head(m.name || 'Motor', sub, '', back) + waterFrame(key, false, hero + form);
   }
-  return head(m.name || 'Motor', sub, `<button class="btn btn-ghost btn-sm" data-act="water-refresh">Refresh</button>`, back) +
+  // Refresh and the on/off button (armed motors only) sit in the page bar.
+  const bar = `<div class="head-actions wm-acts">${motorControls(m, 'button')}<button class="btn btn-ghost btn-sm" data-act="water-refresh">Refresh</button></div>`;
+  return head(m.name || 'Motor', sub, bar, back) + waterFrame(key, false,
     (livesky.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(livesky.text)}</p>`) +
-    waterMotorCard(m, vendorErr, true) + account;
+    waterMotorCard(m, vendorErr, true) + account);
 }
 
 /* ---- Livesky sign-in (admins) ----
