@@ -210,7 +210,20 @@ login flow in [mobitech-app.md](mobitech-app.md), which settles open
 decision (c): **SNOF has its own Mobitech session.** (a) and (b) remain
 open: commands still go out as `FON` / `OFF`.
 
-- **Sign in** (Admin on the web, Account in the app; admins): number, then
+- **Sign in on the web** (owner, 2026-11-01): a browser cannot call Mobitech
+  (no CORS header) and Google Cloud is refused, so the dashboard posts to the
+  `mobitech_session` function (`send_code {mobile}`, `verify {mobile, code}`,
+  owner + admin only, ID token as Bearer), which asks the NUC relay for three
+  named calls: `otp`, `login` and `prove` (the dashboard read; the relay
+  returns only `{"serves": bool}`). The function mints the token, keeps it in
+  `/private/mobitech` and writes `mobitech_status` with `set()` (a new session
+  clears `lastOk`/`lastRejected`, as the app's does); it never returns the
+  token, and the code and number are never stored or logged. One code per 30 s
+  (`/private/mobitech_signin/codeAt`, no client access). The relay cuts the
+  login answer to `state`, whether `id` echoed the token, `name`, `uname`
+  (and Mobitech's refusal text). Add-on 0.10.10 or later is needed; without it
+  the function says the farm box is not answering.
+- **Sign in on iOS** (Account in the app; admins): number, then
   `/v1/otp/` (its `{"message":"Success"}` is checked), then the code and
   `action=login` with a SNOF-made `…@ios` token. **Before anything is
   stored the session is proved** with a read-only `action=dashboard` using

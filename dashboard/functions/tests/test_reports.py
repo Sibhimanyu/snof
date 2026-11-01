@@ -661,7 +661,10 @@ def test_dcon_client_cannot_reach_the_command_endpoint():
     code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
     body = code.split('"""', 2)[2]      # skip the module docstring
     assert "command" not in body.lower(), "dcon.py mentions a command endpoint"
-    assert body.count("/v1/http/") == 1
+    # /v1/http/ for every read (and the sign-in calls, 2026-11-01), /v1/otp/
+    # for the SMS code; nothing else.
+    import re
+    assert set(re.findall(r"/v1/[a-z]+/\??", body)) == {"/v1/http/", "/v1/http/?", "/v1/otp/"}
 
 def test_a_valve_that_did_not_answer_is_named():
     dash = json.loads(json.dumps(DASHBOARD))

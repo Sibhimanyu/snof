@@ -116,6 +116,14 @@ column in the order you need it: attention, pulse, controls, areas.
 room and status, opening to its readings. A filter or search opens the
 matching devices by itself.
 
+## Vendor sign-ins (owner only)
+
+Livesky (Water → River Motor) and Mobitech (Water → the controller) share one
+form: mobile, Send code, code, Sign in, errors in place. Both post the caller's
+ID token to a function (`water_session`, `mobitech_session`); neither token
+reaches the page. The Mobitech one reaches Mobitech through the NUC relay
+(docs/irrigation-control.md). Non-owners see "Only <name> signs SNOF in".
+
 ## Design system
 "Area workspace", chosen by the owner on 2026-09-24 (see DESIGN.md): cool slate,
 white panels, one tinted pulse panel, Manrope, big tabular numerals.

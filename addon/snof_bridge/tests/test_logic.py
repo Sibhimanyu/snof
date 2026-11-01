@@ -639,6 +639,74 @@ def test_the_relay_reads_with_the_session_signed_in_from_the_app():
     from bridge import irrigation_control as ic
     assert ic.pick_token(signed, old) == signed and ic.TOKEN_PATH == relay.TOKEN_PATH
 
+_TOK = "A" * 22 + ":APA91b" + "b-_" * 44 + "ab" + "@ios"
+
+
+def test_relay_signin_calls_take_only_well_shaped_args():
+    ok = {"otp": {"mobile": "9876543210"},
+          "login": {"mobile": "9876543210", "code": "123456", "token": _TOK},
+          "prove": {"token": _TOK}}
+    for call, args in ok.items():
+        assert relay.validate(_job(call=call, args=args)) == (call, args), call
+    assert relay.SIGNIN_CALLS == {"otp", "login", "prove"}
+    bad = [
+        ("otp", {"mobile": "98765432"}), ("otp", {"mobile": "919876543210"}),
+        ("otp", {"mobile": "9876543210", "x": "1"}), ("otp", {}),
+        ("login", {"mobile": "9876543210", "code": "12", "token": _TOK}),
+        ("login", {"mobile": "9876543210", "code": "123456789", "token": _TOK}),
+        ("login", {"mobile": "9876543210", "code": "12a456", "token": _TOK}),
+        ("login", {"mobile": "9876543210", "code": "123456", "token": "short@ios"}),
+        ("login", {"mobile": "9876543210", "code": "123456", "token": _TOK[:-4]}),
+        ("login", {"mobile": "9876543210", "code": "123456", "token": _TOK + "&action=x"}),
+        ("login", {"mobile": "9876543210", "code": "123456", "token": _TOK.replace("@ios", "@and")}),
+        ("login", {"mobile": "9876543210", "code": "123456"}),
+        ("prove", {"token": "x" * 50}), ("prove", {"token": _TOK + " "}),
+        ("prove", {"token": _TOK, "mobile": "9876543210"}),
+    ]
+    for call, args in bad:
+        assert relay.validate(_job(call=call, args=args)) is None, (call, args)
+    assert relay.validate(_job(call="otp", args=ok["otp"], at=(time.time() - 600) * 1000)) is None
+
+
+def test_relay_signin_requests_match_the_ios_app_byte_for_byte():
+    assert relay.signin_request("otp", {"mobile": "9876543210"}) == \
+        ("/v1/otp/", '{"mobile":"919876543210"}')
+    path, body = relay.signin_request(
+        "login", {"mobile": "9876543210", "code": "123456", "token": "ab:cd-_@ios"})
+    assert path == "/v1/http/?"
+    assert body == ("action=login&type=otp&otp=123456&mobile=9876543210"
+                    "&token=ab%3Acd-_%40ios&product=DCON&app_id=com.mobitech.drip")
+    path, body = relay.signin_request("prove", {"token": "ab:cd@ios"})
+    assert (path, body) == ("/v1/http/",
+                            "action=dashboard&p=app&token_id=ab%3Acd%40ios&product=DCON")
+
+
+def test_relay_reduces_signin_answers_to_an_allow_list():
+    raw = json.dumps({"state": "ok", "id": _TOK, "name": "N" * 100, "uname": "sibhi",
+                      "mobile": "9876543210", "mail": "a@b.c", "user_id": 77, "x": {"y": 1}})
+    out = relay.reduce_signin("login", 200, raw, _TOK)
+    assert out == {"state": "ok", "idOk": True, "name": "N" * 64, "uname": "sibhi"}
+    other = relay.reduce_signin("login", 200, raw, "different@ios")
+    assert other["idOk"] is False
+    # No id echoed: the app falls back to the token it sent, so does this.
+    assert relay.reduce_signin("login", 200, '{"state":"ok"}', _TOK)["idOk"] is True
+    assert relay.reduce_signin("login", 200, '{"state":"ok","id":null}', _TOK)["idOk"] is False
+    refused = relay.reduce_signin("login", 200, json.dumps(
+        {"state": "failed", "msg": "Wrong code for 9876543210", "mobile": "9876543210"}), _TOK)
+    assert set(refused) == {"state", "idOk", "name", "uname", "message"}
+    assert "9876543210" not in json.dumps(refused) and refused["state"] == "failed"
+    assert relay.reduce_signin("login", 200, "not json", _TOK)["state"] == ""
+    # prove: a bool, never the payload (it carries the phone book)
+    dash = json.dumps({"MCON1": {"users": {"A1": {"mobile": "919876543210"}}}})
+    assert relay.reduce_signin("prove", 200, dash) == {"serves": True}
+    for text in ('{"state":"failed","message":"x"}', "[]", "nope", "{}"):
+        assert relay.reduce_signin("prove", 200, text) == {"serves": False}, text
+    assert relay.reduce_signin("prove", 500, dash) == {"serves": False}
+    # otp: only Mobitech's message, trimmed
+    assert relay.reduce_signin("otp", 200, '{"message":"Success","otp":"123456"}') == {"message": "Success"}
+    assert relay.reduce_signin("otp", 200, "garbage") == {"message": ""}
+
+
 
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

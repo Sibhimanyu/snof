@@ -44,8 +44,12 @@ Architecture and data shape are in README.md.
   SNOF out. (a) and (b) are still open: commands stay FON/OFF.
 - **The Mobitech command session comes from signing in** (2026-09-24):
   the owner signs in to Mobitech with an SMS code from the controller's page (Water → SibhiSump)
-  ("Mobitech account", **iOS only**: Mobitech sends no CORS header, so a
-  browser cannot); the token goes to `/private/mobitech` (the owner writes, no client
+  ("Mobitech account"). On iOS the phone calls Mobitech directly. On the
+  **web** (owner's decision, 2026-11-01) a browser cannot (no CORS header) and
+  Cloud Functions are refused, so the `mobitech_session` function makes the
+  three sign-in calls (`otp`, `login`, `prove`, nothing else) through the NUC
+  relay; it mints the token itself and never returns it. The token goes to
+  `/private/mobitech` (the owner writes, or that function; no client
   reads) and every consumer (the relay since 0.10.8, the valve commands)
   prefers it over the hand-set option. Never show or log
   it. Details: docs/irrigation-control.md.
@@ -70,6 +74,11 @@ Architecture and data shape are in README.md.
   NUC's relay and irrigation_control keep running, and the dormant
   `irrigation_command` function takes over at cut-over. Never add new DCON
   code to the add-on. Plan, state and runbook: docs/dcon-off-the-nuc.md.
+  **One documented exception** (owner, 2026-11-01): the relay also carries
+  the web's Mobitech sign-in, three named calls (`otp`, `login`, `prove`) with
+  strict argument shapes and answers cut to an allow-list on the NUC, so the
+  owner can sign in from the dashboard. It is not a precedent: no other new
+  DCON code goes in the add-on, and it moves to direct calls at cut-over.
 
 - **Never commit `serviceAccount.json`** or any `*-firebase-adminsdk-*.json`.
   It is a full-admin credential. It lives at `~/.config/snof/serviceAccount.json`

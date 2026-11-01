@@ -74,6 +74,15 @@ Google through `dcon-egress-ip`.
 > Thank you,
 > <name>
 
+## The one extra thing on the relay: web Mobitech sign-in
+
+Owner's exception (2026-11-01): the web dashboard signs SNOF in to Mobitech
+through the `mobitech_session` function, which sends `otp`, `login` and `prove`
+through the relay (add-on 0.10.10, `bridge/relay.py` `SIGNIN_CALLS`). At
+cut-over it moves with the reports: `DCON_TRANSPORT=direct` makes it call
+Mobitech itself (`dcon.DirectTransport` spells the same three calls), and
+step d below removes the relay with nothing left to carry.
+
 ## 3. Cut over (same day the allowlist works)
 
 Do these in order. Step 3b is the one that must never be reversed in order:

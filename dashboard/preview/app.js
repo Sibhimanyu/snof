@@ -131,6 +131,7 @@ function leave() {
   state = { meta: {}, areas: {}, devices: {}, entities: {}, irrigation: {}, water: {}, acl: {} };
   motorCmd = null; motorCmdKey = null; motorCmdConfirming = false; clearTimeout(motorCmdTimer);
   lsStep = 'idle'; lsMobile = ''; lsCode = ''; lsError = ''; lsInfo = '';
+  mbStep = 'idle'; mbMobile = ''; mbCode = ''; mbError = ''; mbInfo = '';
   canControl = false; isAdmin = false; aclRef = null; currentUser = null; firstSnapshot = false;
   statusFilter = 'all'; domainFilter = null;
   interacting = false; viewDirty = false;
@@ -3146,7 +3147,7 @@ function motorView(key) {
     const t = dconTile();
     const mb = isAdmin ? mobitechState() : { kind: 'ok' };
     const account = isAdmin
-      ? `<details class="acct-sec"${mb.kind !== 'ok' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
+      ? `<details class="acct-sec"${mb.kind !== 'ok' || mbStep !== 'idle' ? ' open' : ''}><summary>Mobitech account</summary>${mobitechPanel()}</details>` : '';
     const why = unreadController();
     if (why) {
       // Nothing from before: the page leads to the fix (owner, 2026-09-26).
@@ -3154,11 +3155,13 @@ function motorView(key) {
       const hero = out
         ? unreadHero('SNOF is signed out of Mobitech',
             'Mobitech ended SNOF\'s session because the account signed in somewhere else. Nothing here can be read until SNOF signs in again.',
-            isOwner() ? `<p class="uh-do">Sign in from the SNOF iPhone app: Water → ${escapeHtml(t.name)} → Sign in to Mobitech. Mobitech does not let a web page sign in.</p>` : '',
+            isOwner() && mbStep === 'idle' ? `<button class="btn btn-primary uh-btn" data-act="mb-start">Sign in to Mobitech</button>` : '',
             isOwner() ? '' : `${ownerName()} needs to sign in again.`)
         : unreadHero("Can't read the controller", `${why}. Nothing here can be read until it answers.`,
             canControl ? `<button class="btn btn-primary uh-btn" data-act="irr-refresh">Try again</button>` : '');
-      return head(t.name, t.sub, '', back) + hero + account;
+      // The sign-in form opens right under the card when asked for.
+      const form = out && isOwner() && mbStep !== 'idle' ? mobitechPanel() : account;
+      return head(t.name, t.sub, '', back) + hero + form;
     }
     return head(t.name, t.sub, '', back) +
       `<div class="irr-grid"><div class="irr-col">${irrNowModule()}${irrValvesModule()}</div>` +
@@ -3453,9 +3456,12 @@ function adminRow(uid, person) {
  * own — a session of its own that the phone's sign-outs cannot end — and
  * proves it with a dashboard read (read-only) before storing it.
  *
- * Signing in happens in the iPhone app: Mobitech sends no CORS header, so a
- * browser cannot read its answers (2026-09-26); it also refuses Google
- * Cloud. The web keeps "Sign SNOF out". The token goes where no client can read it
+ * The iPhone app signs in directly. A browser cannot (Mobitech sends no CORS
+ * header, and it refuses Google Cloud), so the owner signs in here through
+ * the mobitech_session function, which makes the three calls via the farm
+ * box's relay (owner's decision, 2026-11-01); this page sends the number,
+ * the code and the caller's ID token and never sees the Mobitech token. The
+ * token goes where no client can read it
  * (/private/mobitech); a non-secret line goes to farms/<farm>/mobitech_status,
  * where whatever sends the commands also records lastOk / lastRejected.
  * The number and the code are never stored. Unproven until first used:
@@ -3464,6 +3470,8 @@ function adminRow(uid, person) {
 /** "98765 43210", "+91 98765 43210" -> "9876543210" (the Livesky number too). */
 const mobitechDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
 let mbBusy = false, mbError = '', mbInfo = '';
+let mbStep = 'idle';     // idle | mobile | code
+let mbMobile = '', mbCode = '';
 
 /** Stop SNOF using its session. The Mobitech logout call needs the token,
  *  which no client can read, so the session stays registered at Mobitech
@@ -3473,9 +3481,50 @@ async function mobitechSignOut() {
   try {
     await firebase.database().ref('private/mobitech').remove();
     await firebase.database().ref(`farms/${FARM}/mobitech_status`).remove();
-    toast('ok', 'Signed SNOF out of Mobitech. Valve commands are off until you sign in again from the iPhone app.');
+    toast('ok', 'Signed SNOF out of Mobitech. Valve commands are off until you sign in again.');
   } catch (err) {
     toast('err', `Could not sign out: ${err.message}`);
+  }
+  mbBusy = false; render();
+}
+
+async function mobitechSession(body) {
+  const projectId = firebase.app().options.projectId;
+  const idToken = await currentUser.getIdToken();
+  const r = await fetch(`https://asia-southeast1-${projectId}.cloudfunctions.net/mobitech_session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || `the function answered ${r.status}`);
+  return j;
+}
+
+async function mobitechSendCode() {
+  const mobile = mobitechDigits(mbMobile);
+  if (!/^\d{10}$/.test(mobile)) { mbError = 'Enter the 10-digit mobile number on the Mobitech account.'; render(); return; }
+  mbBusy = true; mbError = ''; mbInfo = ''; render();
+  try {
+    await mobitechSession({ action: 'send_code', mobile });
+    mbStep = 'code'; mbCode = '';
+    mbInfo = `Mobitech sent a code to the number ending ${mobile.slice(-4)}.`;
+  } catch (err) {
+    mbError = `No code sent: ${err.message}`;
+  }
+  mbBusy = false; render();
+}
+
+async function mobitechSignIn() {
+  const code = String(mbCode || '').replace(/\D/g, '');
+  if (!/^\d{4,8}$/.test(code)) { mbError = 'Enter the code from the SMS.'; render(); return; }
+  mbBusy = true; mbError = ''; render();
+  try {
+    const j = await mobitechSession({ action: 'verify', mobile: mobitechDigits(mbMobile), code });
+    mbStep = 'idle'; mbMobile = ''; mbCode = ''; mbInfo = '';
+    toast('ok', `Signed SNOF in to Mobitech${j.name ? ` as ${j.name}` : ''}.`);
+  } catch (err) {
+    mbError = `Not signed in: ${err.message}`;
   }
   mbBusy = false; render();
 }
@@ -3507,10 +3556,30 @@ function mobitechPanel() {
   if (!isOwner()) {
     form = `<p class="more-note">Only ${escapeHtml(ownerName())} signs SNOF in to Mobitech. Everyone uses that session.</p>`;
   } else {
-    // Mobitech's server sends no CORS header, so a web page cannot read its
-    // answers and sign-in cannot work here (2026-09-26): the iPhone app can.
-    form = `<p class="more-note">Sign in from the SNOF iPhone app (Water → ${escapeHtml(dconTile().name)} → Mobitech account): Mobitech does not let a web page sign in.</p>` +
-      (st.at ? `<div class="mb-actions"><button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign SNOF out</button></div>` : '');
+    // Same flow as the Livesky form; the function reaches Mobitech through
+    // the farm box (a browser cannot, and Google Cloud is refused).
+    if (mbStep === 'mobile') {
+      form = `<div class="rep-builder" data-key="mobitech">
+        <label class="rep-field"><span>Mobitech mobile number</span>
+          <input id="mb-mobile" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="10 digits"
+                 value="${escapeHtml(mbMobile)}" data-act="mb-mobile"></label>
+        <button class="btn btn-primary" data-act="mb-send"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Sending…' : 'Send code'}</button>
+        <button class="btn btn-ghost" data-act="mb-cancel"${mbBusy ? ' disabled' : ''}>Cancel</button>
+      </div>`;
+    } else if (mbStep === 'code') {
+      form = `<div class="rep-builder" data-key="mobitech">
+        <label class="rep-field"><span>Code from the SMS</span>
+          <input id="mb-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6 digits"
+                 value="${escapeHtml(mbCode)}" data-act="mb-code"></label>
+        <button class="btn btn-primary" data-act="mb-signin"${mbBusy ? ' disabled' : ''}>${mbBusy ? 'Signing in…' : 'Sign in'}</button>
+        <button class="btn btn-ghost" data-act="mb-back"${mbBusy ? ' disabled' : ''}>Use another number</button>
+      </div>`;
+    } else {
+      form = `<div class="mb-actions">
+        <button class="btn btn-primary" data-act="mb-start">${st.at ? 'Sign in again' : 'Sign in to Mobitech'}</button>
+        ${st.at ? `<button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign SNOF out</button>` : ''}
+      </div>`;
+    }
   }
   return `<section class="panel mb-panel">
       ${facts}${status}${form}
@@ -3815,6 +3884,24 @@ function wire(all) {
   // Mobitech sign-in. Typing holds live rebuilds (as a slider drag does), so
   // a half-typed number or code is never wiped by a sensor update.
   view.querySelectorAll('[data-act="mb-signout"]').forEach((btn) => { btn.onclick = () => mobitechSignOut(); });
+  // Mobitech sign-in: the same held-rebuild handling as Livesky's.
+  view.querySelectorAll('[data-act="mb-mobile"],[data-act="mb-code"]').forEach((input) => {
+    input.onfocus = beginInteract;
+    input.onblur = () => setTimeout(endInteract, 300);
+    input.oninput = () => { if (input.dataset.act === 'mb-mobile') mbMobile = input.value; else mbCode = input.value; };
+    input.onkeydown = (e) => { if (e.key === 'Enter') { input.blur(); (input.dataset.act === 'mb-mobile' ? mobitechSendCode : mobitechSignIn)(); } };
+  });
+  view.querySelectorAll('[data-act="mb-send"]').forEach((btn) => { btn.onclick = () => mobitechSendCode(); });
+  view.querySelectorAll('[data-act="mb-signin"]').forEach((btn) => { btn.onclick = () => mobitechSignIn(); });
+  view.querySelectorAll('[data-act="mb-back"]').forEach((btn) => {
+    btn.onclick = () => { mbStep = 'mobile'; mbCode = ''; mbInfo = ''; mbError = ''; render(); };
+  });
+  view.querySelectorAll('[data-act="mb-start"]').forEach((btn) => {
+    btn.onclick = () => { mbStep = 'mobile'; mbError = ''; mbInfo = ''; render(); };
+  });
+  view.querySelectorAll('[data-act="mb-cancel"]').forEach((btn) => {
+    btn.onclick = () => { mbStep = 'idle'; mbMobile = ''; mbError = ''; render(); };
+  });
 
   view.querySelectorAll('[data-act="irr-refresh"]').forEach((btn) => { btn.onclick = () => refreshIrrigation(); });
   view.querySelectorAll('[data-act="attn-open"]').forEach((btn) => { btn.onclick = () => { attnOpen = !attnOpen; render(); }; });
