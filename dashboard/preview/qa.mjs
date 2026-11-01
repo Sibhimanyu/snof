@@ -690,7 +690,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('chain pipe is green only beside running motors', h.on[0]&&h.gaps>=2, JSON.stringify(h));
   await p.goto(p.url().replace('#/','#/water')); await p.waitForTimeout(300);
   const w=await p.evaluate(()=>({cols:getComputedStyle(document.querySelector('#view .ws-grid')).gridTemplateColumns.split(' ').length, cards:document.querySelectorAll('#view .ws-card').length,
-    moving:document.querySelectorAll('#view .ws-pipe.is-on .ws-p-flow').length>0}));
+    moving:document.querySelectorAll('#view .ws-pipe.is-on .ws-tx').length>0}));
   check('Water is the drawn journey: three places, pipes between, four equal motor cards, flow on the running ones', w.cols===5&&w.cards>=4&&w.moving, JSON.stringify(w));
   await p.goto(p.url().replace('#/water','#/motor/river')); await p.waitForTimeout(300);
   const m=await p.evaluate(()=>({sel:document.querySelector('#view .wp-motor.is-sel')?.getAttribute('href'), metrics:document.querySelectorAll('#view .wm-metrics > div').length,
@@ -713,14 +713,18 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
 {
   // Water, realistic: a stream pours only while the motor feeding that place
   // runs on a current reading; idle water is dry and still; the art is the
-  // three generated scenes, and each says there is no level reading.
+  // three drawn scenes, and each says there is no level reading.
   const [p,c]=await open('?live=1#/water');
   await p.waitForSelector('#view .wscene');
   const r=await p.evaluate(()=>({pours:[...document.querySelectorAll('#view .ws-tile')].map(t=>!!t.querySelector('.ws-pour')),
-    imgs:[...document.querySelectorAll('#view .ws-img')].map(i=>i.getAttribute('src')),
-    notes:[...document.querySelectorAll('#view .ws-place small')].map(s=>s.textContent)}));
+    wells:document.querySelectorAll('#view .ws-art').length, raster:document.querySelectorAll('#view .ws-tile img').length,
+    notes:[...document.querySelectorAll('#view .ws-place small')].map(s=>s.textContent),
+    // water in a pipe is a texture, never dots, dashes or beads
+    dashed:[...document.querySelectorAll('#view .ws-art *')].filter(e=>{const d=getComputedStyle(e).strokeDasharray;return d&&d!=='none'}).length,
+    beads:document.querySelectorAll('#view .ws-bub, #view .ws-p-flow circle').length}));
   check('Thoppu is poured into by the running river motor, the farm sump (75HP off) is dry', JSON.stringify(r.pours)==='[false,true,false]', JSON.stringify(r.pours));
-  check('three generated scenes, each with a "No level reading" note', r.imgs.length===3&&r.imgs.every(s=>/\/art\/water\/\w+\.webp$/.test(s))&&r.notes.every(n=>n==='No level reading'), JSON.stringify(r));
+  check('three drawn scenes (no photo), each with a "No level reading" note', r.wells===3&&r.raster===0&&r.notes.length===3&&r.notes.every(n=>n==='No level reading'), JSON.stringify(r));
+  check('no dots, dashes or beads anywhere in the water art', r.dashed===0&&r.beads===0, JSON.stringify(r));
   await c.close();
 }
 await b.close();
