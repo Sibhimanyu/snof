@@ -220,8 +220,10 @@ orchard) -> **farm sump** -> **the beds being watered**.
   the water and the submerged motor(s); the farm sump is a shallower rectangular
   brick tank (~11 ft). The river well fills from the river through an
   underground pipe, which is passive and never moves.
-- **Plants are where the water goes.** Thoppu's drip line runs along the base of
-  its orchard with an emitter at each plant; the sump's outlet curves into a row
+- **Plants are where the water goes.** A drip lateral lies *on the ground*, on the soil
+  strip in front of the trunks (never through the trees), with an emitter at each
+  plant base. Thoppu's runs along its orchard; the sump's outlet narrows (a collar)
+  and curves down onto the ground; it feeds a row
   of plants, one per bed being watered now, each with its crop's picture (the
   same icons as the "Watering now" panel, which stays below as the text). Running
   on a current reading: droplets fall from the emitters and the ground under each

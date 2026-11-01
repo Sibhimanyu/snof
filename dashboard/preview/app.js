@@ -3446,7 +3446,7 @@ function wsPlant(x, base, s, dry, wet) {
   const g = dry ? ['#a9a56c', '#9a965f', '#b6b27a'] : ['#3f9a54', '#2f7d45', '#58b36a'];
   const t = (n) => (n * s).toFixed(1);
   return `<g class="ws-plant${dry ? ' is-dry' : ''}">
-    ${wet ? `<ellipse class="ws-wet" cx="${x}" cy="${base}" rx="${t(46)}" ry="${t(10)}" fill="url(#wsg-wet)"/>` : ''}
+    ${wet ? `<ellipse class="ws-wet" cx="${x}" cy="${base + 34}" rx="${t(46)}" ry="${t(10)}" fill="url(#wsg-wet)"/>` : ''}
     <path d="M${x - 6 * s},${base} L${x - 4 * s},${base - 100 * s} L${x + 4 * s},${base - 100 * s} L${x + 6 * s},${base}Z" fill="#7b5a3c"/><path d="M${x - 6 * s},${base} L${x - 4 * s},${base - 100 * s} L${x - 1 * s},${base - 100 * s} L${x - 2 * s},${base}Z" fill="#fff" opacity=".12"/>
     <circle cx="${x - 25 * s}" cy="${base - 110 * s}" r="${t(28)}" fill="${g[1]}"/><circle cx="${x + 26 * s}" cy="${base - 112 * s}" r="${t(27)}" fill="${g[1]}"/>
     <circle cx="${x}" cy="${base - 126 * s}" r="${t(40)}" fill="${g[0]}"/><ellipse cx="${x - 14 * s}" cy="${base - 140 * s}" rx="${t(20)}" ry="${t(13)}" fill="#fff" opacity="${dry ? 0.1 : 0.2}"/>
@@ -3454,12 +3454,12 @@ function wsPlant(x, base, s, dry, wet) {
 }
 /** A drip emitter under the line at `x`, and, running, the drops falling from
  *  it onto the damp ground (droplet shapes, not dots). */
-const wsEmitter = (x, i, on, lineY) => `<rect class="ws-emit" x="${x - 5}" y="${lineY + 9}" width="10" height="10" rx="2"/>` +
-  (on ? `<path class="ws-drop-c" style="--di:${i}" transform="translate(${x} ${lineY + 28})" d="M0,-7 C3.4,-1 5,2.5 0,6 C-5,2.5 -3.4,-1 0,-7Z"/>` : '');
+const wsEmitter = (x, i, on, lineY) => `<rect class="ws-emit" x="${x - 5}" y="${lineY + 12}" width="10" height="9" rx="2"/>` +
+  (on ? `<path class="ws-drop-c" style="--di:${i}" transform="translate(${x} ${lineY + 33})" d="M0,-6 C3,-1 4.4,2 0,5 C-4.4,2 -3,-1 0,-6Z"/>` : '');
 /** The three places (the pipes between them are the overlay's). */
 function wsArt(kind, o) {
   const open = `<svg class="ws-art${o.live ? ' is-live' : ''}" viewBox="0 0 1000 ${WS_H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">${wsDefs}`;
-  const ground = (x1, x2, y, dry) => `<rect x="${x1}" y="${y}" width="${x2 - x1}" height="22" rx="8" fill="${dry ? '#c3a77f' : '#b69a74'}" opacity=".85"/><rect x="${x1}" y="${y}" width="${x2 - x1}" height="5" rx="2.5" fill="#fff" opacity=".18"/>`;
+  const ground = (x1, x2, y, dry) => `<rect x="${x1}" y="${y}" width="${x2 - x1}" height="56" rx="12" fill="${dry ? '#c3a77f' : '#b69a74'}" opacity=".85"/><rect x="${x1}" y="${y}" width="${x2 - x1}" height="5" rx="2.5" fill="#fff" opacity=".18"/>`;
   if (kind === 'river') {
     // The river is at the left, the river well beside it, and between them an
     // underground pipe: the well fills from the river by gravity, so nothing
@@ -3491,8 +3491,8 @@ function wsArt(kind, o) {
     // Thoppu's own orchard, beside the well, watered by the drip line along its base
     const xs = [300, 190, 80], drip = o.dripOn;
     return open + wsWell(c, motors + plumes) + `
-      ${ground(24, 372, 504, !drip)}${xs.map((x, i) => wsPlant(x, 512, [1, 0.92, 1.05][i], false, drip)).join('')}
-      ${xs.map((x, i) => wsEmitter(x, i, drip, 462)).join('')}`;
+      ${ground(24, 372, 440, !drip)}${xs.map((x, i) => wsPlant(x, 452, [1, 0.92, 1.05][i], false, drip)).join('')}
+      ${xs.map((x, i) => wsEmitter(x, i, drip, 456)).join('')}`;
   }
   // the farm sump: a shallower rectangular brick tank, about 11 ft deep, and
   // the beds being watered, each as a plant with its crop's picture
@@ -3501,11 +3501,11 @@ function wsArt(kind, o) {
   const body = `M${x0 + wl},${S - D} H${x1 - wl} V${B} H${x0 + wl}Z`;
   const motor = wsMotor(330, B - 8, 52, 118);
   const crops = o.crops || [], n = crops.length, wet = n > 0 && o.outOn;
-  const slots = wet ? n : 4, step = 340 / slots;
+  const slots = wet ? n : 4, step = 320 / slots;
   const plants = Array.from({ length: slots }, (_, i) => {
-    const x = Math.round(600 + (i + 0.5) * step), cr = crops[i];
+    const x = Math.round(640 + (i + 0.5) * step), cr = crops[i];
     const badge = cr ? `<g class="ws-cropb"><circle cx="${x}" cy="338" r="31" class="ws-crop-bg"/>${cr.art ? `<image href="/art/${cr.art}.png" x="${x - 21}" y="${317}" width="42" height="42"/>` : ''}</g>` : '';
-    return wsPlant(x, 512, 0.8, !wet, wet) + badge + wsEmitter(x, i, wet, 462);
+    return wsPlant(x, 502, 0.8, !wet, wet) + badge + wsEmitter(x, i, wet, 506);
   }).join('');
   return open + `<defs><clipPath id="wsc-fb"><path d="${body}"/></clipPath><clipPath id="wsc-fs"><path d="${surfQ}"/></clipPath></defs>
     <ellipse cx="275" cy="${B + 36}" rx="270" ry="16" fill="url(#wsg-shadow)"/>
@@ -3522,7 +3522,7 @@ function wsArt(kind, o) {
     <rect x="${x0}" y="${T - D - 20}" width="${x1 - x0}" height="20" rx="3" fill="#d9ccb4" stroke="#6f6250" stroke-width="2.5"/>
     <rect x="${x0 - 3}" y="${T - D}" width="${wl + 6}" height="${D}" fill="#d9ccb4" stroke="#6f6250" stroke-width="2.5"/><rect x="${x1 - wl - 3}" y="${T - D}" width="${wl + 6}" height="${D}" fill="#d9ccb4" stroke="#6f6250" stroke-width="2.5"/>
     <path d="M${x0},${T} V${B} M${x1},${T} V${B}" stroke="#4a4032" stroke-width="2.5" fill="none"/>
-    ${ground(570, 970, 504, !wet)}${plants}`;
+    ${ground(620, 970, 490, !wet)}${plants}`;
 }
 /** Every pipe between and within the scenes, as one drawing over the row (wide,
  *  mode 'h': the scenes side by side) or the stack (narrow, 'v'), so a pipe
@@ -3539,10 +3539,13 @@ function wsOverlay(mode, f) {
   const B = wide
     ? [loc(1, 715, 338), loc(1, 715, 86, 70), [1990, 86, 60], [2045, 56, 60], [2135, 56, 60], [2190, 86, 60], loc(2, 190, 86, 44), loc(2, 190, 150)]
     : [loc(1, 715, 338), loc(1, 715, 140, 60), loc(1, 952, 140, 60), loc(2, 952, 86, 60), loc(2, 190, 86, 44), loc(2, 190, 150)];
-  const D = [loc(1, 595, 374), loc(1, 595, 140, 40), loc(1, 395, 140, 50), loc(1, 395, 462, 50), loc(1, 40, 462)];
-  const F = [loc(2, 330, 360), loc(2, 330, 140, 60), loc(2, 560, 140, 60), loc(2, 560, 462, 60), loc(2, 968, 462)];
+  const D = [loc(1, 595, 374), loc(1, 595, 140, 40), loc(1, 395, 140, 50), loc(1, 395, 456, 50), loc(1, 40, 456)];
+  const F = [loc(2, 330, 360), loc(2, 330, 140, 60), loc(2, 560, 140, 60), loc(2, 560, 330)];
+  // the outlet narrows to a slimmer lateral that curves down onto the ground and runs along the plants' base
+  const FL = [loc(2, 560, 342), loc(2, 560, 506, 50), loc(2, 968, 506)];
+  const collar = `<rect class="ws-flange" x="${540 + dx(2)}" y="${326 + dy(2)}" width="40" height="15" rx="3"/>`;
   pipes.push(wsPipeG(A, { on: f.A.on, unread: f.A.un, pipe: 'river' }), wsPipeG(B, { on: f.B.on, unread: f.B.un, pipe: 'supply' }),
-    wsPipeG(D, { on: f.D.on, unread: f.D.un, size: 'mid', pipe: 'drip' }), wsPipeG(F, { on: f.F.on, unread: f.F.un, pipe: 'farm' }));
+    wsPipeG(D, { on: f.D.on, unread: f.D.un, size: 'mid', pipe: 'drip' }), wsPipeG(F, { on: f.F.on, unread: f.F.un, pipe: 'farm' }), wsPipeG(FL, { on: f.F.on, unread: f.F.un, size: 'mid', pipe: 'farm-lat' }), collar);
   // under the water, a pipe is seen through it
   [['wsc-wb770', 0], ['wsc-wb650', 1], ['wsc-fb', 2]].forEach(([clip, i]) => {
     tint.push(`<g transform="translate(${dx(i)} ${dy(i)})"><g clip-path="url(#${clip})"><rect x="0" y="0" width="1000" height="${WS_H}" fill="#0f5a93" opacity=".26"/></g></g>`);

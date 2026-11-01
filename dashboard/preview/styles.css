@@ -1587,7 +1587,7 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .ws-emit{fill:#1d2830;stroke:#0b1014;stroke-width:1.5}
 .ws-drop-c{fill:#6fbcf2;opacity:0}
 .ws-art.is-live .ws-drop-c{animation:ws-drip 1.5s ease-in infinite;animation-delay:calc(var(--ph-drop,0s) - var(--di,0) * .5s)}
-@keyframes ws-drip{0%{translate:0 -4px;opacity:0}15%{opacity:.95}85%{opacity:.85}100%{translate:0 26px;opacity:0}}
+@keyframes ws-drip{0%{translate:0 -4px;opacity:0}15%{opacity:.95}85%{opacity:.85}100%{translate:0 13px;opacity:0}}
 .ws-wet{transform-box:fill-box;transform-origin:center;opacity:.9}
 .ws-art.is-live .ws-wet{animation:ws-wet 6s ease-in-out infinite;animation-delay:var(--ph-a,0s)}
 @keyframes ws-wet{0%,100%{transform:scale(.8);opacity:.7}50%{transform:scale(1.06);opacity:1}}
