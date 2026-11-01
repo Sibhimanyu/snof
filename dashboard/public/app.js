@@ -3219,17 +3219,12 @@ function wsWave(y, amp, to = null) {
   for (let i = 0; i < 23; i++) d += ' t40,0';
   return to == null ? d : `${d} V${to} H-160 Z`;
 }
-/** A tank (the well, the sump) with water in it, cut away. */
-function wsTank(id, x, y, w, h, level, lid) {
-  const wy = +(h * (1 - level)).toFixed(1);
-  return `<defs><linearGradient id="wsg-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--water-2)"/><stop offset="1" style="stop-color:var(--water)"/></linearGradient>
-    <clipPath id="wsc-${id}"><rect x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="12"/></clipPath></defs>
-    <rect class="ws-t-body" x="${x}" y="${y}" width="${w}" height="${h}" rx="15"/>
-    <g clip-path="url(#wsc-${id})"><g transform="translate(${x} ${y})">
-      <path class="ws-wave ws-wave-b" d="${wsWave(wy - 5, 5, h)}"/>
-      <path class="ws-wave ws-wave-a" d="${wsWave(wy, 4, h)}" style="fill:url(#wsg-${id})"/>
-      <rect x="9" y="10" width="7" height="${h - 24}" rx="3.5" fill="#fff" opacity=".13"/></g></g>
+/** A tank (the well, the sump), drawn as an outline. There is no level sensor,
+ *  so it holds no water and says so (owner, 2026-11-01). */
+function wsTank(x, y, w, h, lid) {
+  return `<rect class="ws-t-body" x="${x}" y="${y}" width="${w}" height="${h}" rx="15"/>
     <rect class="ws-t-rim" x="${x}" y="${y}" width="${w}" height="${h}" rx="15"/>
+    <text class="ws-t-note" x="${x + w / 2}" y="${y + h / 2 + 4}" text-anchor="middle">No level reading</text>
     ${lid ? `<rect class="ws-lid" x="${x - 8}" y="${y - 9}" width="${w + 16}" height="14" rx="7"/>` : ''}`;
 }
 /** The three places. Each draws its pipe twice, across (wide) and down
@@ -3240,27 +3235,25 @@ function wsArt(kind, o) {
     `<g class="ws-v">${vIn ? wsPipe(vIn, o.inOn, o.unread) : ''}${vOut ? wsPipe(vOut, o.outOn, o.unread) : ''}</g>`;
   const open = `<svg class="ws-art${o.live ? ' is-live' : ''}" viewBox="0 0 480 156" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">`;
   if (kind === 'river') {
-    const bank = 'M-400,26 H266 Q308,26 308,68 V160 H-400Z';
-    return open + `<defs><linearGradient id="wsg-r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--water-2)"/><stop offset="1" style="stop-color:var(--water)"/></linearGradient>
-      <clipPath id="wsc-r"><path d="${bank}"/></clipPath></defs>
-      <g clip-path="url(#wsc-r)"><rect x="-400" y="20" width="900" height="150" fill="url(#wsg-r)"/>
-        <rect x="-400" y="26" width="900" height="22" fill="#fff" opacity=".1"/>
-        <path class="ws-ripple ws-r1" d="${wsWave(56, 5)}"/><path class="ws-ripple ws-r2" d="${wsWave(90, 7)}"/>
-        <path class="ws-ripple ws-r3" d="${wsWave(122, 6)}"/></g>
-      <path class="ws-bank" d="${bank}"/>
-      <path class="ws-reeds" d="M328,70 v-26 M337,70 v-36 M346,70 v-22 M356,70 v-30 M365,70 v-18"/>
+    // A flat stylised stream: no surface, no depth, so it reads as a river and
+    // not as a gauge.
+    const stream = 'M-400,46 H292 a32,32 0 0 1 0,64 H-400Z';
+    return open + `<defs><clipPath id="wsc-r"><path d="${stream}"/></clipPath></defs>
+      <path class="ws-stream" d="${stream}"/>
+      <g clip-path="url(#wsc-r)"><path class="ws-ripple ws-r1" d="${wsWave(62, 4)}"/><path class="ws-ripple ws-r2" d="${wsWave(94, 4)}"/></g>
+      <path class="ws-reeds" d="M338,112 v-14 M347,112 v-20 M356,112 v-12"/>
       ${hv('', 'M240,78 H880', '', 'M240,78 V560')}
       <rect class="ws-grate" x="226" y="64" width="28" height="28" rx="8"/><path class="ws-grate-l" d="M233,72 v12 M240,72 v12 M247,72 v12"/></svg>`;
   }
   if (kind === 'thoppu') {
     return open + `${hv('M-400,78 H240', 'M240,78 H880', 'M240,-400 V78', 'M240,78 V560')}
       ${wsPipe('M282,112 V134 H340', o.dripOn, o.unread, true)}
-      ${wsTank('t', 185, 26, 110, 86, 0.6, false)}
+      ${wsTank(185, 26, 110, 86, false)}
       ${[298, 319, 340].map((x, i) => `<circle class="ws-emit" cx="${x}" cy="134" r="3.4"/>` + (o.dripOn ? `<circle class="ws-drop-c" style="--di:${i}" cx="${x}" cy="138" r="2.6"/>` : '')).join('')}
       <rect class="ws-soil" x="-400" y="150" width="1300" height="8"/></svg>`;
   }
   return open + `${hv('M-400,78 H240', '', 'M240,-400 V78', '')}
-    ${wsTank('f', 185, 24, 110, 86, 0.55, true)}
+    ${wsTank(185, 24, 110, 86, true)}
     <rect class="ws-soil" x="-400" y="150" width="1300" height="8"/></svg>`;
 }
 /** The motor: a housing with a rotor that spins while it runs, and a ring of
