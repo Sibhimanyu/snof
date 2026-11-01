@@ -556,7 +556,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     const card=(k)=>document.querySelector(`#view .ws-card:has(.ws-name[href="#/motor/${k}"])`);
     const on=(k)=>!!card(k)?.classList.contains('is-on');
     // pipe 1 (River -> Thoppu) is the first link; the drip pipe is the thin one.
-    const riverPipe=()=>!!document.querySelector('#view .ws-link .ws-lh .ws-pipe.is-on');
+    const riverPipe=()=>!!document.querySelector('#view .ws-pipes-h .ws-pipe.is-on[data-p="river"]');
     const a={river:on('river'), drip:on('well-motor'), supply:on('wellmotor75hp'), pipe:riverPipe(),
       stub:!!document.querySelector('#view .ws-pipe.is-mid.is-on')};
     state.water.river.reportedAt=iso(now-3600e3); render();
@@ -706,7 +706,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   const r=await p.evaluate(()=>{const k=document.querySelector('#view .ws-card:has(.ws-name[href="#/motor/river"])');
     return {un:k.classList.contains('is-unread'), tag:k.querySelector('.tag').textContent, line:k.querySelector('.ws-line').textContent,
       sign:k.querySelector('.ws-signin')?.getAttribute('href'), tile:!!document.querySelector('#view .ws-tile.is-unread'),
-      moving:!!document.querySelector('#view .ws-link .ws-pipe.is-on')};});
+      moving:!!document.querySelector('#view .ws-pipes-h .ws-pipe.is-on[data-p="river"]')};});
   check("an unreadable river motor is hatched, says why, shows no state, and offers Sign in", r.un&&r.tag==="Can't read"&&/expired/.test(r.line)&&r.sign==='#/motor/river'&&r.tile&&!r.moving, JSON.stringify(r));
   await c.close();
 }
@@ -716,15 +716,22 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   // three drawn scenes, and each says there is no level reading.
   const [p,c]=await open('?live=1#/water');
   await p.waitForSelector('#view .wscene');
-  const r=await p.evaluate(()=>({pours:[...document.querySelectorAll('#view .ws-tile')].map(t=>!!t.querySelector('.ws-pour')),
+  const r=await p.evaluate(()=>({pours:document.querySelectorAll('#view .ws-pipes-h .ws-pour').length,
     wells:document.querySelectorAll('#view .ws-art').length, raster:document.querySelectorAll('#view .ws-tile img').length,
     notes:[...document.querySelectorAll('#view .ws-place small')].map(s=>s.textContent),
     // water in a pipe is a texture, never dots, dashes or beads
-    dashed:[...document.querySelectorAll('#view .ws-art *')].filter(e=>{const d=getComputedStyle(e).strokeDasharray;return d&&d!=='none'}).length,
-    beads:document.querySelectorAll('#view .ws-bub, #view .ws-p-flow circle').length}));
-  check('Thoppu is poured into by the running river motor, the farm sump (75HP off) is dry', JSON.stringify(r.pours)==='[false,true,false]', JSON.stringify(r.pours));
-  check('three drawn scenes (no photo), each with a "No level reading" note', r.wells===3&&r.raster===0&&r.notes.length===3&&r.notes.every(n=>n==='No level reading'), JSON.stringify(r));
-  check('no dots, dashes or beads anywhere in the water art', r.dashed===0&&r.beads===0, JSON.stringify(r));
+    dashed:[...document.querySelectorAll('#view .ws-art *, #view .ws-pipes *')].filter(e=>{const d=getComputedStyle(e).strokeDasharray;return d&&d!=='none'}).length,
+    beads:document.querySelectorAll('#view .ws-bub, #view .ws-p-flow').length,
+    // every pipe turns in a smooth bend, never a square elbow
+    pipes:[...document.querySelectorAll('#view .ws-pipes-h .ws-pg-glass, #view .ws-art .ws-pg-glass')].map(e=>e.getAttribute('d')),
+    // the pipes are one drawing over the row, not clipped by a card
+    overlay:getComputedStyle(document.querySelector('#view .ws-pipes-h')).display}));
+  const bends=r.pipes.every(d=>/ A/.test(d)&&!/L[^A]*L[^A]*L[^A]*L[^ ]* L/.test(d.replace(/ A[^L]*/g,' A')));
+  check('Thoppu is poured into by the running river motor, the farm sump (75HP off) is dry', r.pours===1, JSON.stringify(r.pours));
+  check('three drawn scenes (no photo), each with a "No level reading" note', r.wells===3&&r.raster===0&&r.notes.length===3&&r.notes.every(n=>n==='No level reading'), JSON.stringify({w:r.wells,i:r.raster,n:r.notes}));
+  check('no dots, dashes or beads anywhere in the water art', r.dashed===0&&r.beads===0, JSON.stringify({d:r.dashed,b:r.beads}));
+  check('every pipe turns in a rounded bend', r.pipes.length>=5&&r.pipes.every(d=>/ A/.test(d)), r.pipes.map(d=>d.length).join(','));
+  check('the pipes are one overlay across the row', r.overlay==='block', r.overlay);
   await c.close();
 }
 await b.close();
