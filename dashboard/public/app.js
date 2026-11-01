@@ -1244,7 +1244,7 @@ function powerPage(systems) {
     [0, 45, 90, 135, 180, 225, 270, 315].map((d) => `<line x1="24" y1="5" x2="24" y2="10" transform="rotate(${d} 24 24)"/>`).join('') + `</svg></span>` +
     `<div class="sys-hero-body"><h2 class="sys-hero-title">${solarW > 0 ? `${escapeHtml(fmtPower(solarW))} solar` : 'No solar right now'}</h2>` +
     `<p class="sys-hero-sub">${escapeHtml(`${fmtKwh(solarKwh)} today from both inverters`)}</p></div></section>`;
-  return top + lines.map((l) => {
+  return top + `<div class="power-lines">` + lines.map((l) => {
     const st = lineStatus(l);
     let body = '';
     if (l.inverter) {
@@ -1278,7 +1278,7 @@ function powerPage(systems) {
           <p class="pw-sec-sub">${escapeHtml([l.phase, l.inverter && `${l.brand} solar`, l.use].filter(Boolean).join(' · '))}</p></div>
         <strong class="pw-fig">${escapeHtml(st.figure)}${st.unit ? `<small>${escapeHtml(st.unit)}</small>` : ''}</strong></div>
       ${body}</section>`;
-  }).join('');
+  }).join('') + `</div>`;
 }
 
 /* ---- needs a look ----
@@ -1447,7 +1447,7 @@ function systemView(all, id) {
     const cams = sys.ents.filter((e) => e.domain === 'camera');
     top = `<section class="panel sys-hero sec ${s.state === 'bad' ? 'is-bad' : s.armed ? 'is-on' : ''}"><span class="shield" aria-hidden="true"><svg viewBox="0 0 24 24" class="ico"><use href="#i-shield"/></svg></span>
       <div><h2 class="sys-hero-title">${escapeHtml(s.line)}</h2><p class="sys-hero-sub">${escapeHtml(`${s.camsOn} of ${s.cams} cameras online`)}${s.active.length ? ` · ${s.active.length} detecting now` : ''}</p></div></section>` +
-      `<section class="panel"><div class="list">${cams.map((e) => {
+      `<section class="panel"><div class="list cams">${cams.map((e) => {
         const dev = sys.devices.find((d) => d.ents.includes(e));
         const now = (dev?.ents || []).filter((x) => x.domain === 'binary_sensor' && isOn(x) && /(person|motion|pet|sound) detected/.test(lname(x)))
           .map((x) => lname(x).match(/(person|motion|pet|sound) detected/)[1]);
@@ -1470,12 +1470,20 @@ function systemView(all, id) {
   const off = devices.filter(deviceOffline);
   // An AC's own card leads its panel, then its readings.
   const acFirst = (x, y) => (x.domain === 'climate' ? 0 : 1) - (y.domain === 'climate' ? 0 : 1) || byName(x, y);
-  const devList = ['security', 'solar', 'switches'].includes(id) ? '' : live.map((d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
-      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !isBackstage(e)).sort(acFirst).slice(0, 12).map((e) => row(e, false, true, d.name)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`).join('');
+  const devPanel = (d) => `<section class="panel area-sec">` + panelHead(d.name, null) +
+      `<div class="list">${d.ents.filter((e) => !isBad(e) && !CONTROLLABLE.has(e.domain) && !isBackstage(e)).sort(acFirst).slice(0, 12).map((e) => row(e, false, true, d.name)).join('') || `<p class="more-note">${escapeHtml(areaName(d.area))}</p>`}</div></section>`;
+  // Climate: the ACs that are running are cards in a grid; one that is off is
+  // a single quiet line that still has its power switch.
+  const isOffAc = (d) => id === 'climate' && d.ents.some((e) => e.domain === 'climate') && !d.ents.some((e) => e.domain === 'climate' && acView(e).on);
+  const miniAc = (d) => `<div class="ac-off">${d.ents.filter((e) => e.domain === 'climate').map((e) => acCard(e, false, true)).join('')}</div>`;
+  const devList = ['security', 'solar', 'switches'].includes(id) ? ''
+    : id === 'climate' ? `<div class="ac-grid">${live.filter((d) => !isOffAc(d)).map(devPanel).join('')}</div>` +
+      (live.some(isOffAc) ? `<section class="panel area-sec ac-off-list">${live.filter(isOffAc).map(miniAc).join('')}</section>` : '')
+    : live.map(devPanel).join('');
   // Per device, as on a room page: a fan on the switches page is switched
   // off, not offline. Both are drawn faded, last (owner, 2026-09-25).
   const isFault = (d) => SYSTEMS[id].offline !== 'none' && !isAppliance(d);
-  const offList = ['security', 'solar'].includes(id) ? '' : offPanels(off, isFault);
+  const offList = ['security', 'solar'].includes(id) ? '' : offPanels(off, isFault, id === 'climate');
   return head(sys.title, '', '', back) + haNote() + top + tiles + devList + offList;
 }
 
@@ -1494,14 +1502,36 @@ function areasView(all) {
 
 /* A room: how many devices, and what is wrong. An AC or TV that is off at
  * the wall is "off", not an alarm; red is kept for real faults. */
+/** One dot per device: on, idle (a sensor, or nothing running), off at the
+ *  wall, or a real fault. Worst first, so a fault is never hidden at the end. */
+function deviceDot(d, index) {
+  if (deviceOffline(d)) return offlineIsFault(d, index) ? 'bad' : 'off';
+  return d.ents.some((e) => (e.domain === 'climate' ? acView(e).on : (CONTROLLABLE.has(e.domain) || e.domain === 'media_player') && isOn(e))) ? 'on' : 'idle';
+}
+const DOT_ORDER = { bad: 0, on: 1, idle: 2, off: 3 };
 function areaCard(id, list, index = new Map()) {
   const devices = byDevice(list);
   const { fault, off } = offlineSplit(devices, index);
+  const dots = devices.map((d) => deviceDot(d, index)).sort((a, b) => DOT_ORDER[a] - DOT_ORDER[b]);
+  const on = dots.filter((x) => x === 'on').length;
   return `<a class="area-card" href="#/area/${encodeURIComponent(id)}">
     <div class="area-top"><span class="area-name">${escapeHtml(areaName(id))}</span>${arrow('i-chevron', 'area-arrow')}</div>
     <span class="area-count">${devices.length} ${plural(devices.length, 'device', 'devices')}` +
-      `${fault ? ` · <span class="bad">${fault} offline</span>` : ''}${off ? ` · ${off} off` : ''}</span>
+      `${on ? ` · ${on} on` : ''}${fault ? ` · <span class="bad">${fault} offline</span>` : ''}${off ? ` · ${off} off` : ''}</span>
+    <span class="area-dots" aria-hidden="true">${dots.slice(0, 30).map((x) => `<i class="${x}"></i>`).join('')}</span>
   </a>`;
+}
+
+/** The room list beside a room's page on a wide screen: the same links as
+ *  Rooms, so moving between rooms is one click and the URL is the room's. */
+function roomsRail(all, current) {
+  const index = deviceSystems(all);
+  return `<nav class="rooms-rail" aria-label="Rooms">${groupByArea(all).filter(([id]) => state.areas?.[id]).map(([id, list]) => {
+    const n = byDevice(list).length;
+    const { fault } = offlineSplit(byDevice(list), index);
+    return `<a href="#/area/${encodeURIComponent(id)}"${id === current ? ' aria-current="page"' : ''}><span>${escapeHtml(areaName(id))}</span>` +
+      `<em${fault ? ' class="bad"' : ''}>${n}</em></a>`;
+  }).join('')}</nav>`;
 }
 
 function areaView(all, id) {
@@ -1546,6 +1576,7 @@ function areaView(all, id) {
 
   return head(areaName(id), sub, '', back) + haNote() +
     (canControl && !bridgeGate('control').ok ? controlNote() : '') +
+    `<div class="rooms-split">${roomsRail(all, id)}<div class="rooms-main">` +
     order.map((d) => {
       const items = byDomain.get(d).sort(byName);
       const title = SECTION_TITLE[d] || cap(humanDomain(d));
@@ -1557,7 +1588,7 @@ function areaView(all, id) {
       // Drawn like the rest, faded, at the end (owner, 2026-09-25).
       const index = deviceSystems(all);
       return offPanels(dead, (d) => offlineIsFault(d, index));
-    })());
+    })()) + `</div></div>`;
 }
 
 /* All devices is a list of devices, not of the hundreds of readings they
@@ -1590,7 +1621,16 @@ function devicesView(all) {
   // Opened by hand, or by a search: a list of dead devices opened by the
   // filter was ~170 rows of "unavailable".
   const filtering = !!(search || domainFilter);
+  const byRoom = statusFilter === 'all';
+  let lastRoom = null;
+  if (byRoom) groups.sort((a, b) => areaName(a.area).localeCompare(areaName(b.area), undefined, NATURAL) ||
+    a.name.localeCompare(b.name, undefined, NATURAL));
   const body = groups.map((g) => {
+    const roomHead = byRoom && g.area !== lastRoom ? `<h3 class="dgroup-room">${escapeHtml(areaName(g.area))}</h3>` : '';
+    lastRoom = g.area;
+    return roomHead + deviceGroup(g);
+  }).join('');
+  function deviceGroup(g) {
     // No device id (an older bridge, or the synthetic fixture): a plain row.
     if (g.id === g.ents[0].key && !g.ents[0].device) return `<div class="list dgroup-solo">${row(g.ents[0], true)}</div>`;
     const whole = full.get(g.id) || g;
@@ -1604,12 +1644,12 @@ function devicesView(all) {
     return `<section class="dgroup${open ? ' open' : ''}">
       <button class="dgroup-head" data-act="dev-open" data-dev="${escapeHtml(g.id)}" aria-expanded="${open}">
         <span class="dgroup-main"><span class="dgroup-name">${escapeHtml(g.name)}</span>
-          <span class="dgroup-meta">${escapeHtml(areaName(g.area))}</span></span>
+          ${byRoom ? '' : `<span class="dgroup-meta">${escapeHtml(areaName(g.area))}</span>`}</span>
         ${status}${arrow('i-chevron', 'dgroup-chev')}
       </button>
       ${open ? `<div class="dgroup-body">${g.ents.map((e) => row(e, false, true, g.name)).join('')}</div>` : ''}
     </section>`;
-  }).join('');
+  }
 
   return head('Rooms', '', '') + roomsSwitch('devices') + haNote() +
     `<div class="toolbar-row">${seg}</div>` +
@@ -3926,11 +3966,12 @@ function adminView() {
     ? `<div class="list">${rows.join('')}</div>`
     : emptyBlock('No one yet', 'Add someone above — they do not need to have signed in first.');
 
-  return head('Admin', '', '') +
+  return head('Admin', '', '') + `<div class="admin-cols"><div class="admin-side">` +
     sectionHead('n-admin', 'Farm box') + farmBoxRow() +
     sectionHead('n-admin', 'Add a person') + addForm +
+    `</div><div class="admin-main">` +
     sectionHead('n-admin', 'People') + list +
-    `<p class="more-note">Only the farm owner can make someone an admin.</p>`;
+    `<p class="more-note">Only the farm owner can make someone an admin.</p></div></div>`;
 }
 
 /* ---- pieces ---- */
@@ -3991,7 +4032,7 @@ const modeWord = (v, words) => words[v] || cap(String(v).replace(/_/g, ' '));
 
 /** An AC: power, what it is set to, and the choices it offers. Viewers see
  *  the same card with nothing to press. */
-function acCard(ent, bare = false) {
+function acCard(ent, bare = false, mini = false) {
   const a = ent.attrs || {}, v = acView(ent), bad = isBad(ent);
   const can = canControl && !bad && bridgeGate('control').ok;
   const dis = can ? '' : ' disabled';
@@ -4010,6 +4051,12 @@ function acCard(ent, bare = false) {
   // Off at the wall under a "Switched off" heading: the toggle is just Power.
   const title = bare ? (status || 'Power') : name;
   const meta = bare ? '' : status || 'Switched off';
+  if (mini) {
+    return `<div class="ac ac-mini${bad ? ' is-bad' : ''}" data-key="${escapeHtml(ent.key)}"><div class="dev-top">
+      <span class="dev-text"><span class="dev-name">${escapeHtml(name)}</span><span class="dev-meta">${escapeHtml(bad ? 'Offline' : 'Off')}</span></span>
+      ${canControl ? `<button class="toggle${busy && 'power' in (acWants.get(ent.key) || {}) ? ' busy' : ''}" role="switch" aria-checked="${v.on}" aria-label="${escapeHtml(name)}" data-act="ac" data-ac="power"${dis}></button>` : ''}
+    </div></div>`;
+  }
   return `<div class="ac${v.on ? ' is-on' : ''}${bad ? ' is-bad' : ''}" data-key="${escapeHtml(ent.key)}">
     <div class="dev-top">
       <span class="dev-text"><span class="dev-name">${escapeHtml(title)}</span>${meta ? `<span class="dev-meta">${escapeHtml(meta)}</span>` : ''}</span>
@@ -4030,7 +4077,15 @@ function acCard(ent, bare = false) {
  * nothing to press, after them (owner, 2026-09-25). Its readings would all say
  * "unavailable", so it shows what it is: its main controls, disabled. */
 const PRIMARY = new Set(['climate', 'media_player', 'fan', 'light', 'switch', 'input_boolean', 'remote']);
-function offPanels(devices, isFault) {
+function offPanels(devices, isFault, compact = false) {
+  // Climate: an AC that cannot be reached is one faded line (nothing to press).
+  if (compact) {
+    if (!devices.length) return '';
+    return `<section class="panel area-sec is-faded ac-off-list" aria-disabled="true">${devices.map((d) => {
+      const fault = isFault(d);
+      return `<div class="ac-off-row"><span class="dev-name">${escapeHtml(d.name)}</span><span class="tag${fault ? ' tag-bad' : ''}">${fault ? 'Offline' : 'Switched off'}</span></div>`;
+    }).join('')}</section>`;
+  }
   return devices.map((d) => {
     // An AC or TV is its AC or TV: its display-light and sound switches are
     // settings, not what the device is.

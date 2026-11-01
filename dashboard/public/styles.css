@@ -1731,3 +1731,120 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 }
 @media (prefers-reduced-motion:reduce){.run-scrim,.run-drawer{animation:none}}
 @media (max-width:480px){ .now-top .btn{margin-left:auto} }
+
+/* ============ Rooms, All devices, a room, system pages, Admin (web redesign, chunks 6-9) ============ */
+
+/* Rooms: a card per room with one dot per device. */
+.grid:has(> .area-card){grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.area-card{gap:6px;padding:16px 18px 15px}
+.area-dots{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;min-height:9px}
+.area-dots i{width:9px;height:9px;border-radius:50%;background:var(--line-2)}
+.area-dots i.on{background:var(--accent)}
+.area-dots i.idle{background:var(--faint);opacity:.55}
+.area-dots i.off{background:transparent;box-shadow:inset 0 0 0 1.5px var(--faint);opacity:.7}
+.area-dots i.bad{background:var(--bad)}
+
+/* A room: its list of rooms beside it on a wide screen, its panels in columns. */
+.rooms-rail{display:none}
+@media (min-width:1100px){
+  .rooms-split{display:grid;grid-template-columns:200px minmax(0,1fr);gap:28px;align-items:start}
+  .rooms-rail{display:flex;flex-direction:column;gap:2px;position:sticky;top:calc(var(--bar-h) + 16px);
+    max-height:calc(100vh - var(--bar-h) - 40px);overflow:auto}
+  .rooms-rail a{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;padding:0 12px;
+    border-radius:var(--r);font-size:14px;font-weight:600;color:var(--muted)}
+  .rooms-rail a:hover{background:var(--panel-2);color:var(--text)}
+  .rooms-rail a[aria-current="page"]{background:var(--panel);color:var(--text);box-shadow:var(--shadow-card)}
+  .rooms-rail em{font-style:normal;font-size:12px;font-weight:650;color:var(--faint);font-variant-numeric:tabular-nums}
+  .rooms-rail em.bad{color:var(--bad)}
+  .rooms-main{column-count:2;column-gap:16px}
+  .rooms-main > .panel{break-inside:avoid;margin:0 0 16px}
+  .rooms-main > .panel + .panel{margin-top:0}
+  .rooms-main > :not(.panel){column-span:all}
+  .rooms-main .dev-list.cols,.rooms-main .list.cols{column-width:auto;column-count:1}
+}
+@media (min-width:1500px){ .rooms-main{column-count:3} }
+
+/* All devices: the status sits next to the name, rooms are headed, filters stay in view. */
+.toolbar-row:has(.seg[aria-label="Filter by status"]){position:sticky;top:var(--bar-h);z-index:5;margin:0 calc(var(--gutter) * -1) 12px;
+  padding:10px var(--gutter);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.dgroups{max-width:760px}
+.dgroup-room{padding:16px 22px 6px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);background:var(--panel)}
+.dgroups > .dgroup-room:first-child{padding-top:18px}
+@media (min-width:700px){
+  .dgroup-main{display:grid;grid-template-columns:minmax(160px,1.6fr) minmax(90px,1fr);align-items:center;gap:14px}
+  .dgroup-main:has(> .dgroup-name:only-child){display:flex}
+  .dgroup-meta{font-size:13px}
+}
+.dgroups .row{min-height:52px}
+
+/* Climate: running ACs as a grid of cards; an AC that is off is one quiet line. */
+.ac-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start}
+.ac-grid > .panel{margin:0}
+.ac-grid .area-sec + .area-sec{margin-top:0}
+.ac-off-list{margin-top:16px}
+.ac-off-list.is-faded{display:block}
+.ac-off-row,.ac-off{padding:0}
+.ac-off-row{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 22px}
+.ac-off-row .dev-name{flex:1}
+.ac-off-row + .ac-off-row,.ac-off + .ac-off{border-top:1px solid var(--line-soft)}
+.ac-off .ac{padding:4px 22px;opacity:.75}
+.ac-off .ac:hover{opacity:1}
+.ac-mini .dev-top{min-height:48px}
+@media (min-width:900px){
+  .ac-off-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ac-off-list.is-faded{display:block;column-count:2;column-gap:0}
+  .ac-off-list.is-faded .ac-off-row{break-inside:avoid}
+  .ac-off-list:not(.is-faded) .ac-off + .ac-off{border-top:0}
+  .ac-off-list:not(.is-faded) .ac-off:nth-child(odd){border-right:1px solid var(--line-soft)}
+  .ac-off-list:not(.is-faded) .ac-off{border-bottom:1px solid var(--line-soft)}
+}
+.ac-grid .ac-temp{gap:22px}
+.ac-grid .ac-set b{font-size:38px}
+
+/* Security: cameras as a grid. */
+@media (min-width:900px){
+  .list.cams{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .list.cams .row::before{display:none}
+  .list.cams .row{border-bottom:1px solid var(--line-soft);border-right:1px solid var(--line-soft)}
+}
+
+/* Admin: the person form on the left, the people on the right. */
+@media (min-width:1000px){
+  .admin-cols{display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:0 32px;align-items:start}
+  .admin-side .rep-builder{flex-direction:column;align-items:stretch}
+  .admin-side .rep-field input[type=email],.admin-side .rep-field select{width:100%;min-width:0;box-sizing:border-box}
+  .admin-side .rep-builder .btn{width:100%}
+}
+
+/* Power: the hero, then the lines side by side on a wide screen. */
+@media (min-width:1100px){
+  .power-lines{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+  .power-lines > .panel{margin:0}
+  .power-lines > .panel:last-child:nth-child(odd){grid-column:1 / -1}
+  .power-lines .mb-facts{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+}
+
+/* Mobile density: 44px targets without growing the look (hit areas extend past the box). */
+@media (max-width:620px){
+  .btn,.btn-sm{min-height:44px}
+  .page-head .btn-sm,.head-actions .btn-sm{min-height:44px;padding-top:0;padding-bottom:0}
+  .seg-nav a{position:relative}
+  .seg-nav a::before{content:"";position:absolute;left:0;top:50%;translate:0 -50%;width:100%;height:44px}
+  .back{min-height:44px;margin:-10px 0 -10px}
+  .ac-chips button{position:relative}
+  .ac-chips button::before{content:"";position:absolute;left:0;top:50%;translate:0 -50%;width:100%;height:44px}
+  .rooms-split{display:block}
+  .area-card{padding:14px 16px 13px}
+  .grid:has(> .area-card){grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .page-head{margin-bottom:16px}
+  .dgroup-room{padding:14px 16px 4px}
+  .dgroup-head{padding:10px 16px}
+  .dgroups .row{padding-left:16px;padding-right:16px}
+  .ac-off-row{padding:0 16px}
+  .ac-off .ac{padding:4px 16px}
+  .toolbar-row:has(.seg[aria-label="Filter by status"]){top:var(--bar-h)}
+}
+@media (max-width:360px){ .grid:has(> .area-card){grid-template-columns:1fr} }
+
+@media (max-width:620px){ .row .btn{height:44px;min-height:44px} }
+@media (max-width:620px){ .admin-main .row{flex-wrap:wrap;row-gap:8px} .admin-main .row-main{flex:1 1 60%} }
