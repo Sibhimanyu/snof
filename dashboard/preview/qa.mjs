@@ -710,5 +710,18 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check("an unreadable river motor is hatched, says why, shows no state, and offers Sign in", r.un&&r.tag==="Can't read"&&/expired/.test(r.line)&&r.sign==='#/motor/river'&&r.tile&&!r.moving, JSON.stringify(r));
   await c.close();
 }
+{
+  // Water, realistic: a stream pours only while the motor feeding that place
+  // runs on a current reading; idle water is dry and still; the art is the
+  // three generated scenes, and each says there is no level reading.
+  const [p,c]=await open('?live=1#/water');
+  await p.waitForSelector('#view .wscene');
+  const r=await p.evaluate(()=>({pours:[...document.querySelectorAll('#view .ws-tile')].map(t=>!!t.querySelector('.ws-pour')),
+    imgs:[...document.querySelectorAll('#view .ws-img')].map(i=>i.getAttribute('src')),
+    notes:[...document.querySelectorAll('#view .ws-place small')].map(s=>s.textContent)}));
+  check('Thoppu is poured into by the running river motor, the farm sump (75HP off) is dry', JSON.stringify(r.pours)==='[false,true,false]', JSON.stringify(r.pours));
+  check('three generated scenes, each with a "No level reading" note', r.imgs.length===3&&r.imgs.every(s=>/\/art\/water\/\w+\.webp$/.test(s))&&r.notes.every(n=>n==='No level reading'), JSON.stringify(r));
+  await c.close();
+}
 await b.close();
 console.log(fail?`\n${fail} issue(s) found`:'\nno issues found');
