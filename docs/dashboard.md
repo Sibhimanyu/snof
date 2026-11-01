@@ -70,6 +70,17 @@ explicit empty state if nothing is operable.
 
 ## Shell chrome
 
+- **Desktop shell (>= 901px, web redesign chunk 2).** The same `.topbar`
+  element is drawn as a fixed left sidebar (CSS only, appended at the end of
+  styles.css): 240px from 1100px up (logo, Home / Water / Rooms with icons,
+  then bridge pill `#m-bridge`, account, theme at the foot); a 72px icon rail
+  from 901 to 1099px (labels stay for screen readers, the pill is a dot with
+  the full text in its `title`). Each page's own `.page-head` becomes the
+  sticky page bar (title left, Refresh right) and `#searchbar` is a
+  zero-height sticky strip so the search sits in that bar on Rooms, a room
+  and All devices. The Overview's `.pill-head` is hidden there because the
+  sidebar pill is always visible. At <= 900px nothing changes: top bar +
+  bottom tabs. Admin stays in the account menu (it opens upward).
 - `.topbar` is one bar on every width: wordmark, `.topnav` (the five
   destinations, green underline on the current one), theme button, account.
   Below 900px `.topnav` hides, the bridge pill `#m-bridge` takes its place,
