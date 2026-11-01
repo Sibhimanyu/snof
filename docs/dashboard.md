@@ -206,33 +206,45 @@ Hard-won constraints:
 
 `#/motor/dcon`: Now hero (time-left ring while watering), Watered and Pump & power side by side, Reports as a compact list with the opened report beside it from 900px of pane width (inline below), the Mobitech account last. Run valves opens as a right drawer (bottom sheet on phones) over the page; same buttons, same lock and gates. Layout only: no command, lock or request code moved.
 
-## Water art (2026-11-01, redrawn)
+## Water art (2026-11-01, redrawn twice)
 
-`#/water` draws three illustrated cutaway scenes on the card's own surface
-(owner: no photographed soil or landscape, the wells and tanks "need not be
-photorealistic", the water in the pipes must be realistic). They are SVG in
-`wsArt()` / `wsWell()` in `app.js`, 1000 x 600 units, the same in both themes:
+`#/water` draws three illustrated cutaway scenes on the card's own surface (owner:
+no photographed soil or landscape, the wells and tanks "need not be
+photorealistic", the water in the pipes must be realistic, the pipes smooth).
+They are SVG in `wsArt()` / `wsWell()` in `app.js`, 1000 x 660 units, the same
+in both themes. The page reads left to right: **river** (on the left, with its
+bank) -> underground pipe -> **river well** -> **Thoppu well** (and its own
+orchard) -> **farm sump** -> **the beds being watered**.
 
-- **River well** and **Thoppu well**: brick-lined cylindrical Indian open wells,
-  capstone rim, the front cut away to show the water and the submerged motor(s).
-  **Farm sump**: a shallower rectangular brick tank in the same style (about
-  11 ft). The river is a plain band with a sand bank; the river well draws from
-  it through an underground pipe, which is passive and never moves.
-- **Pipes are clear glass.** Idle they are empty and still. Running on a current
-  reading they are full of water: a baked caustic texture sliding along the
-  pipe under cylinder shading and a specular line. **Never dots, dashes, beads
-  or particles** (a QA check enforces it: no stroke-dasharray and no bubble
-  elements in the art). The pour is a clear column with the same texture
-  falling, a soft displaced foam and expanding rings where it lands; a running
-  motor sits in a soft turbulent disturbance, not bubbles.
-- The texture is `art/water/flow-h.webp` and `flow-v.webp` (about 20 KB each),
-  seamless along the flow, made from SVG feTurbulence by
-  `dashboard/preview/make-flow-texture.mjs` (Chromium render, then `cwebp
-  -q 80 -alpha_q 90`). Nothing is photographic or AI-generated any more.
-- Texture phases come from the clock (`wsSp()`), so a re-render resumes the
-  motion. Reduced motion: no animation at all, the water keeps its texture.
-- Can't read: scene and pipes greyed and hatched with the reason and Sign in.
-  Each scene says "No level reading"; water sits at a fixed depth.
-- The pipes between scenes (CSS bridges, `.ws-bridge`) use the same textures at
-  the same scale. Texture and pipe-width constants (`--pw`, 36 units of the
-  scene width) must stay in step with `WS_PW` in `wsPipe()`.
+- Wells are brick-lined cylinders with a capstone rim, the front cut away to show
+  the water and the submerged motor(s); the farm sump is a shallower rectangular
+  brick tank (~11 ft). The river well fills from the river through an
+  underground pipe, which is passive and never moves.
+- **Plants are where the water goes.** Thoppu's drip line runs along the base of
+  its orchard with an emitter at each plant; the sump's outlet curves into a row
+  of plants, one per bed being watered now, each with its crop's picture (the
+  same icons as the "Watering now" panel, which stays below as the text). Running
+  on a current reading: droplets fall from the emitters and the ground under each
+  plant darkens softly. Idle or not watering: a dry line, dry plants, no drips.
+- **Pipes are one drawing** (`wsOverlay()`, an SVG over the whole row, or the
+  whole stack on phones), not clipped by the cards, arching over the gaps. The
+  scene gap is 60 units (`--lw` = `--tw` * .06) so the overlay lines up at any
+  width. Every bend is a circular arc (`wsRound()` rounds the waypoints): no
+  square elbows or T-joints, a QA check enforces it.
+- **Pipes are clear glass** (outline, translucent bore, specular line). Idle they
+  are empty. Running they are full of water: a baked caustic texture slides along
+  the pipe under cylinder shading, laid piece by piece in the pipe's own frame so
+  it turns with every bend. **Never dots, dashes, beads or particles** (a QA
+  check: no stroke-dasharray and no bubble elements in the art; the only drops
+  are the emitters' droplet shapes). The pour is a clear column with the texture
+  falling, soft displaced foam and expanding rings; a running motor sits in a
+  soft turbulent disturbance.
+- Texture: `art/water/flow-h.webp` and `flow-v.webp` (about 20 KB each), seamless
+  along the flow, from SVG feTurbulence by `dashboard/preview/make-flow-texture.mjs`
+  (`cwebp -q 80 -alpha_q 90`). Nothing is photographic or AI-generated.
+  Phases come from the clock (`wsSp()`), so a re-render resumes the motion.
+- Can't read: scene and pipes greyed and hatched, reason and Sign in as before.
+  Each scene says "No level reading". Reduced motion: no animation, the water
+  keeps its texture.
+- The Home water chain (`wc-pipe`) draws only straight connectors between its
+  stations, with no elbows, so it has nothing to bend.
