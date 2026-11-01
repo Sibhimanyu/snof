@@ -1551,7 +1551,8 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .ws-t-body{fill:var(--panel);stroke:none}
 .ws-t-rim{fill:none;stroke:var(--line-2);stroke-width:3.5}
 .ws-lid{fill:var(--panel-3);stroke:var(--line-2);stroke-width:2}
-.ws-wave-b{fill:var(--water-2);opacity:.45}
+.ws-stream{fill:var(--water);stroke:var(--water-deep);stroke-width:2.5}
+.ws-t-note{font-size:10.5px;font-weight:650;fill:var(--faint);letter-spacing:.01em}
 .ws-soil{fill:color-mix(in srgb,var(--text) 14%,var(--land))}
 .ws-emit{fill:var(--line-2)}
 .ws-drop-c{fill:var(--water-2);opacity:0}
@@ -1560,11 +1561,8 @@ details[open].acct-sec > summary::after,.wdetails[open] > summary::after{rotate:
 .ws-ripple{fill:none;stroke:#fff;stroke-opacity:.34;stroke-width:2.2}
 .ws-grate{fill:var(--panel-3);stroke:var(--line-2);stroke-width:2.5}
 .ws-grate-l{stroke:var(--line-2);stroke-width:2.5;stroke-linecap:round;fill:none}
-.ws-art.is-live .ws-wave-a{animation:ws-wave 6s linear infinite;animation-delay:var(--ph-a,0s)}
-.ws-art.is-live .ws-wave-b{animation:ws-wave 9s linear infinite reverse;animation-delay:var(--ph-b,0s)}
 .ws-art.is-live .ws-r1{animation:ws-wave 8s linear infinite;animation-delay:var(--ph-r1,0s)}
 .ws-art.is-live .ws-r2{animation:ws-wave 11s linear infinite reverse;animation-delay:var(--ph-r2,0s)}
-.ws-art.is-live .ws-r3{animation:ws-wave 7s linear infinite;animation-delay:var(--ph-a,0s)}
 @keyframes ws-wave{to{transform:translateX(-80px)}}
 .ws-art .ws-drop-c{animation:ws-drip 1.4s ease-in infinite;animation-delay:calc(var(--ph-drop,0s) - var(--di,0) * .45s)}
 @keyframes ws-drip{0%{opacity:0;transform:translateY(-4px)}15%{opacity:.95}85%{opacity:.9}100%{opacity:0;transform:translateY(11px)}}
