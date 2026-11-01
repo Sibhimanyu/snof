@@ -1864,7 +1864,7 @@ function valveBars(rows) {
 const IRR_ROW_CAP = 8;
 
 const moreNote = (total, shown, what) => total > shown
-  ? `<p class="rep-note">${total - shown} more ${what} in this report.</p>` : '';
+  ? `<p class="rep-note">${total - shown} more ${total - shown === 1 ? what.replace(/ies$/, 'y').replace(/s$/, '') : what} in this report.</p>` : '';
 
 function irrMetrics(rows) {
   const tiles = rows
@@ -2127,6 +2127,8 @@ function irrReportCard(key, rep, open = true) {
     if (summary.endsWith(' · ' + r)) summary = summary.slice(0, -(r.length + 3));
     else if (summary === r) summary = '';
   }
+  // The function writes "1 entries"; say "1 entry".
+  summary = summary.replace(/(^|\D)1 entries\b/g, '$11 entry');
   // The header is the toggle; closed, a card is one line plus its summary.
   // The body stays in the page, hidden, so nothing re-lays-out on open.
   return `<section class="rep-card${open ? ' open' : ''}" data-rep="${escapeHtml(key)}">
@@ -3281,7 +3283,7 @@ function liveskyPanel() {
   const status = s.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(s.text)}</p>`;
   let form;
   if (!isOwner()) {
-    form = `<p class="more-note">Only ${escapeHtml(ownerName())} signs SNOF in to Livesky. Everyone uses that session.</p>`;
+    form = `<p class="more-note">Only ${escapeHtml(owner?.name || 'the farm owner')} signs SNOF in to Livesky. Everyone uses that session.</p>`;
   } else if (lsStep === 'mobile') {
     form = `<div class="rep-builder" data-key="livesky">
         <label class="rep-field"><span>Livesky mobile number</span>
@@ -3554,7 +3556,7 @@ function mobitechPanel() {
   const status = m.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(m.text)}</p>`;
   let form = '';
   if (!isOwner()) {
-    form = `<p class="more-note">Only ${escapeHtml(ownerName())} signs SNOF in to Mobitech. Everyone uses that session.</p>`;
+    form = `<p class="more-note">Only ${escapeHtml(owner?.name || 'the farm owner')} signs SNOF in to Mobitech. Everyone uses that session.</p>`;
   } else {
     // Same flow as the Livesky form; the function reaches Mobitech through
     // the farm box (a browser cannot, and Google Cloud is refused).
