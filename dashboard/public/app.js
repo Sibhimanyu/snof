@@ -4124,6 +4124,7 @@ function renderBridgeStatus() {
   const b = bridgeStatus();
   el('m-bridge').className = `pill pill-unknown only-narrow ${b.cls}`;
   el('m-bridge-text').textContent = b.short;
+  el('m-bridge').title = b.long;
   const head = el('head-bridge');
   if (head) {
     head.className = `pill pill-head ${b.cls}`;

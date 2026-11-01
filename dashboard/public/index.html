@@ -95,8 +95,11 @@
 </div>
 
 <!-- ---------- app shell ----------
-     One top bar on every width: wordmark, the four destinations, and the
-     account. Below 900px the destinations move to the bottom tab bar and the
+     One bar, drawn two ways. From 901px it is a fixed left sidebar (full at
+     1100px and up, an icon rail below that): wordmark, the three destinations,
+     then the bridge pill, theme and account at the foot; each page's own
+     .page-head becomes its sticky page bar. Below that it is the top bar.
+     Same elements, same ids, so every handler keeps working. Below 900px the destinations move to the bottom tab bar and the
      bridge state takes their place up top, because on a phone "is this live?"
      is the first question. Both navs carry data-nav; render() marks both. -->
 <div id="app">
@@ -109,9 +112,9 @@
       </a>
 
       <nav class="topnav" aria-label="Main">
-        <a class="topnav-item" href="#/" data-nav="overview">Home</a>
-        <a class="topnav-item" href="#/water" data-nav="water">Water</a>
-        <a class="topnav-item" href="#/areas" data-nav="areas">Rooms</a>
+        <a class="topnav-item" href="#/" data-nav="overview"><svg viewBox="0 0 24 24" class="ico nav-ico" aria-hidden="true"><use href="#n-overview"/></svg><span class="nav-label">Home</span></a>
+        <a class="topnav-item" href="#/water" data-nav="water"><svg viewBox="0 0 24 24" class="ico nav-ico" aria-hidden="true"><use href="#n-irrigation"/></svg><span class="nav-label">Water</span></a>
+        <a class="topnav-item" href="#/areas" data-nav="areas"><svg viewBox="0 0 24 24" class="ico nav-ico" aria-hidden="true"><use href="#n-areas"/></svg><span class="nav-label">Rooms</span></a>
       </nav>
 
       <div class="topbar-right">
