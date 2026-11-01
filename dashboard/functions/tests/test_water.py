@@ -300,8 +300,8 @@ def test_claim_pull_spacing():
 
 
 def test_only_the_owner_signs_in():
-    owner = "sibhi.gv@gmail.com"
-    assert W.is_owner({"email": "Sibhi.GV@gmail.com", "email_verified": True}, owner)
+    owner = "owner@example.com"
+    assert W.is_owner({"email": "Owner@Example.com", "email_verified": True}, owner)
     assert not W.is_owner({"email": owner, "email_verified": False}, owner), "unverified email"
     assert not W.is_owner({"email": "someone@else.com", "email_verified": True}, owner)
     assert not W.is_owner({"email": owner, "email_verified": True}, None), "no owner set: nobody"

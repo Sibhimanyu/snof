@@ -226,7 +226,7 @@ real shapes, read against a full pull on 2026-09-23 (7 days of timers,
 **`dashboard`** is keyed by serial. Almost none of it is showable:
 
 ```
-{"MCON874Q000568": {"device_id", "server_time", "time_zone", "sim": "vi-…",
+{"MCON000DEMO01": {"device_id", "server_time", "time_zone", "sim": "vi-…",
    "packets": {"live": "##,DCON-…!<ts>+05:30,V68,SibhiSump,…", "1".."6"},
    "users": {"A1": {"name", "mobile"}, …},
    "timers": {"current": {…timer record…}, "previous": {…}, "next": null},
