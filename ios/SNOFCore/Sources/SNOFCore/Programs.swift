@@ -90,9 +90,14 @@ extension Parse {
     public static func programs(_ v: Any?) -> ProgramsCache? {
         guard let d = v as? [String: Any] else { return nil }
         var items: [SavedProgram] = []
-        for (key, raw) in (d["items"] as? [String: Any] ?? [:]) {
+        // An object keyed "p<no>" (or "<no>"); RTDB hands bare numeric keys back as an array.
+        var raws: [(String, Any)] = []
+        if let obj = d["items"] as? [String: Any] { raws = obj.map { ($0.key, $0.value) } }
+        else if let arr = d["items"] as? [Any] { raws = arr.enumerated().map { (String($0.offset), $0.element) } }
+        for (key, raw) in raws {
             guard let n = raw as? [String: Any] else { continue }
-            guard let no = double(n["number"]).map({ Int($0) }) ?? Int(key), (1...99).contains(no) else { continue }
+            let keyNo = Int(key.hasPrefix("p") ? String(key.dropFirst()) : key)
+            guard let no = double(n["number"]).map({ Int($0) }) ?? keyNo, (1...99).contains(no) else { continue }
             items.append(SavedProgram(
                 number: no, name: string(n["name"]) ?? "",
                 valves: list(n["valves"]).compactMap { double($0).map { Int($0) } },

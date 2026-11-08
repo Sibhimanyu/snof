@@ -429,8 +429,8 @@ def test_programs_parse_to_an_allow_list_and_cache():
     assert V.normalize_programs(None) == {} and V.normalize_programs({"1": []}) == {}
     rep, patch = R.build("programs", {}, Source())
     assert rep["status"] == "ok" and set(patch) == {"programs"}
-    assert patch["programs"]["at"] == {".sv": "timestamp"} and set(patch["programs"]["items"]) == {"2", "4", "10"}
-    assert FAKE_PHONE not in json.dumps([rep, patch]) and "data" not in patch["programs"]["items"]["2"]
+    assert patch["programs"]["at"] == {".sv": "timestamp"} and set(patch["programs"]["items"]) == {"p2", "p4", "p10"}
+    assert FAKE_PHONE not in json.dumps([rep, patch]) and "data" not in patch["programs"]["items"]["p2"]
 
 
 def test_rain_is_four_millimetre_figures():
