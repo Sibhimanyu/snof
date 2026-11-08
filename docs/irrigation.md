@@ -184,7 +184,28 @@ dashboard's and iOS app's builder values, and a test pins the rule to
 | Motor log | motor_log | range | Energy (kWh), pump hours, power-present hours, pump share of available power, average draw (kW), **power and pump stacked per day**, energy per day. |
 | Pressure range | pressure_timer | range | Inlet/outlet average with **when** the low and high happened, filter drop, inlet and outlet as two lines (15-minute windows for a day, 2-hourly for a week). |
 | Pressure, last hour | pressure_cond from an hour back | — | The same, at 1-minute resolution. "Pump off" when there are no samples. |
+| Saved programs (`programs`) | dcon_timer select | — | Writes `irrigation/programs` (below), no report data of its own beyond a list. |
+| Rain (`rain`) | weather/cumulative | — | Writes `irrigation/rain`: today, last 24 h, yesterday, week, in mm. |
+| Power, whole day (`power_day`) | reports electricity_day | — | The same as Power over time for today, one call (packet 6 every minute since 00:00). |
+| Pressure, whole day (`pressure_day`) | reports pressure_day, `dt` = today | — | The same as Pressure range for today, one call. |
 | **Power over time** | electricity from the start date | range | Voltage per phase and current per phase as lines, gaps at supply cuts, pump-running windows shaded. Averages, imbalance, lowest and highest with phase and time, current while running with its peak, pump time against power time, supply cuts and the longest. |
+
+**Added 2026-11-08 (docs/mobitech-app.md has the shapes).** REPORT_TYPES now
+also has `programs`, `rain`, `power_day` and `pressure_day` (all "live", no
+range; the RTDB rule lists them). Two write cache nodes the apps read:
+
+```
+irrigation/programs = { at, items: { "<no>": { number, name, valves: [12,15],
+    start: "", duration: "01:00", days: "", enabled } } }
+irrigation/rain     = { at, today, last24h, yesterday, week }      // mm
+```
+
+`start` is always `""` and `days` is `""` for `on_days` "0": the controller's
+record has no start time (see mobitech-app.md, "Programs"); programs chain, and
+`irrigation/dcon/next` says which is next. The `controller` read also stores,
+in `irrigation/dcon`: `firmware` (the live packet's `V68` tag), `simExpiry`
+(`expiry_dt`, a date), `shutdown` (true when `emergency_shutdown_state` or
+`_status` is 1) and `current` / `next` / `previous` (absent when null).
 
 **Deliberately not built: operating pumps or valves.** The collection
 captures `/v1/command/` (valve ON/OFF, manual mode off). `dcon.py` has one

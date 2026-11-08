@@ -250,3 +250,22 @@ orchard) -> **farm sump** -> **the beds being watered**.
   keeps its texture.
 - The Home water chain (`wc-pipe`) draws only straight connectors between its
   stations, with no elbows, so it has nothing to bend.
+
+## Programs, rain, controller facts (2026-11-08)
+
+On the controller page, below Watered / Pump & power. **Programs** reads
+`irrigation/programs.items` (number, name, valves, duration; `start` and `days`
+are always empty on this controller, so they are hidden when empty). "Running"
+and "Next" are marked by timer number from `irrigation/dcon.current` / `.next`
+(names repeat); `irrigation/program` is used only when `dcon.current` is absent.
+Admins get **Start** per enabled program: it confirms with `window.confirm`
+(the same as a valve Run) and writes `irrigation_commands`
+`{action:'program', program, uid, at}`. It is disabled with the reason while
+`irrigation_lock` is live, a send is pending, or `meta/bridge.programStart` is
+not true. **Rain** reads `irrigation/rain`; **Controller** shows
+`irrigation/dcon` firmware, `simExpiry` and `shutdown` (amber when on). Programs
+and rain are asked once per page open and on Refresh (`refreshIrrigation(..,
+extrasOnly)`), never on the 60 s poll. A failed read shows "can't read" and no
+old figures (`irrigation/meta/errors/programs|rain`). `power_day` and
+`pressure_day` are report-builder types with no date fields. Preview flags:
+`progoff`, `progerr`, `shutdown`, `lock`, `watering`.

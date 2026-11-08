@@ -83,6 +83,29 @@ cut-over it moves with the reports: `DCON_TRANSPORT=direct` makes it call
 Mobitech itself (`dcon.DirectTransport` spells the same three calls), and
 step d below removes the relay with nothing left to carry.
 
+## The second extra: more reads, and starting a program
+
+Owner's decision (2026-11-08, option A, branch `mobitech-more`, add-on 0.11.0):
+the new Mobitech features go through the same NUC path, a **second documented
+exception** to "no new DCON code in the add-on", with strict named allow-lists
+and no new polling loops (reads happen on page open and Refresh only):
+
+- `bridge/relay.py` gains five named reads: `programs`, `electricity_day`,
+  `pressure_day` (arg `date`), `rain` (the weather API, `device_id` from the
+  add-on options) and `cmd_status` (arg `trans_id`, 10 digits; used by the
+  consumer while confirming). Every answer is cut down on the NUC
+  (`reduce_read`): no `users`, `sim`, packets 1/4/5/8, no free-text `data`,
+  no serial/device/user ids, and any run of ten digits is removed.
+- `bridge/irrigation_control.py` gains `program` (`ET01-NNN-HH MM@slot`) and
+  moves run/stop to `V…ON` / `MOFF`; option `allow_program_start`.
+
+**What moves at cut-over:** the Function side already has the twins
+(`dcon.DirectTransport` spells the five reads and `rain`; the dormant
+`irrigation_control.py` has the same program/run/stop logic), so cut-over is
+the same switch as before (`DCON_TRANSPORT=direct`, then the consumer swap in
+step b), and the add-on loses these with the rest. `DCON_DEVICE_ID` becomes a
+secret of the report function too (the rain call needs it).
+
 ## 3. Cut over (same day the allowlist works)
 
 Do these in order. Step 3b is the one that must never be reversed in order:

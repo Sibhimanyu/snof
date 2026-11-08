@@ -288,7 +288,7 @@ final class LogicTests: XCTestCase {
         XCTAssertNotNil(IrrigationTypes.validate(type: "valves", from: "2026-07-01", to: "2026-09-01"))
         XCTAssertNil(IrrigationTypes.validate(type: "valves", from: "2026-09-01", to: "2026-09-03"))
         XCTAssertNotNil(IrrigationTypes.validate(type: "operate_pump", from: "", to: ""))
-        XCTAssertEqual(IrrigationTypes.all.count, 12)
+        XCTAssertEqual(IrrigationTypes.all.count, 14)
     }
 
     func testRuntime() {

@@ -1,43 +1,50 @@
 """Irrigation control: the one path from the app to the Mobitech DCON controller.
 
-Two commands exist, both spelled exactly as Mobitech's own app spells them
-(read back from the controller's command history, 2026-09-11 → 09-24, and
-matched against the timer log it produced):
+Three commands exist, spelled exactly as Mobitech's own app spells them
+(captured 2026-09-24, docs/mobitech-app.md; owner's decision (b), 2026-11-08,
+moved run and stop from the older FON/OFF spelling to the app's own):
 
-    run   "FON 012,015,000,000,000-00 20-00,00,…!0--@A8"
-          Manual Mode on up to five valves for HH MM. The controller stops
-          it by itself when the time is up (19 Sep: completed=1, no OFF).
-    stop  "OFF@A8"
-          Ends Manual Mode. The log records it as end_control "A8".
+    run      "V008,009ON 00 10@A8"   valves 3 digits each, comma separated,
+             then HH MM. The controller ends it itself.
+    stop     "MOFF@A8"               ends Manual Mode; a program it displaced
+             carries on.
+    program  "ET01-002-01 00@A8"     starts a saved program (number, 3 digits)
+             for its own duration (the record's on_time). Takes over from any
+             run going now. Needs `allow_program_start` as well.
 
 `@A8` is the Mobitech user slot the command is sent as (sibhi = A8). A `U`
-slot means "pause" to Mobitech's portal, and the app uses it to stop a timer
-program — which is why stopping a *program* is not offered here yet.
+slot means "pause" to Mobitech's portal; stopping or pausing a scheduled
+program is not offered.
 
-    app ──append──▶ /farms/<farm>/irrigation_commands/<id>  {action, valves, minutes, uid, at}
+    app ──append──▶ /farms/<farm>/irrigation_commands/<id>  {action, valves|program, minutes, uid, at}
     NUC ◀─stream──┘  validate, read the controller, send, record
     NUC ──result──▶ /farms/<farm>/irrigation_command_results/<id>  {ok, message, …}
 
 Every check the database rules make is made again here, plus the ones only
 the farm can make:
   * off unless `allow_irrigation_control` is true, and then only with the
-    command credential, device id and user slot all set
-  * two actions, from a fixed template each; nothing from the app is ever
+    command credential, device id and user slot all set; starting a program
+    needs `allow_program_start` too (heartbeat meta/bridge.programStart)
+  * three actions, from a fixed template each; nothing from the app is ever
     passed through as text
   * valves must be *Irrigation* valves on this controller (get_node) — never
     the tank, booster pump or backwash valve — at most five, no repeats
   * minutes are 1..`irrigation_max_minutes`; the controller ends the run itself
-  * the controller is read first: `run` is refused while anything is
-    running, `stop` is refused unless a Manual Mode run is
+  * a program must exist in the controller's own list (`programs` read first)
+    and be enabled; its duration is the saved one, never the app's
+  * the controller is read first: `run` is refused while a manual run is
+    going, `stop` is refused unless a Manual Mode run is
   * commands older than 60 s are dropped, one command per 10 s at most, and
     every node is deleted whether it ran or not
+  * one send, never retried
   * **no second change until the first is confirmed** (owner, 2026-09-24:
     Mobitech accepts anything and its server cannot handle conflicts). A lock
     at /farms/<farm>/irrigation_lock is taken before sending and held while
     the controller is re-read every 10 s for up to 2 min, until its own state
-    shows the run started or stopped. The RTDB rules refuse new commands
-    while the lock is live, and so does this code. The result records
-    `verified`.
+    shows the run started or stopped (or cmd_status says the controller
+    acknowledged it: `sent` "2", an earlier yes, never a no). The RTDB rules
+    refuse new commands while the lock is live, and so does this code. The
+    result records `verified`.
 """
 from __future__ import annotations
 
@@ -83,17 +90,18 @@ LOCK_SECONDS = 180.0
 _SLOT = re.compile(r"^A[0-9A-Z]$")
 _VALVES = re.compile(r"^[0-9]{1,2}(,[0-9]{1,2}){0,4}$")
 
-# The tail of a manual-mode command: fertigation, EC/pH and flow fields,
-# all unused on this farm and sent as zeros, exactly as the Mobitech app does.
-_FON_TAIL = "00,00,00,00,00-0000,0000,0000,0000,0000-00-00-0-0-0000-0000!0--"
 
 
 class Refused(Exception):
     """A command that will not be sent, with the reason in plain words."""
 
 
+def _hh_mm(minutes: int) -> str:
+    return f"{minutes // 60:02d} {minutes % 60:02d}"
+
+
 def run_command(valves: list[int], minutes: int, slot: str) -> str:
-    """ "FON 012,015,000,000,000-00 20-<tail>@A8"."""
+    """ "V008,009ON 00 10@A8" — the Mobitech app's own manual run."""
     if not 1 <= len(valves) <= MAX_VALVES or len(set(valves)) != len(valves):
         raise Refused("one to five different valves")
     if not all(1 <= v <= 99 for v in valves):
@@ -102,22 +110,33 @@ def run_command(valves: list[int], minutes: int, slot: str) -> str:
         raise Refused("minutes out of range")
     if not _SLOT.match(slot):
         raise Refused("bad user slot")
-    slots = ",".join(f"{v:03d}" for v in (valves + [0] * MAX_VALVES)[:MAX_VALVES])
-    return f"FON {slots}-{minutes // 60:02d} {minutes % 60:02d}-{_FON_TAIL}@{slot}"
+    return f"V{','.join(f'{v:03d}' for v in valves)}ON {_hh_mm(minutes)}@{slot}"
 
 
 def stop_command(slot: str) -> str:
     if not _SLOT.match(slot):
         raise Refused("bad user slot")
-    return f"OFF@{slot}"
+    return f"MOFF@{slot}"
+
+
+def program_command(number: int, minutes: int, slot: str) -> str:
+    """ "ET01-002-01 00@A8" — start saved program 2 for its own 1 h."""
+    if not 1 <= number <= 99:
+        raise Refused("program out of range")
+    if not 1 <= minutes <= 180:
+        raise Refused("the program's duration is out of range")
+    if not _SLOT.match(slot):
+        raise Refused("bad user slot")
+    return f"ET01-{number:03d}-{_hh_mm(minutes)}@{slot}"
 
 
 def validate(cmd: Any, max_minutes: int, now: float | None = None) -> tuple[str, list[int], int]:
-    """(action, valves, minutes) for a command worth considering, else Refused."""
+    """(action, valves, minutes) for a command worth considering, else Refused.
+    For a program, (\"program\", [], 0): read the number with program_number()."""
     if not isinstance(cmd, dict):
         raise Refused("not an object")
     action = cmd.get("action")
-    if action not in ("run", "stop"):
+    if action not in ("run", "stop", "program"):
         raise Refused("unknown action")
     at = cmd.get("at")
     if not isinstance(at, (int, float)) or isinstance(at, bool):
@@ -125,11 +144,18 @@ def validate(cmd: Any, max_minutes: int, now: float | None = None) -> tuple[str,
     age = (time.time() if now is None else now) - at / 1000.0
     if age > MAX_AGE_SECONDS or age < -60:
         raise Refused(f"stale by {age:.0f}s")
-    extra = set(cmd) - {"action", "valves", "minutes", "uid", "at"}
+    extra = set(cmd) - {"action", "valves", "minutes", "program", "uid", "at"}
     if extra:
         raise Refused(f"unexpected fields {sorted(extra)}")
+    if action != "program" and "program" in cmd:
+        raise Refused("program is only for starting a program")
     if action == "stop":
         return "stop", [], 0
+    if action == "program":
+        if "valves" in cmd or "minutes" in cmd:
+            raise Refused("a program carries no valves or minutes")
+        program_number(cmd)
+        return "program", [], 0
     raw = cmd.get("valves")
     if not isinstance(raw, str) or not _VALVES.match(raw):
         raise Refused("valves must be like 12,15")
@@ -140,6 +166,32 @@ def validate(cmd: Any, max_minutes: int, now: float | None = None) -> tuple[str,
     if not isinstance(minutes, int) or isinstance(minutes, bool) or not 1 <= minutes <= max_minutes:
         raise Refused(f"minutes must be 1–{max_minutes}")
     return "run", valves, minutes
+
+
+def program_number(cmd: Any) -> int:
+    n = cmd.get("program") if isinstance(cmd, dict) else None
+    if not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 99:
+        raise Refused("program must be a number from 1 to 99")
+    return n
+
+
+def find_program(programs: Any, number: int) -> dict:
+    """The controller's own record of program `number`, reduced to what the
+    command needs, or Refused: it must exist, be enabled and have a duration
+    (its `on_time`, HH:MM; `off_time` is always 00:00 and unused)."""
+    group = programs.get("1") if isinstance(programs, dict) else None
+    rec = group.get(str(number)) if isinstance(group, dict) else None
+    if not isinstance(rec, dict):
+        raise Refused(f"the controller has no program {number}")
+    if str(rec.get("timer_status")) != "1":
+        raise Refused(f"program {number} is switched off on the controller")
+    m = re.match(r"^(\d{1,2}):(\d{2})$", str(rec.get("on_time") or "").strip())
+    minutes = int(m.group(1)) * 60 + int(m.group(2)) if m else 0
+    if not 1 <= minutes <= 180:
+        raise Refused(f"program {number} has no usable duration")
+    valves = [int(v) for v in str(rec.get("valve_details") or "").split("-") if v.strip().isdigit() and int(v)]
+    return {"number": number, "name": str(rec.get("group_name") or f"Program {number}")[:40],
+            "minutes": minutes, "valves": valves}
 
 
 def irrigation_valves(nodes: Any) -> dict[int, str]:
@@ -161,6 +213,14 @@ def irrigation_valves(nodes: Any) -> dict[int, str]:
     return out
 
 
+def _num(value: Any) -> int | None:
+    """Timer numbers compared as numbers: "002" and "2" are the same program."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def controller_state(dashboard: Any) -> dict:
     """The dashboard's current timer: is anything running, and is it manual."""
     node = dashboard if isinstance(dashboard, dict) else {}
@@ -169,16 +229,22 @@ def controller_state(dashboard: Any) -> dict:
     timers = node.get("timers") if isinstance(node.get("timers"), dict) else {}
     cur = timers.get("current") if isinstance(timers.get("current"), dict) else None
     if not cur:
-        return {"running": False, "manual": False, "name": ""}
+        return {"running": False, "manual": False, "name": "", "number": None, "kind": ""}
     running = str(cur.get("completed")) != "1"
     valves = [int(v) for v in re.split(r"[-,]", str(cur.get("on_valves") or "")) if v.strip().isdigit() and int(v)]
     return {"running": running, "manual": running and str(cur.get("timer_type")) == "3",
-            "name": str(cur.get("timer_name") or ""), "valves": valves}
+            "name": str(cur.get("timer_name") or ""), "valves": valves,
+            "number": _num(cur.get("timer_no")), "kind": str(cur.get("timer_type") or "")}
 
 
-def confirmed(action: str, valves: list[int], state: dict) -> bool:
+def confirmed(action: str, valves: list[int], state: dict, program: int | None = None) -> bool:
     """Does the controller's own state show the change took? A run: a manual
-    run is going on exactly these valves. A stop: no manual run is going."""
+    run is going on exactly these valves. A stop: no manual run is going. A
+    program: that timer number is running as a program (timer_type 1; a
+    backwash or manual run can carry the same number)."""
+    if action == "program":
+        return (bool(state.get("running")) and state.get("kind") == "1"
+                and state.get("number") is not None and state.get("number") == _num(program))
     if action == "run":
         return bool(state.get("manual")) and set(valves) <= set(state.get("valves") or [])
     return not state.get("manual")
@@ -188,7 +254,8 @@ def lock_live(lock: Any, now_ms: float) -> bool:
     return isinstance(lock, dict) and isinstance(lock.get("until"), (int, float)) and lock["until"] > now_ms
 
 
-def check_against(action: str, valves: list[int], state: dict, allowed: dict[int, str]) -> None:
+def check_against(action: str, valves: list[int], state: dict, allowed: dict[int, str],
+                  program: int | None = None) -> None:
     """The checks only the controller's own answers can make."""
     if action == "run":
         bad = [v for v in valves if v not in allowed]
@@ -200,7 +267,10 @@ def check_against(action: str, valves: list[int], state: dict, allowed: dict[int
         # would collide.
         if state["manual"]:
             raise Refused("a manual run is already going — stop it first")
-    elif not state["manual"]:
+    elif action == "program" and program is not None and state.get("running") \
+            and state.get("kind") == "1" and state.get("number") == _num(program):
+        raise Refused("that program is already running")
+    elif action == "stop" and not state["manual"]:
         raise Refused("no manual run to stop" if not state["running"]
                       else f"{state['name']} is a scheduled program; only manual runs can be stopped from the app")
 
@@ -228,19 +298,25 @@ class IrrigationControl:
         return bool(c.allow_irrigation_control and c.dcon_serial and c.dcon_token_id
                     and c.dcon_device_id and _SLOT.match(c.dcon_user_slot or ""))
 
+    @property
+    def program_start_enabled(self) -> bool:
+        """What the apps gate "Start" on: both options on, nothing else."""
+        return bool(self.enabled and self._cfg.allow_program_start)
+
     def status(self) -> dict:
         return {"enabled": self.enabled, "sent": self.sent, "refused": self.refused,
-                "maxMinutes": self._cfg.irrigation_max_minutes}
+                "maxMinutes": self._cfg.irrigation_max_minutes,
+                "programStart": self.program_start_enabled}
 
     # ---- the controller ------------------------------------------------------
 
-    async def _read(self, call: str) -> Any:
+    async def _read(self, call: str, args: dict | None = None) -> Any:
         import aiohttp
         c = self._cfg
         # The dashboard checks the token (token_id) exactly as commands do, so
         # it reads with the same session: SNOF's own when signed in.
         token = pick_token(await self._signed_in(), c.dcon_token_id)
-        fields = form_for(call, {}, c.dcon_serial, token, c.dcon_product or "DCON")
+        fields = form_for(call, args or {}, c.dcon_serial, token, c.dcon_product or "DCON")
         async with self._session.post(f"{c.dcon_base}/v1/http/", data=fields,
                                       timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)) as resp:
             if resp.status >= 400:
@@ -272,6 +348,13 @@ class IrrigationControl:
         except Exception:
             _LOGGER.debug("Could not record the Mobitech session state", exc_info=True)
 
+    async def _status_of(self, trans_id: str) -> str:
+        """cmd_status `sent` for one command: "2" is the controller's yes."""
+        if not re.match(r"^\d{10}$", trans_id or ""):
+            return ""
+        body = await self._read("cmd_status", {"trans_id": trans_id})
+        return str(body.get("sent") or "") if isinstance(body, dict) else ""
+
     async def _send(self, command: str) -> tuple[int, str]:
         import aiohttp
         c = self._cfg
@@ -294,26 +377,44 @@ class IrrigationControl:
         del self._seen[:-SEEN_LIMIT]
         result: dict[str, Any] = {"ok": False, "action": cmd.get("action") if isinstance(cmd, dict) else None}
         locked = False
+        hold = False      # a send may have reached Mobitech: the lock stays until it expires
         lock_path = f"{self._cfg.root}/{LOCK}"
         try:
             action, valves, minutes = validate(cmd, self._cfg.irrigation_max_minutes)
+            if action == "program" and not self.program_start_enabled:
+                raise Refused("starting a program is switched off (allow_program_start)")
             if time.monotonic() - self._last_sent < MIN_GAP_SECONDS:
                 raise Refused("another command was sent seconds ago")
             if lock_live(await self._rtdb.get(lock_path), time.time() * 1000):
                 raise Refused("the last valve change is still being confirmed")
             allowed = await self._allowed_valves() if action == "run" else {}
+            prog = None
+            if action == "program":
+                prog = find_program(await self._read("programs"), program_number(cmd))
+                minutes = prog["minutes"]
+                result["program"] = prog["number"]
             state = controller_state(await self._read("dashboard"))
-            check_against(action, valves, state, allowed)
+            check_against(action, valves, state, allowed, prog["number"] if prog else None)
             slot = self._cfg.dcon_user_slot
-            command = run_command(valves, minutes, slot) if action == "run" else stop_command(slot)
+            if action == "run":
+                command = run_command(valves, minutes, slot)
+            elif action == "program":
+                command = program_command(prog["number"], minutes, slot)
+            else:
+                command = stop_command(slot)
             self._last_sent = time.monotonic()
             await self._rtdb.put(lock_path, {"cmd": cmd_id, "action": action,
                                              "until": int((time.time() + LOCK_SECONDS) * 1000)})
             locked = True
+            hold = True
             status, text = await self._send(command)
             ok = status < 400
+            hold = ok          # a definite refusal sent nothing
+            trans_id = ""
             try:
-                message = str(json.loads(text).get("message") or "")
+                answer = json.loads(text)
+                message = str(answer.get("message") or "")
+                trans_id = str(answer.get("trans_id") or "")
             except (ValueError, AttributeError):
                 message = text
             # Mobitech answers a dead app session token with a bare "Bad
@@ -325,7 +426,8 @@ class IrrigationControl:
             if status == 400 and message.strip().lower() == "bad request":
                 message = "the Mobitech session has expired — an admin signs in to Mobitech again (Admin on the web, Account in the app)"
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),
-                          valves=", ".join(allowed.get(v, f"valve {v}") for v in valves), minutes=minutes)
+                          valves=(prog["name"] if prog else ", ".join(allowed.get(v, f"valve {v}") for v in valves)),
+                          minutes=minutes)
             if ok:
                 self.sent += 1
                 _LOGGER.info("Sent irrigation %s %s%s -> %s %s", action,
@@ -334,7 +436,9 @@ class IrrigationControl:
                 # the controller until its state shows the change.
                 result.update(verified=False, confirming=True)
                 await self._rtdb.put(f"{self._cfg.root}/{RESULTS}/{cmd_id}", {**result, "at": {".sv": "timestamp"}})
-                result["verified"] = await self._confirm(action, valves)
+                result["verified"] = await self._confirm(action, valves, trans_id,
+                                                         prog["number"] if prog else None)
+                hold = not result["verified"]
                 result["confirming"] = False
                 _LOGGER.info("Irrigation %s %s", action, "confirmed by the controller" if result["verified"]
                              else f"NOT confirmed within {VERIFY_WINDOW_SECONDS:.0f} s")
@@ -353,7 +457,7 @@ class IrrigationControl:
                                      {**result, "at": {".sv": "timestamp"}})
             except Exception:
                 _LOGGER.exception("Could not record irrigation result %s", cmd_id)
-            if locked:
+            if locked and not hold:
                 try:
                     await self._rtdb.put(lock_path, None)
                 except Exception:
@@ -363,12 +467,21 @@ class IrrigationControl:
             except Exception:
                 _LOGGER.exception("Could not clear irrigation command %s", cmd_id)
 
-    async def _confirm(self, action: str, valves: list[int]) -> bool:
+    async def _confirm(self, action: str, valves: list[int], trans_id: str = "",
+                       program: int | None = None) -> bool:
         deadline = time.monotonic() + VERIFY_WINDOW_SECONDS
         while time.monotonic() < deadline:
             await asyncio.sleep(VERIFY_EVERY_SECONDS)
             try:
-                if confirmed(action, valves, controller_state(await self._read("dashboard"))):
+                # cmd_status "2" is an earlier yes for a start (never for a
+                # stop: MOFF stays "1"); its absence proves nothing, so the
+                # controller's own state is always read as well.
+                if action != "stop" and await self._status_of(trans_id) == "2":
+                    return True
+            except Exception:
+                _LOGGER.debug("cmd_status read failed; the dashboard decides", exc_info=True)
+            try:
+                if confirmed(action, valves, controller_state(await self._read("dashboard")), program):
                     return True
             except Exception:
                 _LOGGER.debug("Confirmation read failed; retrying", exc_info=True)
@@ -398,8 +511,10 @@ class IrrigationControl:
             _LOGGER.info("Irrigation control is off; not watching the irrigation queue")
             await self._purge()
             return
-        _LOGGER.info("Watching irrigation commands (run up to %d min, stop manual runs) as %s",
-                     self._cfg.irrigation_max_minutes, self._cfg.dcon_user_slot)
+        _LOGGER.info("Watching irrigation commands (run up to %d min, stop manual runs%s) as %s",
+                     self._cfg.irrigation_max_minutes,
+                     ", start programs" if self.program_start_enabled else "",
+                     self._cfg.dcon_user_slot)
         while True:
             try:
                 await self._stream_once()

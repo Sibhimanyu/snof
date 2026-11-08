@@ -82,7 +82,7 @@ def _db():
     reference="/farms/{farm}/irrigation_requests/{req}",
     instance="snof-live-default-rtdb",
     region="asia-southeast1",
-    secrets=[DCON_TOKEN_ID, DCON_SERIAL],
+    secrets=[DCON_TOKEN_ID, DCON_SERIAL, DCON_DEVICE_ID],
     memory=options.MemoryOption.MB_512,
     **_EGRESS,
     # Up to three relayed reads, each allowed RELAY_WAIT_SECONDS.
@@ -133,7 +133,8 @@ def _handle(store, root: str, req_id: str, req: Any) -> None:
     try:
         if DCON_TRANSPORT.value == "direct":
             transport = dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(),
-                                             DCON_TOKEN_ID.value.strip())
+                                             DCON_TOKEN_ID.value.strip(),
+                                             device_id=DCON_DEVICE_ID.value.strip())
         else:
             transport = dcon.RelayTransport(store, bridge_path=f"{root}/meta/bridge")
         src = dcon.Dcon(transport)
@@ -212,7 +213,8 @@ def irrigation_command(event: db_fn.Event[Any]) -> None:
         # same session, SNOF's own when an admin has signed in.
         token = irrigation_control.pick_token(store.reference(irrigation_control.TOKEN_PATH).get(),
                                               DCON_TOKEN_ID.value) or DCON_TOKEN_ID.value.strip()
-        return dcon.Dcon(dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(), token))
+        return dcon.Dcon(dcon.DirectTransport(DCON_BASE.value, DCON_SERIAL.value.strip(), token,
+                                                 device_id=DCON_DEVICE_ID.value.strip()))
 
     class _LazyReads:
         # Build the read client only if a command gets that far: a switched-off
@@ -222,6 +224,12 @@ def irrigation_command(event: db_fn.Event[Any]) -> None:
 
         def dashboard(self):
             return reads().dashboard()
+
+        def programs(self):
+            return reads().programs()
+
+        def cmd_status(self, trans_id):
+            return reads().cmd_status(trans_id)
 
     result = irrigation_control.handle(
         store, root, cmd_id, event.data, reads=_LazyReads(),

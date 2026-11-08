@@ -5,13 +5,16 @@ Moved here from the NUC (addon/snof_bridge/bridge/irrigation_control.py) on
 the owner's rule that the NUC runs the Home Assistant bridge and nothing else.
 Every check the add-on made is made here, spelled the same way:
 
-    run   "FON 012,015,000,000,000-00 20-00,00,…!0--@A8"
-          Manual Mode on up to five valves for HH MM. The controller stops it
-          by itself when the time is up.
-    stop  "OFF@A8"
-          Ends Manual Mode.
+    run      "V012,015ON 00 20@A8"   Manual Mode on up to five valves for HH MM.
+             The controller stops it by itself when the time is up.
+    stop     "MOFF@A8"               Ends Manual Mode.
+    program  "ET01-002-01 00@A8"     Starts a saved program for its own
+             duration (the record's on_time). Needs meta/irrigationControl/
+             programStart true as well (the add-on's allow_program_start).
+    (The app's own spellings, owner's decision (b) of 2026-11-08; the older
+    FON/OFF forms are gone.)
 
-    app ──append──▶ /farms/<farm>/irrigation_commands/<id>   {action, valves, minutes, uid, at}
+    app ──append──▶ /farms/<farm>/irrigation_commands/<id>   {action, valves|program, minutes, uid, at}
     fn  ◀─onCreate─┘  validate, claim, read the controller, send, record
     fn  ──result───▶ /farms/<farm>/irrigation_command_results/<id>   {ok, message, …}
 
@@ -36,7 +39,8 @@ What a function cannot keep in memory, the database keeps:
     live, and so does this code. The result records `verified`.
 
 The pure pieces (validate, the two command templates, the valve and controller
-checks) are copied from the add-on verbatim and tested the same way.
+checks) are copied from the add-on verbatim and tested the same way. One
+send, never retried; cmd_status is read only while confirming.
 """
 from __future__ import annotations
 
@@ -64,7 +68,6 @@ LOCK_SECONDS = 180.0
 
 _SLOT = re.compile(r"^A[0-9A-Z]$")
 _VALVES = re.compile(r"^[0-9]{1,2}(,[0-9]{1,2}){0,4}$")
-_FON_TAIL = "00,00,00,00,00-0000,0000,0000,0000,0000-00-00-0-0-0000-0000!0--"
 SERVER_TIMESTAMP = {".sv": "timestamp"}
 
 
@@ -74,8 +77,12 @@ class Refused(Exception):
 
 # ---- pure: copied from the add-on, unchanged -----------------------------------
 
+def _hh_mm(minutes: int) -> str:
+    return f"{minutes // 60:02d} {minutes % 60:02d}"
+
+
 def run_command(valves: list[int], minutes: int, slot: str) -> str:
-    """ "FON 012,015,000,000,000-00 20-<tail>@A8"."""
+    """ "V008,009ON 00 10@A8" — the Mobitech app's own manual run."""
     if not 1 <= len(valves) <= MAX_VALVES or len(set(valves)) != len(valves):
         raise Refused("one to five different valves")
     if not all(1 <= v <= 99 for v in valves):
@@ -84,22 +91,33 @@ def run_command(valves: list[int], minutes: int, slot: str) -> str:
         raise Refused("minutes out of range")
     if not _SLOT.match(slot):
         raise Refused("bad user slot")
-    slots = ",".join(f"{v:03d}" for v in (valves + [0] * MAX_VALVES)[:MAX_VALVES])
-    return f"FON {slots}-{minutes // 60:02d} {minutes % 60:02d}-{_FON_TAIL}@{slot}"
+    return f"V{','.join(f'{v:03d}' for v in valves)}ON {_hh_mm(minutes)}@{slot}"
 
 
 def stop_command(slot: str) -> str:
     if not _SLOT.match(slot):
         raise Refused("bad user slot")
-    return f"OFF@{slot}"
+    return f"MOFF@{slot}"
+
+
+def program_command(number: int, minutes: int, slot: str) -> str:
+    """ "ET01-002-01 00@A8" — start saved program 2 for its own 1 h."""
+    if not 1 <= number <= 99:
+        raise Refused("program out of range")
+    if not 1 <= minutes <= 180:
+        raise Refused("the program's duration is out of range")
+    if not _SLOT.match(slot):
+        raise Refused("bad user slot")
+    return f"ET01-{number:03d}-{_hh_mm(minutes)}@{slot}"
 
 
 def validate(cmd: Any, max_minutes: int, now: float | None = None) -> tuple[str, list[int], int]:
-    """(action, valves, minutes) for a command worth considering, else Refused."""
+    """(action, valves, minutes) for a command worth considering, else Refused.
+    For a program, (\"program\", [], 0): read the number with program_number()."""
     if not isinstance(cmd, dict):
         raise Refused("not an object")
     action = cmd.get("action")
-    if action not in ("run", "stop"):
+    if action not in ("run", "stop", "program"):
         raise Refused("unknown action")
     at = cmd.get("at")
     if not isinstance(at, (int, float)) or isinstance(at, bool):
@@ -107,11 +125,18 @@ def validate(cmd: Any, max_minutes: int, now: float | None = None) -> tuple[str,
     age = (time.time() if now is None else now) - at / 1000.0
     if age > MAX_AGE_SECONDS or age < -60:
         raise Refused(f"stale by {age:.0f}s")
-    extra = set(cmd) - {"action", "valves", "minutes", "uid", "at"}
+    extra = set(cmd) - {"action", "valves", "minutes", "program", "uid", "at"}
     if extra:
         raise Refused(f"unexpected fields {sorted(extra)}")
+    if action != "program" and "program" in cmd:
+        raise Refused("program is only for starting a program")
     if action == "stop":
         return "stop", [], 0
+    if action == "program":
+        if "valves" in cmd or "minutes" in cmd:
+            raise Refused("a program carries no valves or minutes")
+        program_number(cmd)
+        return "program", [], 0
     raw = cmd.get("valves")
     if not isinstance(raw, str) or not _VALVES.match(raw):
         raise Refused("valves must be like 12,15")
@@ -122,6 +147,32 @@ def validate(cmd: Any, max_minutes: int, now: float | None = None) -> tuple[str,
     if not isinstance(minutes, int) or isinstance(minutes, bool) or not 1 <= minutes <= max_minutes:
         raise Refused(f"minutes must be 1–{max_minutes}")
     return "run", valves, minutes
+
+
+def program_number(cmd: Any) -> int:
+    n = cmd.get("program") if isinstance(cmd, dict) else None
+    if not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 99:
+        raise Refused("program must be a number from 1 to 99")
+    return n
+
+
+def find_program(programs: Any, number: int) -> dict:
+    """The controller's own record of program `number`, reduced to what the
+    command needs, or Refused: it must exist, be enabled and have a duration
+    (its `on_time`, HH:MM; `off_time` is always 00:00 and unused)."""
+    group = programs.get("1") if isinstance(programs, dict) else None
+    rec = group.get(str(number)) if isinstance(group, dict) else None
+    if not isinstance(rec, dict):
+        raise Refused(f"the controller has no program {number}")
+    if str(rec.get("timer_status")) != "1":
+        raise Refused(f"program {number} is switched off on the controller")
+    m = re.match(r"^(\d{1,2}):(\d{2})$", str(rec.get("on_time") or "").strip())
+    minutes = int(m.group(1)) * 60 + int(m.group(2)) if m else 0
+    if not 1 <= minutes <= 180:
+        raise Refused(f"program {number} has no usable duration")
+    valves = [int(v) for v in str(rec.get("valve_details") or "").split("-") if v.strip().isdigit() and int(v)]
+    return {"number": number, "name": str(rec.get("group_name") or f"Program {number}")[:40],
+            "minutes": minutes, "valves": valves}
 
 
 def irrigation_valves(nodes: Any) -> dict[int, str]:
@@ -143,6 +194,14 @@ def irrigation_valves(nodes: Any) -> dict[int, str]:
     return out
 
 
+def _num(value: Any) -> int | None:
+    """Timer numbers compared as numbers: "002" and "2" are the same program."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def controller_state(dashboard: Any) -> dict:
     """The dashboard's current timer: is anything running, and is it manual."""
     node = dashboard if isinstance(dashboard, dict) else {}
@@ -151,16 +210,22 @@ def controller_state(dashboard: Any) -> dict:
     timers = node.get("timers") if isinstance(node.get("timers"), dict) else {}
     cur = timers.get("current") if isinstance(timers.get("current"), dict) else None
     if not cur:
-        return {"running": False, "manual": False, "name": ""}
+        return {"running": False, "manual": False, "name": "", "number": None, "kind": ""}
     running = str(cur.get("completed")) != "1"
     valves = [int(v) for v in re.split(r"[-,]", str(cur.get("on_valves") or "")) if v.strip().isdigit() and int(v)]
     return {"running": running, "manual": running and str(cur.get("timer_type")) == "3",
-            "name": str(cur.get("timer_name") or ""), "valves": valves}
+            "name": str(cur.get("timer_name") or ""), "valves": valves,
+            "number": _num(cur.get("timer_no")), "kind": str(cur.get("timer_type") or "")}
 
 
-def confirmed(action: str, valves: list[int], state: dict) -> bool:
+def confirmed(action: str, valves: list[int], state: dict, program: int | None = None) -> bool:
     """Does the controller's own state show the change took? A run: a manual
-    run is going on exactly these valves. A stop: no manual run is going."""
+    run is going on exactly these valves. A stop: no manual run is going. A
+    program: that timer number is running as a program (timer_type 1; a
+    backwash or manual run can carry the same number)."""
+    if action == "program":
+        return (bool(state.get("running")) and state.get("kind") == "1"
+                and state.get("number") is not None and state.get("number") == _num(program))
     if action == "run":
         return bool(state.get("manual")) and set(valves) <= set(state.get("valves") or [])
     return not state.get("manual")
@@ -178,7 +243,8 @@ def lock_live(lock: Any, now_ms: float) -> bool:
     return isinstance(lock, dict) and isinstance(lock.get("until"), (int, float)) and lock["until"] > now_ms
 
 
-def check_against(action: str, valves: list[int], state: dict, allowed: dict[int, str]) -> None:
+def check_against(action: str, valves: list[int], state: dict, allowed: dict[int, str],
+                  program: int | None = None) -> None:
     """The checks only the controller's own answers can make."""
     if action == "run":
         bad = [v for v in valves if v not in allowed]
@@ -190,7 +256,10 @@ def check_against(action: str, valves: list[int], state: dict, allowed: dict[int
         # would collide.
         if state["manual"]:
             raise Refused("a manual run is already going — stop it first")
-    elif not state["manual"]:
+    elif action == "program" and program is not None and state.get("running") \
+            and state.get("kind") == "1" and state.get("number") == _num(program):
+        raise Refused("that program is already running")
+    elif action == "stop" and not state["manual"]:
         raise Refused("no manual run to stop" if not state["running"]
                       else f"{state['name']} is a scheduled program; only manual runs can be stopped from the app")
 
@@ -273,25 +342,43 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
                               "action": cmd.get("action") if isinstance(cmd, dict) else None}
     lock_ref = store.reference(f"{root}/{LOCK}")
     locked = False
+    hold = False      # a send may have reached Mobitech: the lock stays until it expires
     try:
         try:
             action, valves, minutes = validate(cmd, max_minutes, now())
+            if action == "program" and meta.get("programStart") is not True:
+                raise Refused("starting a program is switched off")
             if not _SLOT.match(slot or ""):
                 raise Refused("irrigation control is not configured")
             if lock_live(lock_ref.get(), now() * 1000):
                 raise Refused("the last valve change is still being confirmed")
             claim(store, root, cmd_id, now() * 1000)
             allowed = irrigation_valves(reads.nodes()) if action == "run" else {}
+            prog = None
+            if action == "program":
+                prog = find_program(reads.programs(), program_number(cmd))
+                minutes = prog["minutes"]
+                result["program"] = prog["number"]
             state = controller_state(reads.dashboard())
-            check_against(action, valves, state, allowed)
-            command = run_command(valves, minutes, slot) if action == "run" else stop_command(slot)
+            check_against(action, valves, state, allowed, prog["number"] if prog else None)
+            if action == "run":
+                command = run_command(valves, minutes, slot)
+            elif action == "program":
+                command = program_command(prog["number"], minutes, slot)
+            else:
+                command = stop_command(slot)
             lock_ref.set({"cmd": cmd_id, "action": action,
                           "until": int((now() + LOCK_SECONDS) * 1000)})
             locked = True
+            hold = True
             status, text = commander_factory().send(command)
             ok = status < 400
+            hold = ok          # a definite refusal sent nothing
+            trans_id = ""
             try:
-                message = str(json.loads(text).get("message") or "")
+                answer = json.loads(text)
+                message = str(answer.get("message") or "")
+                trans_id = str(answer.get("trans_id") or "")
             except (ValueError, AttributeError):
                 message = text
             # Mobitech answers a dead app session token with a bare "Bad
@@ -306,14 +393,17 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
             if status == 400 and message.strip().lower() == "bad request":
                 message = "the Mobitech session has expired — an admin signs in to Mobitech again (Admin on the web, Account in the app)"
             result.update(ok=ok, status=status, message=_scrub(message or f"HTTP {status}"),
-                          valves=", ".join(allowed.get(v, f"valve {v}") for v in valves), minutes=minutes)
+                          valves=(prog["name"] if prog else ", ".join(allowed.get(v, f"valve {v}") for v in valves)),
+                          minutes=minutes)
             _count(store, root, "sent" if ok else "failed")
             if ok:
                 # Sent is not done: tell the app we are confirming, then read
                 # the controller until its own state shows the change.
                 result.update(verified=False, confirming=True)
                 store.reference(f"{root}/{RESULTS}/{cmd_id}").set({**result, "at": SERVER_TIMESTAMP})
-                result["verified"] = _confirm(reads, action, valves, now, sleep)
+                result["verified"] = _confirm(reads, action, valves, now, sleep, trans_id,
+                                              prog["number"] if prog else None)
+                hold = not result["verified"]
                 result["confirming"] = False
         except _Duplicate:
             return None
@@ -329,7 +419,7 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
         store.reference(f"{root}/{RESULTS}/{cmd_id}").set({**result, "at": SERVER_TIMESTAMP})
         return result
     finally:
-        if locked:
+        if locked and not hold:
             try:
                 lock_ref.delete()
             except Exception:             # noqa: BLE001 — the lock expires by itself
@@ -339,14 +429,24 @@ def handle(store, root: str, cmd_id: str, cmd: Any, *, reads, commander_factory,
         store.reference(f"{root}/{QUEUE}/{cmd_id}").delete()
 
 
-def _confirm(reads, action: str, valves: list[int], now, sleep) -> bool:
-    """At most VERIFY_WINDOW / VERIFY_EVERY dashboard reads: gentle on a weak
-    server, and long enough for a GSM controller to report in."""
+def _confirm(reads, action: str, valves: list[int], now, sleep, trans_id: str = "",
+             program: int | None = None) -> bool:
+    """At most VERIFY_WINDOW / VERIFY_EVERY rounds: gentle on a weak server,
+    and long enough for a GSM controller to report in. cmd_status "2" is an
+    earlier yes for a start (MOFF stays "1", so never asked for a stop); the
+    controller's own state is always read as well."""
     deadline = now() + VERIFY_WINDOW_SECONDS
     while now() < deadline:
         sleep(VERIFY_EVERY_SECONDS)
+        if action != "stop" and re.match(r"^\d{10}$", trans_id or ""):
+            try:
+                answer = reads.cmd_status(trans_id)
+                if isinstance(answer, dict) and str(answer.get("sent")) == "2":
+                    return True
+            except Exception:             # noqa: BLE001 — the dashboard decides
+                pass
         try:
-            if confirmed(action, valves, controller_state(reads.dashboard())):
+            if confirmed(action, valves, controller_state(reads.dashboard()), program):
                 return True
         except Exception:                 # noqa: BLE001 — one failed read is not a verdict
             continue

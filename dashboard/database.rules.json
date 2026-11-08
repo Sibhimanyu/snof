@@ -77,10 +77,14 @@
             // conflicts, so while irrigation_lock is live — taken by the
             // consumer before it sends, released once the controller shows
             // the change, expiring by itself after 3 min — nothing may queue.
-            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['action','uid','at']) && (newData.child('action').val() === 'stop' || newData.hasChildren(['valves','minutes'])) && (!root.child('farms').child($farm).child('irrigation_lock').exists() || root.child('farms').child($farm).child('irrigation_lock/until').val() < now)",
-            "action": { ".validate": "newData.isString() && newData.val().matches(/^(run|stop)$/)" },
+            ".write": "auth != null && root.child('acl/admins').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['action','uid','at']) && (newData.child('action').val() === 'stop' || (newData.child('action').val() === 'program' && newData.child('program').exists() && (root.child('farms').child($farm).child('meta/bridge/programStart').val() === true || root.child('farms').child($farm).child('meta/irrigationControl/programStart').val() === true) && !newData.child('valves').exists() && !newData.child('minutes').exists()) || (newData.child('action').val() === 'run' && newData.hasChildren(['valves','minutes']) && !newData.child('program').exists())) && (!root.child('farms').child($farm).child('irrigation_lock').exists() || root.child('farms').child($farm).child('irrigation_lock/until').val() < now)",
+            "action": { ".validate": "newData.isString() && newData.val().matches(/^(run|stop|program)$/)" },
             "valves": { ".validate": "newData.isString() && newData.val().length <= 14 && newData.val().matches(/^[0-9]{1,2}(,[0-9]{1,2}){0,4}$/)" },
             "minutes": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 60 && newData.val() % 1 === 0" },
+            // Start a saved program (2026-11-08, owner's decision (b)): the
+            // number of one of the controller's own programs, 1-99. The
+            // consumer reads the program list and uses its saved duration.
+            "program": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 99 && newData.val() % 1 === 0" },
             "uid": { ".validate": "newData.val() === auth.uid" },
             "at": { ".validate": "newData.val() === now" },
             "$other": { ".validate": false }
@@ -177,7 +181,7 @@
             ".write": "auth != null && root.child('acl/controllers').child(auth.uid).val() === true && !data.exists() && newData.hasChildren(['type','uid','at'])",
 
             "type": {
-              ".validate": "newData.isString() && newData.val().matches(/^(live_readings|session_log|performance|controller|electricity|pressure|valves|timer_log|motor_log|pressure_range|power_range|pressure_hour)$/)"
+              ".validate": "newData.isString() && newData.val().matches(/^(live_readings|session_log|performance|controller|electricity|pressure|valves|timer_log|motor_log|pressure_range|power_range|pressure_hour|programs|rain|power_day|pressure_day)$/)"
             },
             "from": {
               ".validate": "newData.isString() && newData.val().length <= 10 && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"

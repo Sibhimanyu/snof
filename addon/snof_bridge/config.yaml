@@ -1,5 +1,5 @@
 name: SNOF Firebase Bridge
-version: "0.10.11"
+version: "0.11.0"
 slug: snof_bridge
 description: Mirrors Home Assistant entity states to Firebase Realtime Database, grouped by area, for the SNOF dashboard.
 url: https://github.com/Sibhimanyu/snof
@@ -73,6 +73,8 @@ options:
   dcon_command_auth: ""
   dcon_user_slot: ""
   irrigation_max_minutes: 60
+  # Start a saved program (needs allow_irrigation_control as well). Off by default.
+  allow_program_start: false
   # Remote update. Leave false and the apps only show the version; true lets
   # farm admins press Update in the apps (docs/nuc-access-and-deploy.md).
   allow_remote_update: false
@@ -106,4 +108,5 @@ schema:
   dcon_command_auth: password
   dcon_user_slot: str
   irrigation_max_minutes: int(1,180)
+  allow_program_start: bool
   allow_remote_update: bool

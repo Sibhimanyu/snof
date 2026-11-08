@@ -7,13 +7,59 @@ Added 2026-09-24 at the owner's request. **Off until armed** —
 
 | Action | Sent as | Effect | Who |
 |---|---|---|---|
-| Run valves | `FON 012,015,000,000,000-00 20-<zeros>!0--@A8` | Manual Mode on up to five Irrigation valves for 1–60 min; the controller stops by itself when the time is up | admins |
-| Stop | `OFF@A8` | Ends a Manual Mode run (logged as `end_control: A8`) | admins, only while a manual run is active |
+| Run valves | `V008,009ON 00 10@A8` | Manual Mode on up to five Irrigation valves for 1–60 min; the controller stops by itself when the time is up | admins |
+| Stop | `MOFF@A8` | Ends a Manual Mode run; a program it displaced carries on | admins, only while a manual run is active |
+| Start a program | `ET01-002-01 00@A8` | Starts one of the controller's saved programs for **its own** duration (the record's `on_time`). Takes over from any run going now | admins, and only with `allow_program_start` |
 
-Not offered: starting a saved program (`ET01-<timer>-HH MM`), and stopping
-or pausing a scheduled one. Mobitech's portal reads a `U` slot as "Pause
-by", and the app sends `OFF@U1` for a program but `OFF@A1` for manual mode,
-so program stop is ambiguous until it is tried deliberately.
+**Decision (b) taken (owner, 2026-11-08, branch `mobitech-more`, add-on
+0.11.0):** run and stop now use the Mobitech app's own forms (`V…ON HH MM`,
+`MOFF`) instead of the older `FON …` / `OFF` templates, which are gone from
+the code. Starting a saved program is new.
+
+Not offered: stopping or pausing a scheduled program. Mobitech's portal reads
+a `U` slot as "Pause by", and the app sends `OFF@U1` for a program but
+`OFF@A1` for manual mode, so program stop is ambiguous until it is tried
+deliberately.
+
+### Start a program
+
+**Program start does not apply the run limits.** The 1–60 minute cap and the
+Irrigation-valves-only rule belong to manual runs, where the app supplies
+valves and minutes. A program start runs the farm's own saved program with the
+duration and valves in the controller's record (up to 3 h, whatever those
+valves are), exactly as the Mobitech app does. The protection is that nothing
+from the app reaches the command: only the number does.
+
+Also enforced: the same program already running is refused (confirmation would
+be instantly, falsely true); timer numbers are compared as numbers (`"002"` is
+2); and `irrigation_lock` is kept until its own `until` expires when a send may
+have reached Mobitech (a timeout, or sent but not confirmed). It is released
+early only when nothing was sent (refused before the send, or Mobitech
+answered with an error) or once the controller confirms. The rules accept a
+program write when `meta/bridge/programStart` or
+`meta/irrigationControl/programStart` is true.
+
+`irrigation_commands/<push>` = `{action: "program", program: <1–99>, uid, at}`.
+`program` is required for `program` and refused for the other actions, in the
+RTDB rules and again in the consumer; `valves` and `minutes` must be absent.
+Gates, all of which must hold: the rules (admins only, the same
+`irrigation_lock` condition as every valve change), `allow_irrigation_control`
+**and** `allow_program_start` (both off by default; the heartbeat publishes
+`meta/bridge.programStart`, true only when both are on, and the apps show
+Start disabled with the reason otherwise). The dormant Cloud Function twin
+uses `meta/irrigationControl/programStart` (service account only) next to
+`enabled`.
+
+The consumer reads `programs` first (`dcon_timer select`): the program must
+exist and be enabled (`timer_status` 1), and the duration sent is its own
+`on_time`, never one from the app. It then takes `irrigation_lock`, sends once
+(never retried) and confirms: `cmd_status` (`sent: "2"`, the controller
+acknowledged it, an earlier yes) or `timers.current` showing that timer number
+running as a program (`timer_type` 1; a backwash or manual run can carry the
+same number). `cmd_status` is read only while confirming, never for a stop
+(`MOFF` stays at `1`), and its absence proves nothing, so the 10 s / 2 min
+dashboard check always runs too. Starting a program does not refuse because
+something is running: it takes over, and the app's confirm sheet says so.
 
 ## How the format was established
 
@@ -199,16 +245,16 @@ only, no command sent):
 - Timing: changes showed on the dashboard after 40–50 s, well inside our
   2-minute, 10 s-poll window.
 
-**Still open, owner's call:** (a) the command token; (b) run/stop as
-`V…ON HH MM` / `MOFF` with `cmd_status sent: 2` as an earlier yes (our code
-still sends `FON` / `OFF`); (c) SNOF's own session.
+**Still open, owner's call:** (a) the command token; (c) SNOF's own session.
+(b) was taken on 2026-11-08, see "What it can do".
 
 ## Mobitech sign-in, rebuilt on the capture (2026-09-24)
 
 The owner asked for the Mobitech part of both apps to be rebuilt on the
 login flow in [mobitech-app.md](mobitech-app.md), which settles open
 decision (c): **SNOF has its own Mobitech session.** (a) and (b) remain
-open: commands still go out as `FON` / `OFF`.
+open; (b) was taken on 2026-11-08 and commands now go out in the app's own
+`V…ON` / `MOFF` forms.
 
 - **Sign in on the web** (owner, 2026-11-01): a browser cannot call Mobitech
   (no CORS header) and Google Cloud is refused, so the dashboard posts to the

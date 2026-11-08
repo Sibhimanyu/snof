@@ -455,6 +455,54 @@ def test_relay_runs_only_named_reads_with_strict_args():
         assert relay.validate(job) is None, why
 
 
+def test_relay_new_reads_take_strict_args_and_spell_their_forms():
+    ok = {"programs": {}, "electricity_day": {}, "rain": {},
+          "pressure_day": {"date": "2026-11-08"}, "cmd_status": {"trans_id": "1234567890"}}
+    for call, args in ok.items():
+        assert relay.validate(_job(call=call, args=args)) == (call, args), call
+    bad = [("programs", {"date": "2026-11-08"}), ("pressure_day", {}), ("pressure_day", {"date": "08-11-2026"}),
+           ("pressure_day", {"date": "2026-11-08&x=1"}), ("electricity_day", {"from": "2026-11-08"}),
+           ("rain", {"device_id": "12043"}), ("cmd_status", {"trans_id": "123"}),
+           ("cmd_status", {"trans_id": "12345678901"}), ("cmd_status", {"trans_id": "12345678a0"}),
+           ("cmd_status", {"trans_id": "1234567890", "serial_no": "X"})]
+    for call, args in bad:
+        assert relay.validate(_job(call=call, args=args)) is None, (call, args)
+    f = relay.form_for
+    assert f("programs", {}, "S", "T") == {"action": "dcon_timer", "method": "select", "serial_no": "S"}
+    assert f("electricity_day", {}, "S", "T") == {"action": "reports", "type": "electricity_day",
+                                                  "serial_no": "S", "product": "DCON"}
+    assert f("pressure_day", {"date": "2026-11-08"}, "S", "T")["dt"] == "2026-11-08"
+    assert f("cmd_status", {"trans_id": "1234567890"}, "S", "T") == {
+        "action": "cmd_status", "random_no": "1234567890", "serial_no": "S"}
+    assert relay.RAIN_PATH == "/v1/weather/cumulative/"
+    assert relay.rain_params("12043") == {"device_id": "12043", "type": "rain"}
+    src = (Path(__file__).resolve().parent.parent / "bridge" / "relay.py").read_text()
+    assert "/v1/command" not in src
+
+
+def test_relay_cuts_the_new_reads_down_on_the_nuc():
+    programs = {"action": "dcon_timer", "users": {"A1": {"mobile": "9876543210"}}, "sim": "9876543210",
+                "1": {"2": {"group_name": "Coconut 9876543210", "valve_details": "12-15", "on_time": "01:00",
+                            "off_time": "00:00", "on_days": "0", "timer_status": "1", "data": "call 9876543210",
+                            "backwash": "0", "motor_status": "0--"},
+                      "x": {"group_name": "bad key"}}}
+    out = relay.reduce_read("programs", programs)
+    assert list(out) == ["1"] and list(out["1"]) == ["2"]
+    assert "data" not in out["1"]["2"] and "9876543210" not in json.dumps(out)
+    assert relay.reduce_read("rain", {"today": 1.5, "last24hrs": 2, "yesterday": "x", "week": 3.2, "device_id": "12043"}) == {
+        "today": 1.5, "last24hrs": 2, "yesterday": 0, "week": 3.2}
+    st = relay.reduce_read("cmd_status", {"sent": "2", "dt": "2026-11-08 06:00:00", "serial_no": "MCON000X000001",
+                                          "device_id": "12043", "user_id": "3276",
+                                          "cmd": "DATA=1234567890$ET01-002-01 00@A8$A8!MCON000X000001!$"})
+    assert st == {"sent": "2", "dt": "2026-11-08 06:00:00"}
+    day = relay.reduce_read("electricity_day", {"status": "success", "data": [
+        {"dt": "2026-11-08 00:00:00", "raw_data": "##,DCON-9876543210,6-0-0!2026-11-08 00:00:00+05:30,,254-248-264",
+         "serial_no": "S"}]})
+    assert set(day["data"][0]) == {"dt", "raw_data"} and "9876543210" not in json.dumps(day)
+    pd = relay.reduce_read("pressure_day", {"data": [{"dt": "t", "pressure": "1.5-0.8", "flow_rate": "0", "x": 1}]})
+    assert pd["data"] == [{"dt": "t", "pressure": "1.5-0.8", "flow_rate": "0"}]
+
+
 def test_relay_uses_its_own_credentials_and_one_endpoint():
     form = relay.form_for("valves", {"from": "2026-09-20", "to": "2026-09-22"},
                           serial="MCONOWN", token="TOKENOWN")
@@ -501,18 +549,23 @@ def _refused(fn, *a):
 
 
 def test_irrigation_commands_are_spelled_as_mobitech_spells_them():
-    # Byte for byte what the Mobitech app sent on 2026-09-17 (valves 8 and 9
-    # for ten minutes) and 2026-09-20 17:24 (valve 6 for two hours).
-    assert ic.run_command([8, 9], 10, "A1") == (
-        "FON 008,009,000,000,000-00 10-00,00,00,00,00-0000,0000,0000,0000,0000"
-        "-00-00-0-0-0000-0000!0--@A1")
-    assert ic.run_command([6], 120, "A1").startswith("FON 006,000,000,000,000-02 00-")
+    # The Mobitech app's own forms (captured 2026-09-24, docs/mobitech-app.md):
+    # decision (b), 2026-11-08, moved run and stop off FON/OFF.
+    assert ic.run_command([8, 9], 10, "A8") == "V008,009ON 00 10@A8"
+    assert ic.run_command([6], 120, "A1") == "V006ON 02 00@A1"
+    assert ic.run_command([12, 15], 60, "A8") == "V012,015ON 01 00@A8"
     assert _refused(ic.run_command, [30], 480, "A1"), "three hours is the hard ceiling"
-    assert ic.run_command([12, 15], 60, "A8").startswith("FON 012,015,000,000,000-01 00-")
-    assert ic.stop_command("A8") == "OFF@A8"
+    assert ic.stop_command("A8") == "MOFF@A8"
     assert _refused(ic.stop_command, "U8"), "a U slot means pause to Mobitech"
     assert _refused(ic.run_command, [1, 2, 3, 4, 5, 6], 10, "A8")
     assert _refused(ic.run_command, [4, 4], 10, "A8")
+    assert ic.program_command(2, 60, "A8") == "ET01-002-01 00@A8"
+    assert ic.program_command(8, 30, "A8") == "ET01-008-00 30@A8"
+    assert _refused(ic.program_command, 0, 60, "A8") and _refused(ic.program_command, 100, 60, "A8")
+    assert _refused(ic.program_command, 2, 0, "A8") and _refused(ic.program_command, 2, 60, "U8")
+    for old in ("FON", "OFF@"):
+        src = open(os.path.join(os.path.dirname(__file__), "..", "bridge", "irrigation_control.py")).read()
+        assert f'"{old}' not in src and f"f\"{old}" not in src, "the old spellings are gone"
 
 
 def test_irrigation_validation_refuses_everything_else():
@@ -520,8 +573,14 @@ def test_irrigation_validation_refuses_everything_else():
     ok = {"action": "run", "valves": "12,15", "minutes": 20, "uid": "u", "at": now * 1000}
     assert ic.validate(ok, 60, now) == ("run", [12, 15], 20)
     assert ic.validate({"action": "stop", "uid": "u", "at": now * 1000}, 60, now) == ("stop", [], 0)
+    prog = {"action": "program", "program": 2, "uid": "u", "at": now * 1000}
+    assert ic.validate(prog, 60, now) == ("program", [], 0) and ic.program_number(prog) == 2
     bad = [
-        {**ok, "action": "program"},
+        {**ok, "action": "restart"}, {**ok, "program": 2},
+        {**prog, "program": 0}, {**prog, "program": 100}, {**prog, "program": "2"},
+        {**prog, "program": True}, {**prog, "program": 2.0}, {"action": "program", "at": now * 1000},
+        {**prog, "valves": "12"}, {**prog, "minutes": 10}, {**prog, "at": (now - 61) * 1000},
+        {"action": "stop", "program": 2, "at": now * 1000},
         {**ok, "minutes": 61}, {**ok, "minutes": 0}, {**ok, "minutes": 20.5}, {**ok, "minutes": True},
         {**ok, "valves": "12;15"}, {**ok, "valves": "1,2,3,4,5,6"}, {**ok, "valves": "12,12"},
         {**ok, "valves": 12}, {**ok, "at": (now - 61) * 1000}, {**ok, "at": "now"},
@@ -529,6 +588,189 @@ def test_irrigation_validation_refuses_everything_else():
     ]
     for cmd in bad:
         assert _refused(ic.validate, cmd, 60, now), cmd
+
+
+PROGRAMS = {"action": "dcon_timer", "1": {
+    "2": {"valve_details": "12-15-0-0-0-0-0-0-0-0", "on_time": "01:00", "off_time": "00:00",
+          "on_days": "0", "group_name": "Coconut", "backwash": "0", "motor_status": "0--",
+          "timer_status": "1", "data": ""},
+    "4": {"valve_details": "5-0-0-0-0-0-0-0-0-0", "on_time": "00:30", "off_time": "00:00",
+          "on_days": "0", "group_name": "Onion", "timer_status": "0"},
+    "9": {"valve_details": "17-0", "on_time": "00:00", "group_name": "Zero", "timer_status": "1"}}}
+
+
+def test_a_program_start_needs_a_real_enabled_program_with_a_duration():
+    got = ic.find_program(PROGRAMS, 2)
+    assert got == {"number": 2, "name": "Coconut", "minutes": 60, "valves": [12, 15]}
+    assert "no program 3" in _refused(ic.find_program, PROGRAMS, 3)
+    assert "switched off" in _refused(ic.find_program, PROGRAMS, 4), "a disabled program"
+    assert "duration" in _refused(ic.find_program, PROGRAMS, 9)
+    assert _refused(ic.find_program, None, 2) and _refused(ic.find_program, {"1": []}, 2)
+    # the duration is the record's on_time, never the app's
+    assert ic.program_command(got["number"], got["minutes"], "A8") == "ET01-002-01 00@A8"
+
+
+def test_a_program_start_is_off_unless_both_options_are_on():
+    from types import SimpleNamespace as NS
+    full = dict(allow_irrigation_control=True, dcon_serial="s", dcon_token_id="t",
+                dcon_command_auth="x@ios", dcon_device_id="1", dcon_user_slot="A8",
+                irrigation_max_minutes=60, allow_program_start=True)
+    assert ic.IrrigationControl(NS(**full), None, None).program_start_enabled
+    assert not ic.IrrigationControl(NS(**{**full, "allow_program_start": False}), None, None).program_start_enabled
+    assert not ic.IrrigationControl(NS(**{**full, "allow_irrigation_control": False}), None, None).program_start_enabled
+    assert ic.IrrigationControl(NS(**{**full, "allow_program_start": False}), None, None).enabled
+    cfg = open(os.path.join(os.path.dirname(__file__), "..", "config.yaml")).read()
+    assert "allow_program_start: false" in cfg and "allow_program_start: bool" in cfg
+    from bridge.config import Config
+    assert Config.__dataclass_fields__["allow_program_start"].default is False
+
+
+def test_a_refused_program_start_sends_nothing_and_takes_no_lock():
+    import asyncio
+    from types import SimpleNamespace as NS
+
+    class RTDB:
+        def __init__(self, lock=None): self.lock, self.puts = lock, []
+        async def get(self, path, shallow=False): return self.lock if path.endswith("irrigation_lock") else None
+        async def put(self, path, value): self.puts.append((path, value))
+        async def patch(self, path, value): pass
+
+    def make(rtdb, **over):
+        cfg = NS(allow_irrigation_control=True, dcon_serial="s", dcon_token_id="t", dcon_command_auth="x@ios",
+                 dcon_device_id="1", dcon_user_slot="A8", irrigation_max_minutes=60,
+                 allow_program_start=True, root="farms/f", dcon_base="https://x", dcon_product="DCON", **over)
+        c = ic.IrrigationControl(cfg, rtdb, None)
+        sent = []
+        async def send(command): sent.append(command); return 200, '{"message":"ok","trans_id":1234567890}'
+        async def read(call, args=None):
+            return PROGRAMS if call == "programs" else {"MCONTEST": {"timers": {"current": None}}}
+        async def confirm(*a, **k): return True
+        c._send, c._read, c._confirm = send, read, confirm
+        return c, sent
+
+    def cmd(**kw):
+        return {"action": "program", "program": 2, "uid": "u", "at": time.time() * 1000, **kw}
+
+    def run(c, command, cid="a"):
+        asyncio.run(c.handle(cid, command))
+        return c
+
+    # option off
+    c, sent = make(RTDB(), ); c._cfg.allow_program_start = False
+    run(c, cmd()); assert not sent and c.refused == 1
+    # unknown, disabled program
+    for n in (3, 4):
+        c, sent = make(RTDB()); run(c, cmd(program=n)); assert not sent and c.refused == 1, n
+    # lock live
+    c, sent = make(RTDB({"until": time.time() * 1000 + 60000})); run(c, cmd()); assert not sent and c.refused == 1
+    # bad shape
+    c, sent = make(RTDB()); run(c, cmd(program="2")); assert not sent and c.refused == 1
+    # the good one: exact spelling, lock taken before the send, released after
+    r = RTDB(); c, sent = make(r); run(c, cmd())
+    assert sent == ["ET01-002-01 00@A8"] and c.sent == 1
+    paths = [p for p, v in r.puts]
+    assert paths[0] == "farms/f/irrigation_lock" and r.puts[0][1] is not None
+    assert ("farms/f/irrigation_lock", None) in r.puts and ("farms/f/irrigation_commands/a", None) in r.puts
+    res = [v for p, v in r.puts if p == "farms/f/irrigation_command_results/a"][-1]
+    assert res["verified"] is True and res["program"] == 2 and res["minutes"] == 60 and res["valves"] == "Coconut"
+    # a manual run goes out in the app's form, with the same lock
+    c, sent = make(RTDB()); c._allowed_valves = lambda: asyncio.sleep(0, {12: "a", 15: "b"})
+    run(c, {"action": "run", "valves": "12,15", "minutes": 10, "uid": "u", "at": time.time() * 1000})
+    assert sent == ["V012,015ON 00 10@A8"]
+
+
+def test_the_lock_is_held_after_a_send_that_may_have_gone_out_and_a_running_program_is_refused():
+    import asyncio
+    from types import SimpleNamespace as NS
+
+    class RTDB:
+        def __init__(self): self.puts = []
+        async def get(self, path, shallow=False): return None
+        async def put(self, path, value): self.puts.append((path, value))
+        async def patch(self, path, value): pass
+
+    def make(send, dash):
+        cfg = NS(allow_irrigation_control=True, dcon_serial="s", dcon_token_id="t", dcon_command_auth="x@ios",
+                 dcon_device_id="1", dcon_user_slot="A8", irrigation_max_minutes=60, allow_program_start=True,
+                 root="farms/f", dcon_base="https://x", dcon_product="DCON")
+        r = RTDB(); c = ic.IrrigationControl(cfg, r, None)
+        async def read(call, args=None): return PROGRAMS if call == "programs" else dash
+        async def confirm(*a, **k): return False
+        c._send, c._read, c._confirm = send, read, confirm
+        return c, r
+    cmd = {"action": "program", "program": 2, "uid": "u", "at": time.time() * 1000}
+    idle = {"M": {"timers": {"current": None}}}
+    async def boom(command): raise TimeoutError()
+    c, r = make(boom, idle); asyncio.run(c.handle("a", cmd))
+    assert ("farms/f/irrigation_lock", None) not in r.puts, "timeout: the lock must outlive the handler"
+    async def bad(command): return 500, "{}"
+    c, r = make(bad, idle); asyncio.run(c.handle("a", cmd))
+    assert ("farms/f/irrigation_lock", None) in r.puts
+    async def ok(command): return 200, '{"trans_id": 1234567890}'
+    c, r = make(ok, idle); asyncio.run(c.handle("a", cmd))      # unconfirmed
+    assert ("farms/f/irrigation_lock", None) not in r.puts
+    running = {"M": {"timers": {"current": {"completed": "0", "timer_type": "1", "timer_no": "002", "timer_name": "C"}}}}
+    sent = []
+    async def spy(command): sent.append(command); return 200, "{}"
+    c, r = make(spy, running); asyncio.run(c.handle("a", cmd))
+    assert not sent and c.refused == 1 and ("farms/f/irrigation_lock", None) not in [p for p in r.puts if p[1] is not None]
+    assert ic.controller_state(running)["number"] == 2
+
+
+def test_relay_never_packs_an_upstream_error_body_and_drops_packet_heads():
+    day = relay.reduce_read("electricity_day", {"data": [{"dt": "t", "raw_data": "##,DCON-MCON000X000001,6-0-0!2026-09-24 00:00:00+05:30,,254-248-264"}]})
+    assert day["data"][0]["raw_data"] == "!2026-09-24 00:00:00+05:30,,254-248-264" and "MCON" not in json.dumps(day)
+    import asyncio
+    import gzip, base64
+    class Resp:
+        status = 502
+        async def text(self): return "<html>MCON000X000001 call 9876543210</html>"
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+    class Sess:
+        def post(self, *a, **k): return Resp()
+        get = post
+    class DB:
+        def __init__(self): self.puts = {}
+        async def put(self, path, value): self.puts[path] = value
+        async def get(self, path, shallow=False): return None
+    cfg = types.SimpleNamespace(dcon_relay=True, dcon_serial="S", dcon_token_id="t", dcon_product="DCON",
+                                dcon_base="https://x", dcon_device_id="1")
+    fake = types.ModuleType("aiohttp"); fake.ClientTimeout = lambda **k: None
+    sys.modules["aiohttp"] = fake
+    try:
+      for call, args in (("programs", {}), ("cmd_status", {"trans_id": "1234567890"}), ("rain", {}),
+                         ("electricity_day", {}), ("pressure_day", {"date": "2026-11-08"})):
+        db = DB(); r = relay.DconRelay(cfg, db, Sess())
+        asyncio.run(r.handle("j", _job(call=call, args=args)))
+        res = db.puts["relay/results/j"]
+        assert "gz" in res and res["status"] == 502, call
+        text = gzip.decompress(base64.b64decode(res["gz"])).decode() if "gz" in res else json.dumps(res)
+        assert res["ok"] is False and "MCON" not in text and "9876543210" not in text and "html" not in text, call
+    finally:
+        sys.modules.pop("aiohttp", None)
+
+
+def test_confirmation_accepts_the_running_program_and_cmd_status_two():
+    prog = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "1", "timer_no": "2",
+                                              "timer_name": "Coconut", "on_valves": "12-15-0"}}}}
+    backwash = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "4", "timer_no": "2",
+                                                  "timer_name": "Backwash Mode", "on_valves": "3-0"}}}}
+    done = {"MCON1": {"timers": {"current": {"completed": "1", "timer_type": "1", "timer_no": "2"}}}}
+    assert ic.confirmed("program", [], ic.controller_state(prog), 2)
+    assert not ic.confirmed("program", [], ic.controller_state(prog), 3), "another program is going"
+    assert not ic.confirmed("program", [], ic.controller_state(backwash), 2), "same number, not a program"
+    assert not ic.confirmed("program", [], ic.controller_state(done), 2)
+    import asyncio
+    from types import SimpleNamespace as NS
+    c = ic.IrrigationControl(NS(dcon_base="x", dcon_serial="s", dcon_product="DCON"), None, None)
+    seen = []
+    async def read(call, args=None):
+        seen.append((call, args)); return {"sent": "2"}
+    c._read = read
+    assert asyncio.run(c._status_of("1234567890")) == "2"
+    assert seen == [("cmd_status", {"trans_id": "1234567890"})]
+    assert asyncio.run(c._status_of("12")) == "" and len(seen) == 1, "only a 10-digit id is asked about"
 
 
 NODES = {"node1": {"valve": {"1": {"valve_name": "1 Tank", "valve_type": "Fertilizer"},

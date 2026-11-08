@@ -80,6 +80,12 @@ REPORT_TYPES = {
     "pressure_range": "range",
     "power_range": "range",
     "pressure_hour": "live",
+    # Added 2026-11-08 (owner's option A; docs/mobitech-app.md). All "live":
+    # no range, the day is today's. programs and rain write cache nodes.
+    "programs": "live",
+    "rain": "live",
+    "power_day": "live",
+    "pressure_day": "live",
 }
 
 REPORT_LABELS = {
@@ -95,6 +101,10 @@ REPORT_LABELS = {
     "pressure_range": "Pressure range",
     "power_range": "Power over time",
     "pressure_hour": "Pressure, last hour",
+    "programs": "Saved programs",
+    "rain": "Rain",
+    "power_day": "Power, whole day",
+    "pressure_day": "Pressure, whole day",
 }
 
 # Valve types that deliver water to a crop. Backwash, the master valve, the
@@ -338,7 +348,11 @@ def report_controller(src, params: dict) -> tuple[list, str, list, dict]:
     sections, info, summary = controller_sections(dash, nodes, nodes_err)
     names = _names(nodes)
     timers = V.dcon_timers(dash or {})
-    patch = {"dcon": info, "program": program_cache(timers, names)}
+    # current / next / previous ride along in irrigation/dcon (a null is simply
+    # absent): the Programs card marks the running and the next program.
+    patch = {"dcon": {**info, **{k: timers.get(k) for k in ("current", "next", "previous")
+                                 if timers.get(k)}},
+             "program": program_cache(timers, names)}
     if nodes is not None:
         patch["valveNames"] = nodes
     packet = V.dashboard_electricity(dash or {})
@@ -942,7 +956,63 @@ def report_power_range(src, params):
     return sections, summary, [], {}
 
 
+# ---- saved programs, rain, whole-day power and pressure (2026-11-08) ---------------
+
+def report_programs(src, params):
+    items = V.normalize_programs(src.programs())
+    if not items:
+        return ([section("facts", "Saved programs", note="the controller returned no programs")],
+                "no programs", [], {})
+    on = sum(1 for p in items.values() if p["enabled"])
+    rows = [{"label": f"#{p['number']} {p['name']}" + ("" if p["enabled"] else " (off)"),
+             "value": " · ".join(x for x in (
+                 f"valves {', '.join(map(str, p['valves']))}" if p["valves"] else "",
+                 f"{p['duration']} long" if p["duration"] else "") if x)}
+            for p in sorted(items.values(), key=lambda p: p["number"])]
+    return ([section("facts", "Saved programs", rows,
+                     note=f"{len(items)} programs, {on} switched on")],
+            f"{len(items)} programs, {on} on", [],
+            {"programs": {"at": SERVER_TIMESTAMP, "items": items}})
+
+
+def report_rain(src, params):
+    rain = V.normalize_rain(src.rain())
+    rows = [metric("Today", rain["today"], "mm"), metric("Last 24 hours", rain["last24h"], "mm"),
+            metric("Yesterday", rain["yesterday"], "mm"), metric("This week", rain["week"], "mm")]
+    return ([section("metrics", "Rain", rows, source="mobitech")],
+            f"{rain['today']} mm today, {rain['week']} mm this week", [],
+            {"rain": {"at": SERVER_TIMESTAMP, **rain}})
+
+
+def _today_params() -> dict:
+    today = farm_now().date().isoformat()
+    return {"from": today, "to": today}
+
+
+def report_power_day(src, params):
+    day = _today_params()
+    rows = V.electricity_series(src.electricity_day(), f"{day['from']} 00:00:00",
+                                f"{day['to']} 23:59:59")
+    sections, summary = power_sections(rows, day)
+    return sections, summary, [], {}
+
+
+def report_pressure_day(src, params):
+    day = _today_params()
+    points = V.pressure_points(src.pressure_day(day["from"]))
+    stats = V.series_stats([p["inlet"] for p in points])
+    summary = (f"inlet {stats['min']}–{stats['max']} bar, avg {stats['avg']} · today"
+               if stats["count"] else "no samples today")
+    cache = _pressure_cache(points)
+    return (pressure_sections(points, "", day), summary, cache,
+            {"pressure": cache} if cache else {})
+
+
 BUILDERS = {
+    "programs": report_programs,
+    "rain": report_rain,
+    "power_day": report_power_day,
+    "pressure_day": report_pressure_day,
     "live_readings": report_live_readings,
     "session_log": report_session_log,
     "performance": report_performance,
