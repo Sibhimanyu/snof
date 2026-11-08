@@ -36,6 +36,15 @@ struct MainTabs: View {
     @State private var waterPath = NavigationPath()
 
     var body: some View {
+        #if DEBUG
+        // -developer-root: the console as the whole window (a Catalyst sheet is out of the snapshot's reach).
+        if Snapshot.args.contains("-developer-root") { NavigationStack { DeveloperView() } } else { tabs }
+        #else
+        tabs
+        #endif
+    }
+
+    @ViewBuilder private var tabs: some View {
         @Bindable var store = store
         TabView(selection: $store.selectedTab) {
             Tab("Home", systemImage: "house", value: AppTab.overview) {
@@ -74,7 +83,7 @@ struct MainTabs: View {
             if let key = Snapshot.value("-motor") { store.selectedTab = .water; waterPath.append(MotorRoute(key: key)) }
             if Snapshot.args.contains("-account") { account = true }
             // -people: the account sheet, opened on People and access.
-            if Snapshot.args.contains("-people") { account = true }
+            if Snapshot.args.contains("-people") || Snapshot.args.contains("-developer") { account = true }
         }
         #endif
     }
@@ -176,6 +185,13 @@ struct AccountSheet: View {
                         }
                     }
                 }
+                if store.isOwner {
+                    Section {
+                        NavigationLink("Developer", value: "developer")
+                    } footer: {
+                        Text("Raw, read-only Mobitech requests through the farm box.")
+                    }
+                }
                 Section("Bridge") {
                     LabeledContent("Status", value: store.bridgeStatus.label)
                     LabeledContent("Device control", value: store.meta.bridge?.control == false ? "Switched off" : store.meta.bridge?.control == true ? "On" : "Unknown")
@@ -205,9 +221,14 @@ struct AccountSheet: View {
             }
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: String.self) { _ in PeopleView() }
+            .navigationDestination(for: String.self) { v in
+                if v == "developer" { DeveloperView() } else { PeopleView() }
+            }
             #if DEBUG
-            .onAppear { if Snapshot.args.contains("-people"), store.isAdmin, path.isEmpty { path = ["people"] } }
+            .onAppear {
+                if Snapshot.args.contains("-people"), store.isAdmin, path.isEmpty { path = ["people"] }
+                if Snapshot.args.contains("-developer"), store.isOwner, path.isEmpty { path = ["developer"] }
+            }
             #endif
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
@@ -358,11 +379,19 @@ struct MobitechSignIn: View {
     var body: some View {
         Text("SNOF signs in to Mobitech with its own session, so a sign-out on the phone does not stop valve control.")
             .font(Theme.meta).foregroundStyle(Theme.muted)
+        // Mobitech can end SNOF's session on its side; the status node still says
+        // "signed in" until someone signs in again, so a newer read failure wins.
+        let signedOutAt = Unread.mobitechSignedOut(store.irrigation, signedInAt: store.mobitechStatus?.at)
+        if let at = signedOutAt {
+            Label("Mobitech signed SNOF out · \(FarmTime.when(ms: at, now: Date()))", systemImage: "exclamationmark.triangle")
+                .font(Theme.font(14.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Theme.warn)
+        }
         if let st = store.mobitechStatus {
-            LabeledContent("Signed in as", value: [st.name, st.user.isEmpty || st.name.isEmpty ? nil : "(\(st.user))"]
+            LabeledContent(signedOutAt == nil ? "Signed in as" : "Last signed in as",
+                           value: [st.name, st.user.isEmpty || st.name.isEmpty ? nil : "(\(st.user))"]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " "))
             LabeledContent("Number", value: "ending \(st.mobileLast4)")
-            LabeledContent("Since", value: FarmTime.when(ms: st.at, now: Date()))
+            LabeledContent(signedOutAt == nil ? "Since" : "Signed in", value: FarmTime.when(ms: st.at, now: Date()))
             LabeledContent("Last command", value: st.lastOk.map { "accepted " + FarmTime.when(ms: $0, now: Date()) } ?? "none yet")
         }
         if let problem = store.mobitechProblem { Text(problem).foregroundStyle(Theme.warn) }
@@ -375,6 +404,8 @@ struct MobitechSignIn: View {
         switch step {
         case .idle:
             Button(store.mobitechStatus == nil ? "Sign in to Mobitech" : "Sign in again") { step = .mobile }
+                .bold(signedOutAt != nil || store.mobitechStatus == nil)
+                .foregroundStyle(signedOutAt != nil ? Theme.brand : Color.accentColor)
             if store.mobitechStatus != nil {
                 Button("Sign SNOF out", role: .destructive) { confirmSignOut = true }
                     .disabled(busy)

@@ -269,3 +269,35 @@ extrasOnly)`), never on the 60 s poll. A failed read shows "can't read" and no
 old figures (`irrigation/meta/errors/programs|rain`). `power_day` and
 `pressure_day` are report-builder types with no date fields. Preview flags:
 `progoff`, `progerr`, `shutdown`, `lock`, `watering`.
+
+## Developer console (owner only, 2026-11-08)
+
+`#/dev`, reached from the account menu only for the owner (`isOwner()`).
+Raw Mobitech **reads**: a request is pushed to `farms/<farm>/dev_requests`
+(`{uid, at, method, path, query, body, bodyType, auth}`), the NUC answers at
+`/private/dev_results/<farm>/<id>`, the page listens for 30 s ("The farm did
+not answer"), shows it and deletes the node. Disabled with the reason when
+`meta/bridge.devConsole` is not true or the bridge is quiet. Contract:
+`.context/dev-console-contract.md`.
+
+- **Builder**: method, path, query rows, form or JSON body, authorization
+  toggle, `{{token}}` `{{serial}}` `{{device_id}}` chips (filled on the NUC;
+  the browser never holds the token), presets, Paste curl, Copy as curl.
+- **Scrub before anything leaves**: `devRequest()` runs `devScrub` over every
+  cell, the query, the body and the path, so a token typed or pasted anywhere
+  (ends `@ios`, 40+ characters) becomes `{{token}}` before the push and before
+  the history is saved. `parseCurl` does the same on pasted text.
+- **Allow-list, mirroring the NUC** (`devRefusal`): only `/v1/http/` and
+  `/v1/weather/cumulative/`; `action` one of dashboard, dcon_node_details
+  (type=get), dcon_node (method get_node or get_all_valve), dcon_timer
+  (method=select), logs (motor_log, timer_log, valve_log, flow_log), reports
+  (any type), ferti (tank_get, inj_get, get, tank_log_web), fertiSett
+  (type=get), getWliData, cmd_status; weather `type=rain` only. Duplicated
+  keys and JSON bodies are checked too. Anything else: "Only reads are
+  allowed from the console." Change it here and in the add-on together.
+- **Response**: status, ms, size, truncated, collapsible tree (expand or
+  collapse all), Pretty / Raw, Copy. History: last 20 on this device
+  (localStorage), tap to reload, Clear history.
+- Pure helpers (`devScrub`, `parseCurl`, `devRefusal`, `devToCurl`) are
+  covered in `preview/qa.mjs`; the stub answers a push (`?devplain=1`,
+  `?deverr=1`, `?devoff=1`).

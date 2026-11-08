@@ -25,3 +25,28 @@ final class UnreadTests: XCTestCase {
         XCTAssertEqual(Unread.controller(c), "Mobitech signed SNOF out")
     }
 }
+
+final class MobitechSignedOutTests: XCTestCase {
+    func cache(_ err: String, at: Double?) -> IrrigationCache {
+        var c = IrrigationCache()
+        c.readErrors["live_readings"] = err
+        if let at { c.readErrorAts["live_readings"] = at }
+        return c
+    }
+    let out = "DCON live_readings: Mobitech signed this session out"
+
+    func testNewerErrorMeansSignedOut() {
+        XCTAssertEqual(Unread.mobitechSignedOut(cache(out, at: 2_000), signedInAt: 1_000), 2_000)
+    }
+    func testOlderErrorIsIgnoredAfterSignIn() {
+        XCTAssertNil(Unread.mobitechSignedOut(cache(out, at: 500), signedInAt: 1_000))
+    }
+    func testOtherErrorsAreNotSignedOut() {
+        XCTAssertNil(Unread.mobitechSignedOut(cache("DCON live_readings: HTTP 500", at: 2_000), signedInAt: 1_000))
+    }
+    func testNoErrorsAndControllerError() {
+        XCTAssertNil(Unread.mobitechSignedOut(IrrigationCache(), signedInAt: 1_000))
+        var c = IrrigationCache(); c.controllerError = out; c.controllerErrorAt = 3_000
+        XCTAssertEqual(Unread.mobitechSignedOut(c, signedInAt: 1_000), 3_000)
+    }
+}

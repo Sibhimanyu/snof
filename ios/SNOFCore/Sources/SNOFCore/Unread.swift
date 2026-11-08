@@ -30,6 +30,24 @@ public enum Unread {
         return String(short.prefix(60))
     }
 
+    /// Mobitech has signed SNOF out when a read failed that way after the
+    /// session was last signed in (mobitech_status.at). Returns when (ms) the
+    /// newest such failure happened; nil when the session is as signed in.
+    /// A failure with no stamp counts only when there is no sign-in time.
+    public static func mobitechSignedOut(_ c: IrrigationCache, signedInAt: Double?) -> Double? {
+        var newest: Double?
+        for (type, err) in c.readErrors where words(err) == "Mobitech signed SNOF out" {
+            let at = c.readErrorAts[type]
+            if let at { newest = max(newest ?? 0, at) } else if newest == nil { newest = 0 }
+        }
+        if let ce = c.controllerError, words(ce) == "Mobitech signed SNOF out" {
+            newest = max(newest ?? 0, c.controllerErrorAt ?? 0)
+        }
+        guard let n = newest else { return nil }
+        if let s = signedInAt { return n > s ? n : nil }
+        return n > 0 ? n : nil
+    }
+
     /// Why Home Assistant — every device, the power lines, the cameras —
     /// cannot be read now, or nil: the farm box has gone quiet or offline.
     public static func homeAssistant(_ s: BridgeStatus) -> String? {

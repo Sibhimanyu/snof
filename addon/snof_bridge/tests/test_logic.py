@@ -17,6 +17,7 @@ logging.disable(logging.CRITICAL)
 
 from bridge.commands import CommandConsumer  # noqa: E402
 from bridge import updater  # noqa: E402  (pure decisions, aiohttp imported lazily)
+from bridge import dev_console as dc  # noqa: E402  (pure validation, aiohttp imported lazily)
 from bridge import relay  # noqa: E402  (pure validation, aiohttp imported lazily)
 from bridge.mapper import StateMapper, filter_attributes  # noqa: E402
 from bridge.registry import Registry  # noqa: E402
@@ -993,6 +994,252 @@ def test_update_info_and_settling():
     assert updater.finish_state(node, None, 5)["state"] == "failed"
     assert updater.finish_state({"state": "done"}, "0.10.12", 5) is None
     assert updater.finish_state(None, "0.10.12", 5) is None
+
+
+# ---- developer console (bridge/dev_console.py) ------------------------------
+
+DC_NOW = 1_800_000_000.0
+
+
+def dc_req(**over):
+    base = {"uid": "u1", "at": DC_NOW * 1000, "method": "POST", "path": "/v1/http/",
+            "query": "", "body": "action=dashboard&token_id={{token}}&product=DCON",
+            "bodyType": "form", "auth": True}
+    base.update(over)
+    return base
+
+
+def dc_refused(**over):
+    try:
+        dc.validate(dc_req(**over), DC_NOW)
+    except dc.Refused:
+        return True
+    return False
+
+
+def test_dev_console_accepts_a_read():
+    got = dc.validate(dc_req(), DC_NOW)
+    assert got["path"] == "/v1/http/" and got["auth"] is True
+    assert dc.validate(dc_req(method="GET", body="", bodyType="none", path="/v1/weather/cumulative/",
+                              query="type=rain&device_id={{device_id}}"), DC_NOW)
+    assert dc.validate(dc_req(method="GET", body="", bodyType="none", path="/v1/weather/cumulative",
+                              query="type=rain"), DC_NOW)
+
+
+def test_dev_console_refuses_commands_and_sessions():
+    assert dc_refused(path="/v1/command/")
+    assert dc_refused(path="/v1/command")
+    assert dc_refused(path="/v1/otp/")
+    assert dc_refused(path="/v1/version/")
+    assert dc_refused(path="/v1/commands_x/")
+    assert dc_refused(path="/v1/http/", query="action=logout")
+    assert dc_refused(path="/v1/http/", query="a=1&action=login&b=2")
+    assert dc_refused(query="action=%6Cogout")
+    assert dc_refused(query="action%3Dlogout")
+    assert dc_refused(query="action%253Dlogout")
+    assert dc_refused(query="Action = LOGOUT")
+    assert dc_refused(query="type=otp")
+    assert dc_refused(body="action=logout&x=1")
+    assert dc_refused(body="action=log%69n")
+    assert dc_refused(body='{"action": "logout"}', bodyType="json")
+    assert dc_refused(body='{"type":"otp"}', bodyType="json")
+
+
+def test_dev_console_refuses_bad_shapes():
+    assert dc_refused(method="PUT")
+    assert dc_refused(method="DELETE")
+    assert dc_refused(path="/v1/../admin")
+    assert dc_refused(path="/v1/http/../x")
+    assert dc_refused(path="/v1//http/")
+    assert dc_refused(path="/v2/http/")
+    assert dc_refused(path="http://evil.example/v1/http/")
+    assert dc_refused(path="/v1/Http/")
+    assert dc_refused(path="/v1/" + "a" * 61)
+    assert dc_refused(query="a=" + "x" * 2000)
+    assert dc_refused(body="action=dashboard&a=" + "x" * 8000)
+    assert not dc_refused(query="a=" + "x" * 1990)
+    assert dc_refused(bodyType="xml")
+    assert dc_refused(bodyType="none", body="a=1")
+    assert dc_refused(method="GET", body="a=1")
+    assert dc_refused(auth="yes")
+    assert dc_refused(uid="")
+    assert dc_refused(uid="a/b")
+    assert dc_refused(at=True)
+    assert dc_refused(host="evil.example")           # extra key
+    for bad in (None, [], "x", {}):
+        try:
+            dc.validate(bad, DC_NOW)
+            assert False
+        except dc.Refused:
+            pass
+
+
+def test_dev_console_refuses_old_requests():
+    assert dc_refused(at=(DC_NOW - 61) * 1000)
+    assert not dc_refused(at=(DC_NOW - 59) * 1000)
+    assert dc_refused(at=(DC_NOW + 120) * 1000)
+
+
+def test_dev_console_rate_limit():
+    stamps = [DC_NOW - i for i in range(dc.MAX_PER_DAY)]
+    assert dc.day_allows(stamps[:-1], DC_NOW)
+    assert not dc.day_allows(stamps, DC_NOW)
+    assert dc.day_allows([DC_NOW - 90000] * 1000, DC_NOW)
+    assert dc.MIN_GAP_SECONDS == 3.0
+
+
+def test_dev_console_fills_placeholders_on_the_nuc():
+    req = dc.validate(dc_req(query="a={{serial}}&d={{device_id}}"), DC_NOW)
+    q, b, auth = dc.fill(req, "tok@ios-AAAA", "SER123", "dev-9")
+    assert q == "a=SER123&d=dev-9"
+    assert b == "action=dashboard&token_id=tok%40ios-AAAA&product=DCON"
+    assert auth == "tok@ios-AAAA"
+    j = dc.validate(dc_req(query="action=dashboard", body='{"t":"{{token}}"}', bodyType="json", auth=False), DC_NOW)
+    assert dc.fill(j, 'a"b@ios', "s", "d")[1] == '{"t":"a\\"b@ios"}'
+    assert dc.fill(j, 'a"b@ios', "s", "d")[2] == ""
+    for args in (("", "s", "d"), ("t@ios", "", "d")):
+        try:
+            dc.fill(dc.validate(dc_req(query="s={{serial}}&d={{device_id}}"), DC_NOW), *args)
+            assert False
+        except dc.Refused:
+            pass
+
+
+SECRETS = {"token": "tok-invented-0123456789@ios", "serial": "SN-INVENTED-77",
+           "device_id": "dev-invented-42"}
+
+
+def test_dev_console_redacts_json():
+    raw = json.dumps({
+        "users": {"a": "Asha 5551230001"}, "sim": "x", "mobile": "m", "email": "e@x.example",
+        "imei": "i", "phone": "p",
+        "keep": {"Users": 1, "n": 5, "msg": "hi " + SECRETS["token"] + " " + SECRETS["serial"]},
+        "packets": {"1": "a", "2": "keep2", "3": "keep3", "4": "b", "5": "c", "8": "d", "9": "keep9"},
+        "deep": [{"packets": {"1": 1, "4": 1, "5": 1, "8": 1, "6": "k"}, "id": SECRETS["device_id"]}],
+        "num": "call 1234567890 or 123456789012345", "short": "123456789"})
+    body, is_json, trunc = dc.redact(raw, SECRETS)
+    assert is_json and not trunc
+    got = json.loads(body)
+    for key in ("users", "sim", "mobile", "email", "imei", "phone"):
+        assert key not in got
+    assert "Users" not in got["keep"] and got["keep"]["n"] == 5
+    assert got["packets"] == {"2": "keep2", "3": "keep3", "9": "keep9"}
+    assert got["deep"][0]["packets"] == {"6": "k"}
+    assert got["deep"][0]["id"] == "{{device_id}}"
+    assert got["keep"]["msg"] == "hi {{token}} {{serial}}"
+    assert got["num"] == "call <redacted> or <redacted>" and got["short"] == "123456789"
+    for secret in list(SECRETS.values()) + ["5551230001"]:
+        assert secret not in body
+
+
+def test_dev_console_redacts_text_and_truncates():
+    body, is_json, trunc = dc.redact("<html>" + SECRETS["token"] + " 98765432101 "
+                                     + SECRETS["serial"], SECRETS)
+    assert not is_json and not trunc
+    assert body == "<html>{{token}} <redacted> {{serial}}"
+    big = json.dumps({"rows": ["abcdefgh"] * 100})
+    body, is_json, trunc = dc.redact(big, SECRETS, cap=100)
+    assert trunc and not is_json and len(body.encode()) <= 100
+    # a url-encoded token is caught too
+    enc = "x=" + "tok-invented-0123456789%40ios"
+    assert dc.redact(enc, SECRETS)[0] == "x={{token}}"
+    echoed = dc.echo(dc.validate(dc_req(), DC_NOW), SECRETS)
+    assert echoed["body"] == "action=dashboard&token_id={{token}}&product=DCON"
+    leaked = dc.echo(dc.validate(dc_req(query="t=" + SECRETS["token"]), DC_NOW), SECRETS)
+    assert SECRETS["token"] not in leaked["query"]
+
+
+def test_dev_console_allow_list():
+    ok = lambda q, b="", bt="none", **kw: not dc_refused(query=q, body=b, bodyType=bt, **kw)
+    for q in ("action=dashboard", "action=dcon_node_details&type=get", "action=dcon_node&method=get_node",
+              "action=dcon_node&method=get_all_valve", "action=dcon_timer&method=select",
+              "action=logs&method=timer_log", "action=logs&method=flow_log",
+              "action=reports&type=anything_at_all", "action=ferti&type=tank_log_web",
+              "action=fertiSett&type=get", "action=getWliData", "action=cmd_status&random_no=1"):
+        assert ok(q), q
+    for q in ("", "x=1", "action=", "action=nope", "action=Dashboard", "action=dashboard&type=get",
+              "action=dashboard&method=x", "action=dcon_node_details&type=set",
+              "action=dcon_node&method=set_valve", "action=dcon_node&type=get",
+              "action=dcon_timer&method=insert", "action=logs&method=other", "action=logs&type=x",
+              "action=reports&method=x", "action=ferti&type=inj_set", "action=fertiSett&type=set",
+              "action=getWliData&type=x", "action=logout", "action=login", "action=dashboard&action=logout",
+              "action=dashboard&action=dashboard", "action=dcon_node&method=get_node&method=get_node",
+              "action=reports&type=a&type=b", "Action=dashboard", "action=dashboard&Type=x",
+              "act%69on=dashboard&method=x", "action%2569on=dashboard", "action=dashboard;type=x",
+              "action=%7B%7Btoken%7D%7D", "action={{token}}"):
+        assert not ok(q), q
+    # the allow-list sees the body too
+    assert ok("", "action=dashboard&token_id={{token}}", "form")
+    assert not ok("action=dashboard", "action=logout", "form")
+    assert not ok("action=dashboard", "type=otp", "form")
+    assert not ok("action=dashboard", "action=dashboard", "form")
+    # weather: only type=rain
+    wx = lambda q: not dc_refused(path="/v1/weather/cumulative/", method="GET", query=q, body="", bodyType="none")
+    assert wx("type=rain&x=1") and not wx("type=snow") and not wx("") and not wx("type=rain&action=dashboard")
+    assert not wx("type=rain&type=rain") and not wx("type=rain&method=x")
+    assert dc_refused(path="/v1/weather/")
+    assert dc_refused(path="/v1/weather/cumulative/x/")
+
+
+def test_dev_console_json_bodies():
+    ok = lambda b, q="action=dashboard": not dc_refused(query=q, body=b, bodyType="json")
+    assert ok('{"a": 1, "b": "x"}')
+    assert ok('{"action": "dashboard"}', q="")
+    assert ok('{"action": "logs", "method": "motor_log"}', q="")
+    assert not ok('{"action": "logout"}', q="")
+    assert not ok('{"action": "logout"}')                  # also duplicates the query action
+    assert not ok('{"action": "dashboard"}')               # duplicate
+    assert not ok('{"type": "otp"}')
+    assert not ok('{"a": {"action": "logout"}}')
+    assert not ok('{"a": [{"Method": "x"}]}')
+    assert not ok('{"action": 5}', q="")
+    assert not ok('[1,2]') and not ok('"x"') and not ok('{bad json')
+    assert not ok('{"a": {"b": {"type": "otp"}}}')
+
+
+def test_dev_console_allow_list_file_matches_the_table():
+    path = Path(__file__).resolve().parents[3] / "docs" / "dev-console-allowlist.json"
+    assert json.loads(path.read_text()) == json.loads(json.dumps(dc.ALLOWED_REQUESTS))
+
+
+def test_dev_console_scrubs_token_variants_and_phones():
+    tok = "abcdefghijklmnopqrstuvwxyz0123456789:ZYXWVUTSRQPONMLKJIHGFEDCBA@ios"
+    core = "ZYXWVUTSRQPONMLKJIHGFEDCBA"
+    sec = {"token": tok, "serial": "SN-INVENTED-77", "device_id": "dev-invented-42"}
+    forms = [tok, tok.replace("@", "%40"), tok.replace(":", "%3A").replace("@", "%40"),
+             tok.replace("@", "&#64;"), tok.replace("@", "&#x40;"), "[" + core + "]", "x&amp;" + core,
+             tok.replace(":", "%3A")]
+    for f in forms:
+        got = dc.scrub_text("before " + f + " after", sec)
+        assert core not in got and "@ios" not in got, (f, got)
+    assert dc.scrub_text("e " + core, sec) == "e {{token}}"
+    # phones with separators, +country, brackets
+    for ph in ("+91 98765 43210", "(555) 123-4567", "555-123-4567", "98765-43210", "+1 555 123 4567"):
+        assert dc.scrub_text("tel " + ph + " end", sec) == "tel <redacted> end", ph
+    assert dc.scrub_text("12 345 678", sec) == "12 345 678"            # under 10 digits
+    assert dc.scrub_text("at 2026-11-08 12:30:00", sec) == "at 2026-11-08 12:30:00"
+    body, _, _ = dc.redact(json.dumps({"mail": "a", "uname": "b", "user_id": "c", "mobile_no": "d",
+                                       "name": "Program 1", "t": tok}), sec)
+    assert json.loads(body) == {"name": "Program 1", "t": "{{token}}"}
+
+
+def test_dev_console_request_ids():
+    class Rt:
+        def __init__(self): self.puts = []
+        async def put(self, path, value): self.puts.append((path, value))
+    cfg = types.SimpleNamespace(root="farms/snof", farm_slug="snof", allow_dev_console=True,
+                                dcon_serial="s", dcon_token_id="t", dcon_command_auth="")
+    rt = Rt()
+    con = dc.DevConsole(cfg, rt, None)
+    for bad in ("a/b", "a.b", "", "x" * 65, "a b", "..", "a#b", "a$b"):
+        asyncio.run(con.handle(bad, dc_req()))
+    assert con.refused == 8
+    # nothing but safely quoted deletes of the request node
+    assert all(v is None and p.startswith("farms/snof/dev_requests/") and p.count("/") == 3
+               for p, v in rt.puts)
+    assert not any(p.startswith("private") for p, _ in rt.puts)
+    for good in ("-Nabc_123", "A" * 64):
+        assert dc._REQ_ID.match(good)
 
 
 if __name__ == "__main__":

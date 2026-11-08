@@ -106,6 +106,17 @@ the same switch as before (`DCON_TRANSPORT=direct`, then the consumer swap in
 step b), and the add-on loses these with the rest. `DCON_DEVICE_ID` becomes a
 secret of the report function too (the rain call needs it).
 
+## The third extra: the owner's developer console
+
+Owner decision, 2026-11-08: the owner can send raw **read** requests to
+Mobitech from the apps (web `#/dev`, iOS Account, Developer). The NUC makes the
+call (`bridge/dev_console.py`, option `allow_dev_console`, off by default),
+fills `{{token}}` / `{{serial}}` / `{{device_id}}` itself, refuses `/v1/command`,
+`/v1/otp`, `/v1/version` and any `action=login|logout` / `type=otp`, redacts
+every answer, and deletes request and (after 10 min) result. Like the other
+two it is not a precedent and moves to Cloud Functions at cut-over. Full
+description, arming and disarming: [dev-console.md](dev-console.md).
+
 ## 3. Cut over (same day the allowlist works)
 
 Do these in order. Step 3b is the one that must never be reversed in order:

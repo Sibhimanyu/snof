@@ -21,6 +21,7 @@ from . import config
 from .commands import CommandConsumer
 from .irrigation_control import IrrigationControl
 from .relay import DconRelay
+from .dev_console import DevConsole
 from .updater import AddonUpdater
 from .ha_client import REGISTRY_EVENTS, HAClient
 from .mapper import StateMapper
@@ -50,6 +51,7 @@ class Bridge:
         self.relay = DconRelay(cfg, self.rtdb, session)
         self.irrigation_control = IrrigationControl(cfg, self.rtdb, session)
         self.updater = AddonUpdater(cfg, self.rtdb, session)
+        self.dev_console = DevConsole(cfg, self.rtdb, session)
         self.connected = False
         # entity_id -> digest of the last node we published, so an event that
         # changes nothing visible costs no write at all.
@@ -226,6 +228,8 @@ class Bridge:
                     "irrigationControlStatus": self.irrigation_control.status(),
                     # Start-a-program gate: true only with both options on.
                     "programStart": self.irrigation_control.program_start_enabled,
+                    # Owner-only raw Mobitech reads (bridge/dev_console.py).
+                    "devConsole": self.dev_console.enabled,
                     # Running / latest add-on version; may admins update it?
                     **self.updater.heartbeat(),
                 })
@@ -343,6 +347,7 @@ async def amain() -> None:
             asyncio.create_task(bridge.commands.run(), name="commands"),
             asyncio.create_task(bridge.relay.run(), name="relay"),
             asyncio.create_task(bridge.irrigation_control.run(), name="irrigation_control"),
+            asyncio.create_task(bridge.dev_console.run(), name="dev_console"),
             asyncio.create_task(bridge.updater.run_info(), name="update_info"),
             asyncio.create_task(bridge.updater.run(), name="update_requests"),
         ]

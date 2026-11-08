@@ -91,6 +91,16 @@ Architecture and data shape are in README.md.
   (merge, restart).
   Pausing/stopping a program, emergency shutdown and schedule edits are not
   built: their formats are unknown until a new app capture.
+  **Third documented exception: the developer console** (owner, 2026-11-08):
+  the owner (verified email = `acl/owner/email`) sends raw Mobitech **reads**
+  from web `#/dev` / iOS Account → Developer. `farms/<farm>/dev_requests` →
+  `bridge/dev_console.py` → `/private/dev_results/<farm>/<id>` (owner only,
+  10 min). **Reads only, by allow-list** (`ALLOWED_REQUESTS`,
+  docs/dev-console-allowlist.json, mirrored in both apps): never
+  `/v1/command`, sign-in or sign-out. Placeholders `{{token}}` `{{serial}}`
+  `{{device_id}}` are filled on the NUC; redaction (token, phone book, sim,
+  packets 1/4/5/8, 10+ digit numbers) cannot be turned off. Option
+  `allow_dev_console`, off by default. docs/dev-console.md.
 
 - **Add-on update** (owner, 2026-11-01) is a fourth writable path,
   `/farms/<slug>/addon_update_requests` `{uid, at}`: admins only in the rules,

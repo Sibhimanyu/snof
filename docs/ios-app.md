@@ -213,3 +213,17 @@ Program (US$99/year). A public App Store listing for a single-farm tool
 risks rejection. Unlisted App Distribution or a Custom App (Apple Business
 Manager) are the usual routes. Replace the placeholder app icon before any of
 them.
+
+## Developer console (owner only)
+
+Account → Developer (`DeveloperView.swift`, shown only when `store.isOwner`) sends raw,
+read-only Mobitech requests through the farm box: `dev_requests` out, results at
+`/private/dev_results/<farm>/<id>` (read, then deleted). Gated by `meta/bridge.devConsole`
+(`Gate.evaluate(.devConsole …)`). The curl parser, request builder, refusal check
+(`/v1/command`, `/v1/otp`, `/v1/version`, `action=login|logout`, `type=otp`) and the JSON tree
+live in `SNOFCore/DevConsole.swift` (tests: `DevConsoleTests`). The phone never holds the token:
+requests use `{{token}}`/`{{serial}}`/`{{device_id}}` and anything token-shaped is replaced
+on paste. History: last 20 in UserDefaults (`devHistory`). Demo: `-demo-devoff|devslow|devlarge`;
+screenshot with `-developer-root -dev-demo`. The Mobitech account sheet leads with
+"Mobitech signed SNOF out · time" when a read error of that kind is newer than the sign-in
+(`Unread.mobitechSignedOut`).

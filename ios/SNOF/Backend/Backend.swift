@@ -121,6 +121,13 @@ protocol FarmBackend: AnyObject {
     func invite(key: String, tier: AccessTier) async throws
     func cancelInvite(key: String) async throws
 
+    /* Developer console (owner only, reads only; contract .context/dev-console-contract.md). */
+    /// Append to /farms/<farm>/dev_requests; returns its key, which the NUC reuses for the result.
+    func sendDev(_ request: DevRequest, uid: String) async throws -> String
+    /// Listen to /private/dev_results/<farm>/<id>; the returned closure stops listening.
+    func observeDevResult(id: String, _ handler: @escaping (Any?) -> Void) -> () -> Void
+    func deleteDevResult(id: String) async
+
     /// Drop writes the server has not acknowledged yet. Called when a control
     /// times out, so a toggle queued while offline cannot fire minutes later.
     func cancelUnsentWrites()

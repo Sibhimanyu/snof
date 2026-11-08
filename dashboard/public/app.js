@@ -590,7 +590,7 @@ function toast(kind, message) {
 
 /* ================= router ================= */
 
-const ROUTES = new Set(['overview', 'water', 'motor', 'areas', 'devices', 'area', 'admin', 'sys']);
+const ROUTES = new Set(['overview', 'water', 'motor', 'areas', 'devices', 'area', 'admin', 'sys', 'dev']);
 const route = () => {
   const h = (location.hash || '#/').slice(1);
   const [, head, arg] = h.match(/^\/([^/]*)\/?(.*)$/) || [, '', ''];
@@ -664,7 +664,7 @@ function render() {
   const farmName = state.meta?.name || 'SNOF';
   // Each page names itself, so tabs, history and bookmarks tell them apart.
   const pageName = { overview: 'Home', water: 'Water', areas: 'Rooms', devices: 'All devices',
-    admin: 'Admin', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title,
+    admin: 'Admin', dev: 'Developer', area: areaName(r.arg), sys: SYSTEMS[r.arg]?.title,
     motor: r.arg === DCON_KEY ? dconTile().name : (waterMotors().find((m) => m.key === r.arg)?.name || 'Motor') }[r.name] || 'Home';
   document.title = `${pageName} · SNOF`;
   // The search bar lives outside #view and shows only where it filters.
@@ -672,6 +672,7 @@ function render() {
 
   const areas = groupByArea(all);
   document.querySelectorAll('.nav-admin').forEach((n) => { n.hidden = !isAdmin; });
+  document.querySelectorAll('.nav-dev').forEach((n) => { n.hidden = !isOwner(); });
   document.querySelectorAll('[data-nav]').forEach((n) =>
     n.classList.toggle('on', n.dataset.nav === (['area', 'devices'].includes(r.name) ? 'areas' : r.name === 'sys' ? 'overview' : r.name === 'motor' ? 'water' : r.name)));
 
@@ -698,6 +699,11 @@ function render() {
     else if (r.name === 'water') view.innerHTML = waterView();
     else if (r.name === 'motor') view.innerHTML = motorView(r.arg);
     else if (r.name === 'sys') view.innerHTML = systemView(all, r.arg);
+    else if (r.name === 'dev') {
+      // The console keeps what is being typed in its own state and repaints its
+      // own sections, so a live farm update never rebuilds it under the cursor.
+      if (!isOwner() || !el('dev-root')) { view.innerHTML = devView(); devMount(); } else devPaintGate();
+    }
     else if (r.name === 'admin') view.innerHTML = isAdmin ? adminView()
       : head('Admin', '', '') +
         emptyBlock('Admins only', 'Your account does not have admin access.');
@@ -749,7 +755,7 @@ const todayLine = () => new Date().toLocaleDateString('en-GB', { weekday: 'long'
 
 function skeletonView() {
   const r = route();
-  const title = { water: 'Water', motor: 'Water', areas: 'Rooms', devices: 'Rooms', admin: 'Admin' }[r.name] || 'Home';
+  const title = { water: 'Water', motor: 'Water', areas: 'Rooms', devices: 'Rooms', admin: 'Admin', dev: 'Developer' }[r.name] || 'Home';
   return head(title, '', '') +
     `<div class="loader-block" role="status"><span class="loader"><img src="/art/logo-loader.png" alt="" width="128" height="128"></span>
       <p>Connecting to the farm…</p></div>`;
@@ -3968,7 +3974,7 @@ function liveskyPanel(reason = '', force = false) {
         <button class="btn btn-primary" data-act="ls-start">Sign in again</button>
         <button class="btn btn-ghost" data-act="ls-signout"${lsBusy ? ' disabled' : ''}>Sign out</button>
       </div>`;
-  return `<section class="panel mb-panel">${facts}${status}${form}</section>`;
+  return `<section class="panel mb-panel">${status}${facts}${form}</section>`;
 }
 
 /* ---- admin (add people, grant/revoke view + control) ---- */
@@ -4199,6 +4205,14 @@ function mobitechState() {
   if (st.lastRejected && st.lastRejected > Math.max(st.at, st.lastOk || 0)) {
     return { kind: 'rejected', text: `Mobitech rejected SNOF's session at ${mbWhen(st.lastRejected)}. ${signInAgain('to send valve commands')}` };
   }
+  // Mobitech ended the session: a read failed with the signed-out wording
+  // after the last sign-in, in any report type (the status line alone would
+  // keep saying signed in).
+  let outAt = 0;
+  for (const e of Object.values(irrig().meta?.errors || {})) {
+    if (e?.error && unreadWords(e.error).includes('signed SNOF out') && (e.at || 0) > st.at) outAt = Math.max(outAt, e.at);
+  }
+  if (outAt) return { kind: 'signedout', at: outAt, text: `Mobitech signed SNOF out · ${whenMs(outAt)}` };
   return { kind: 'ok', text: '' };
 }
 
@@ -4206,7 +4220,7 @@ function mobitechPanel(reason = '', force = false) {
   const st = state.mobitechStatus || {};
   const m = mobitechState();
   const out = m.kind !== 'ok';
-  if (isOwner() && (force || out || mbStep !== 'idle')) {
+  if (isOwner() && (force || (out && m.kind !== 'signedout') || mbStep !== 'idle')) {
     const signedIn = !out && !force;
     return signInCard({ p: 'mb', title: signedIn ? 'Sign in to Mobitech again' : 'Sign in to Mobitech',
       reason: signedIn ? '' : (reason || (m.kind === 'rejected' ? `Mobitech rejected SNOF's session at ${mbWhen(st.lastRejected)}.` : 'SNOF is not signed in to Mobitech, so valve commands are off.')),
@@ -4215,12 +4229,16 @@ function mobitechPanel(reason = '', force = false) {
   }
   const who = st.at ? `${escapeHtml(st.name || st.user || 'the farm account')}${st.user && st.name ? ` (${escapeHtml(st.user)})` : ''}` : '';
   // The dead session's facts are never shown as current.
-  const facts = !out && st.at ? `<div class="mb-facts">
+  const lastIn = m.kind === 'signedout' ? `<div class="mb-facts">
+      <div><span>Last signed in as</span><strong>${who}</strong></div>
+      <div><span>Number</span><strong>ending ${escapeHtml(st.mobileLast4 || '····')}</strong></div>
+    </div>` : '';
+  const facts = lastIn || (!out && st.at ? `<div class="mb-facts">
       <div><span>Signed in as</span><strong>${who}</strong></div>
       <div><span>Number</span><strong>ending ${escapeHtml(st.mobileLast4 || '····')}</strong></div>
       <div><span>Since</span><strong>${escapeHtml(mbWhen(st.at))}</strong></div>
       <div><span>Last command</span><strong>${st.lastOk ? `accepted ${escapeHtml(mbWhen(st.lastOk))}` : 'none yet'}</strong></div>
-    </div>` : '';
+    </div>` : '');
   const status = m.kind === 'ok' ? '' : `<p class="more-note note-off">${escapeHtml(m.text)}</p>`;
   const form = !isOwner()
     ? `<p class="more-note">Only ${escapeHtml(owner?.name || 'the farm owner')} signs SNOF in to Mobitech. Everyone uses that session.</p>`
@@ -4228,7 +4246,7 @@ function mobitechPanel(reason = '', force = false) {
         <button class="btn btn-primary" data-act="mb-start">Sign in again</button>
         <button class="btn btn-ghost" data-act="mb-signout"${mbBusy ? ' disabled' : ''}>Sign out</button>
       </div>`;
-  return `<section class="panel mb-panel">${facts}${status}${form}</section>`;
+  return `<section class="panel mb-panel">${status}${facts}${form}</section>`;
 }
 
 /* ---- Farm box add-on update (admins) ----
@@ -4706,6 +4724,535 @@ function wire(all) {
   });
   view.querySelectorAll('[data-act="acl-cancel-invite"]').forEach((btn) => {
     btn.onclick = () => cancelInvite(btn.dataset.key);
+  });
+}
+
+/* ================= developer console (owner only) =================
+ * Owner decision 2026-11-08: raw, read-only Mobitech requests, sent through
+ * farms/<farm>/dev_requests and answered in dev_results/<id> by the NUC
+ * (.context/dev-console-contract.md; results live under /private/dev_results/<farm>). The rules let only the owner write or
+ * read those; this page only decides what to offer. The browser never holds
+ * the token: {{token}}, {{serial}} and {{device_id}} are filled in on the NUC.
+ * The pure helpers (devScrub, parseCurl, devRefusal, devToCurl) have no DOM
+ * and are covered by dashboard/preview/qa.mjs. */
+
+const DEV_HOST = 'https://dcon.mobitechwireless.com';
+const DEV_PLACEHOLDERS = ['{{token}}', '{{serial}}', '{{device_id}}'];
+const DEV_TIMEOUT_MS = 30000;
+const DEV_HIST_KEY = 'snof.dev.history';
+const DEV_HIST_MAX = 20;
+const DEV_NO_COMMANDS = 'Commands are not allowed from the console.';
+
+/** Anything shaped like a Mobitech token (ends @ios, 40+ characters, also as
+ *  %40ios) becomes {{token}}. Runs on pasted text before it is used. */
+function devScrub(text) {
+  return String(text ?? '').replace(/[A-Za-z0-9_:.\-]+(?:@|%40)ios\b/g, (m) => (m.length >= 40 ? '{{token}}' : m));
+}
+
+/** Percent-encode, leaving {{placeholders}} whole for the NUC to fill. */
+function devEnc(s) {
+  return String(s ?? '').split(/(\{\{(?:token|serial|device_id)\}\})/).map((p, i) => (i % 2 ? p : encodeURIComponent(p))).join('');
+}
+const devDec = (s) => { try { return decodeURIComponent(String(s).replace(/\+/g, ' ')); } catch (_) { return String(s); } };
+
+/** "a=1&b=2" -> [{k, v}] (decoded); the reverse is devJoin. */
+function devRows(str) {
+  return String(str || '').split('&').filter(Boolean).map((p) => {
+    const i = p.indexOf('=');
+    return i < 0 ? { k: devDec(p), v: '' } : { k: devDec(p.slice(0, i)), v: devDec(p.slice(i + 1)) };
+  });
+}
+const devJoin = (rows) => rows.filter((r) => r.k.trim() !== '').map((r) => `${devEnc(r.k.trim())}=${devEnc(r.v)}`).join('&');
+
+/** Shell-style split of a pasted curl command: quotes, $'..', backslash
+ *  continuations. Returns the words. */
+function devWords(text) {
+  const s = String(text).replace(/\\\r?\n/g, ' ');
+  const out = []; let cur = null; let i = 0;
+  const push = () => { if (cur !== null) { out.push(cur); cur = null; } };
+  while (i < s.length) {
+    const c = s[i];
+    if (/\s/.test(c)) { push(); i++; continue; }
+    cur = cur ?? '';
+    if (c === "'") { const j = s.indexOf("'", i + 1); const e = j < 0 ? s.length : j; cur += s.slice(i + 1, e); i = e + 1; continue; }
+    if (c === '$' && s[i + 1] === "'") {
+      let j = i + 2;
+      while (j < s.length && s[j] !== "'") { if (s[j] === '\\' && j + 1 < s.length) { const n = s[j + 1]; cur += n === 'n' ? '\n' : n === 't' ? '\t' : n; j += 2; } else cur += s[j++]; }
+      i = j + 1; continue;
+    }
+    if (c === '"') {
+      let j = i + 1;
+      while (j < s.length && s[j] !== '"') { if (s[j] === '\\' && j + 1 < s.length && '"\\$`'.includes(s[j + 1])) { cur += s[j + 1]; j += 2; } else cur += s[j++]; }
+      i = j + 1; continue;
+    }
+    if (c === '\\' && i + 1 < s.length) { cur += s[i + 1]; i += 2; continue; }
+    cur += c; i++;
+  }
+  push();
+  return out;
+}
+
+/** A pasted `curl ...` -> { ok, req, notes } or { ok:false, error }.
+ *  Only the method, the path and query, the body and whether an authorization
+ *  header was present survive; the header's value never does. Token-shaped
+ *  values anywhere become {{token}} first. */
+function parseCurl(text) {
+  const words = devWords(devScrub(text));
+  if (!words.length || !/(^|\/)curl$/.test(words[0])) return { ok: false, error: 'That does not start with curl.' };
+  let method = '', url = '', get = false, auth = false, ctype = '';
+  const data = [], notes = [];
+  const take = (i) => words[i + 1] ?? '';
+  for (let i = 1; i < words.length; i++) {
+    const w = words[i];
+    let name = w, val = null;
+    const eq = w.startsWith('--') ? w.indexOf('=') : -1;
+    if (eq > 0) { name = w.slice(0, eq); val = w.slice(eq + 1); }
+    const arg = () => { if (val !== null) return val; i++; return take(i - 1); };
+    if (name === '-X' || name === '--request') method = arg().toUpperCase();
+    else if (/^-X./.test(w)) method = w.slice(2).toUpperCase();
+    else if (name === '-H' || name === '--header') {
+      const h = arg(); const m = h.match(/^\s*([^:]+):\s*(.*)$/s);
+      if (m) {
+        const hn = m[1].trim().toLowerCase();
+        if (hn === 'authorization') auth = true;
+        else if (hn === 'content-type') ctype = m[2].toLowerCase();
+        else notes.push(`dropped header ${hn}`);
+      }
+    } else if (['-d', '--data', '--data-raw', '--data-binary', '--data-ascii'].includes(name)) data.push(arg());
+    else if (name === '--data-urlencode') {
+      const d = arg(); const k = d.indexOf('=');
+      data.push(k < 0 ? devEnc(d) : `${d.slice(0, k)}=${devEnc(d.slice(k + 1))}`);
+    } else if (name === '--url') url = arg();
+    else if (name === '-G' || name === '--get') get = true;
+    else if (['-A', '--user-agent', '-b', '--cookie', '-e', '--referer', '-u', '--user', '-o', '--output', '--connect-timeout', '-m', '--max-time'].includes(name)) { arg(); notes.push(`dropped ${name}`); }
+    else if (w.startsWith('-')) { /* a bare flag (-s, -L, -i, --compressed): nothing to keep */ }
+    else if (!url) url = w;
+  }
+  if (!url) return { ok: false, error: 'No URL found in that command.' };
+  const m = url.match(/^(?:https?:\/\/([^/?#]+))?([^?#]*)(?:\?([^#]*))?/);
+  if (m[1] && m[1].toLowerCase() !== 'dcon.mobitechwireless.com') return { ok: false, error: 'Only dcon.mobitechwireless.com requests can be sent from here.' };
+  let path = m[2] || '/', query = m[3] || '', body = data.join('&');
+  if (get && body) { query = [query, body].filter(Boolean).join('&'); body = ''; }
+  if (!method) method = body ? 'POST' : 'GET';
+  if (method !== 'GET' && method !== 'POST') return { ok: false, error: `${method} is not available: only GET and POST.` };
+  let bodyType = 'none';
+  if (body) {
+    let isJson = false;
+    try { JSON.parse(body); isJson = /json/.test(ctype) || /^\s*[{[]/.test(body); } catch (_) { isJson = false; }
+    bodyType = isJson ? 'json' : 'form';
+  }
+  return { ok: true, req: { method, path, query, body, bodyType, auth }, notes };
+}
+
+const DEV_READ_ONLY = 'Only reads are allowed from the console.';
+/* The reads the NUC allows (mirrors addon dev_console.py). A value of null
+ * means any; a list names the required second parameter. */
+const DEV_ACTIONS = {
+  dashboard: null,
+  dcon_node_details: { type: ['get'] },
+  dcon_node: { method: ['get_node', 'get_all_valve'] },
+  dcon_timer: { method: ['select'] },
+  logs: { method: ['motor_log', 'timer_log', 'valve_log', 'flow_log'] },
+  reports: null,
+  ferti: { type: ['tank_get', 'inj_get', 'get', 'tank_log_web'] },
+  fertiSett: { type: ['get'] },
+  getWliData: null,
+  cmd_status: null,
+};
+/** Query and body parameters as name -> list of values (form or JSON body). */
+function devParams(req) {
+  const m = {};
+  const add = (k, v) => { (m[k] = m[k] || []).push(String(v)); };
+  for (const r of devRows(req.query)) add(r.k, r.v);
+  const body = String(req.body || '');
+  let j = null;
+  if (req.bodyType === 'json' || /^\s*[{[]/.test(body)) { try { j = JSON.parse(body); } catch (_) { j = null; } }
+  if (j && typeof j === 'object' && !Array.isArray(j)) for (const [k, v] of Object.entries(j)) add(k, typeof v === 'object' ? JSON.stringify(v) : v);
+  else for (const r of devRows(body)) add(r.k, r.v);
+  return m;
+}
+
+/** Why this request must not leave the browser, or '' when it may. An
+ *  allow-list: only the reads the NUC allows. The NUC and the rules check
+ *  again; this only spares a round trip. */
+function devRefusal(req) {
+  const path = String(req.path || '');
+  if (!['GET', 'POST'].includes(req.method)) return 'Only GET and POST.';
+  const q = String(req.query || ''), b = String(req.body || '');
+  if (q.length > 2000) return 'The query is over 2000 characters.';
+  if (b.length > 8000) return 'The body is over 8000 characters.';
+  const P = devParams(req);
+  const one = (k) => (P[k] && P[k].length === 1 ? P[k][0] : null);
+  if (path === '/v1/weather/cumulative/') {
+    return one('type') === 'rain' && !P.action ? '' : DEV_READ_ONLY;
+  }
+  if (path !== '/v1/http/') return DEV_READ_ONLY;
+  const action = one('action');
+  if (action === null || !Object.prototype.hasOwnProperty.call(DEV_ACTIONS, action)) return DEV_READ_ONLY;
+  const need = DEV_ACTIONS[action];
+  if (need) for (const [k, ok] of Object.entries(need)) { const v = one(k); if (v === null || !ok.includes(v)) return DEV_READ_ONLY; }
+  return '';
+}
+
+const devShq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+/** The request as a curl command: placeholders kept, full host. */
+function devToCurl(req) {
+  const url = `${DEV_HOST}${req.path}${req.query ? `?${req.query}` : ''}`;
+  const parts = ['curl', '-X', req.method, devShq(url)];
+  if (req.auth) parts.push('-H', devShq('authorization: {{token}}'));
+  if (req.method === 'POST' && req.body) {
+    parts.push('-H', devShq(`content-type: ${req.bodyType === 'json' ? 'application/json' : 'application/x-www-form-urlencoded'}`));
+    parts.push('--data-raw', devShq(req.body));
+  }
+  return parts.join(' ');
+}
+
+/** "dashboard" / "timer_log" / the path: what a history row calls a request. */
+function devLabel(req) {
+  const hay = `${devDec(req.query || '')}&${devDec(req.body || '')}`;
+  const a = hay.match(/(?:^|&)action=([a-z_]+)/i), t = hay.match(/(?:^|&)(?:method|type)=([a-z_]+)/i);
+  if (a) return t ? `${a[1]} · ${t[1]}` : a[1];
+  return req.path;
+}
+
+function devPresets() {
+  const T = '{{token}}', S = '{{serial}}';
+  const ymd = (d) => d.toISOString().slice(0, 10);
+  const today = ymd(new Date(Date.now() + 330 * 60000)), yday = ymd(new Date(Date.now() + 330 * 60000 - 864e5));
+  const get = (name, query, auth = false) => ({ name, req: { method: 'GET', path: '/v1/http/', query, body: '', bodyType: 'none', auth } });
+  const post = (name, body) => ({ name, req: { method: 'POST', path: '/v1/http/', query: '', body, bodyType: 'form', auth: false } });
+  return [
+    get('dashboard', `action=dashboard&p=app&token_id=${T}&product=DCON`),
+    post('dcon_node_details', `action=dcon_node_details&type=get&serial_no=${S}&token_id=${T}`),
+    post('get_node', `action=dcon_node&method=get_node&serial_no=${S}&token_id=${T}`),
+    post('get_all_valve (today)', `action=dcon_node&method=get_all_valve&from=${today}&to=${today}&serial_no=${S}&token_id=${T}`),
+    post('programs (dcon_timer select)', `action=dcon_timer&method=select&serial_no=${S}&token_id=${T}`),
+    post('timer_log', `action=logs&method=timer_log&serial_no=${S}&from=${yday}&to=${today}&token_id=${T}`),
+    post('motor_log', `action=logs&method=motor_log&serial_no=${S}&from=${yday}&to=${today}&token_id=${T}`),
+    get('electricity', `action=reports&type=electricity&serial_no=${S}&dt=${today}&product=DCON&token_id=${T}`),
+    get('electricity_day', `action=reports&type=electricity_day&serial_no=${S}&product=DCON&token_id=${T}`),
+    get('pressure_cond', `action=reports&type=pressure_cond&serial_no=${S}&dt=${today}&product=DCON&token_id=${T}`),
+    get('pressure_day', `action=reports&type=pressure_day&serial_no=${S}&dt=${today}&product=DCON&token_id=${T}`),
+    get('fertiSett', `action=fertiSett&type=get&serial_no=${S}&product=DCON&token_id=${T}`),
+    post('tank_get', `action=ferti&type=tank_get&serial_no=${S}&token_id=${T}`),
+    post('inj_get', `action=ferti&type=inj_get&serial_no=${S}&token_id=${T}`),
+    post('getWliData', `action=getWliData&serial_no=${S}&dt=&token_id=${T}`),
+    { name: 'rain', req: { method: 'GET', path: '/v1/weather/cumulative/', query: 'device_id={{device_id}}&type=rain', body: '', bodyType: 'none', auth: true } },
+    post('cmd_status (random_no)', `action=cmd_status&random_no=&serial_no=${S}&token_id=${T}`),
+  ];
+}
+
+/* ---- the page ---- */
+
+const devStore = (() => {
+  const read = () => { try { const a = JSON.parse(localStorage.getItem(DEV_HIST_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  const write = (a) => { try { localStorage.setItem(DEV_HIST_KEY, JSON.stringify(a)); } catch (_) { /* full or blocked: history is a convenience */ } };
+  return { read, write };
+})();
+
+let dev = null;
+function devInit() {
+  dev = { method: 'GET', path: '/v1/http/', q: [{ k: 'action', v: 'dashboard' }, { k: 'p', v: 'app' }, { k: 'token_id', v: '{{token}}' }, { k: 'product', v: 'DCON' }],
+    bodyType: 'none', bodyRows: [{ k: '', v: '' }], bodyJson: '', auth: false,
+    pasteOpen: false, pasteText: '', pasteMsg: '', pasteOk: true,
+    busy: false, error: '', resp: null, mode: 'tree', last: null, history: devStore.read(), listening: null };
+}
+
+/** The request as it will leave the page. Every value passes devScrub (cells
+ *  before encoding, then the whole string): a token typed or pasted anywhere
+ *  becomes {{token}} and never reaches the database or localStorage. */
+function devRequest() {
+  const cells = (rows) => rows.map((r) => ({ k: devScrub(r.k), v: devScrub(r.v) }));
+  const query = devScrub(devJoin(cells(dev.q)));
+  let body = '', bodyType = 'none';
+  if (dev.method === 'POST') {
+    bodyType = dev.bodyType;
+    body = bodyType === 'form' ? devJoin(cells(dev.bodyRows)) : bodyType === 'json' ? dev.bodyJson.trim() : '';
+    body = devScrub(body);
+    if (!body) bodyType = 'none';
+  }
+  return { method: dev.method, path: devScrub(dev.path.trim()), query, body, bodyType, auth: dev.auth };
+}
+
+function devLoad(req) {
+  dev.method = req.method === 'POST' ? 'POST' : 'GET';
+  dev.path = req.path || '/v1/http/';
+  dev.q = devRows(req.query); if (!dev.q.length) dev.q = [{ k: '', v: '' }];
+  dev.bodyType = req.bodyType === 'json' ? 'json' : req.bodyType === 'form' ? 'form' : 'none';
+  dev.bodyRows = dev.bodyType === 'form' ? devRows(req.body) : [{ k: '', v: '' }];
+  if (!dev.bodyRows.length) dev.bodyRows = [{ k: '', v: '' }];
+  dev.bodyJson = dev.bodyType === 'json' ? req.body : '';
+  dev.auth = !!req.auth;
+  dev.error = '';
+}
+
+function devGate() {
+  const hb = state.meta && state.meta.bridge;
+  if (!hb || hb.devConsole !== true) return { ok: false, why: 'The developer console is turned off at the farm.' };
+  const g = bridgeGate('reports');
+  return g.ok ? g : { ok: false, why: g.why };
+}
+
+const devIco = (n) => `<svg viewBox="0 0 24 24" class="ico ico-sm" aria-hidden="true"><use href="#${n}"/></svg>`;
+
+function devView() {
+  if (!isOwner()) {
+    return head('Developer', '') + emptyBlock('Owner only', `${ownerName()} uses this page. It sends raw requests to the controller.`);
+  }
+  if (!dev) devInit();
+  return head('Developer', '') + `<div id="dev-root" class="dev">
+    <div id="dev-gate"></div>
+    <div class="dev-grid">
+      <div class="dev-col">
+        <section class="panel dev-sec" id="dev-presets"></section>
+        <section class="panel dev-sec" id="dev-req"></section>
+      </div>
+      <div class="dev-col"><section class="panel dev-sec" id="dev-resp"></section></div>
+    </div>
+    <section class="panel dev-sec" id="dev-hist"></section>
+  </div>`;
+}
+
+function devMount() {
+  const root = el('dev-root');
+  if (!root) return;
+  devPaintGate(); devPaintPresets(); devPaintReq(); devPaintResp(); devPaintHist();
+  root.onclick = devClick;
+  root.oninput = devInput;
+  root.onchange = devInput;
+  root.onfocusin = (e) => { const t = e.target; if (t.dataset && t.dataset.f && t.dataset.f !== 'paste') dev.last = { f: t.dataset.f, i: t.dataset.i ?? null }; };
+  root.onmousedown = (e) => { if (e.target.closest('[data-dev="chip"]')) e.preventDefault(); };
+}
+
+function devPaintGate() {
+  const g = devGate();
+  const box = el('dev-gate');
+  if (box) box.innerHTML = g.ok ? '' : `<div class="dev-gate" role="status">${devIco('i-alert')}<span>${escapeHtml(g.why)} You can still build a request and copy it as curl.</span></div>`;
+  const send = el('dev-send');
+  if (send) { send.disabled = !g.ok || dev.busy; send.title = g.ok ? '' : g.why; }
+}
+
+function devPaintPresets() {
+  const box = el('dev-presets'); if (!box) return;
+  box.innerHTML = panelHead('Presets') + `<div class="dev-pad"><div class="dev-chips">` +
+    devPresets().map((p, i) => `<button class="dev-chip" data-dev="preset" data-i="${i}" title="${escapeHtml(p.req.method + ' ' + p.req.path)}">${escapeHtml(p.name)}</button>`).join('') +
+    `</div></div>`;
+}
+
+const devField = (f, i, val, ph, extra = '') =>
+  `<input class="dev-in" data-f="${f}"${i == null ? '' : ` data-i="${i}"`} value="${escapeHtml(val)}" placeholder="${ph}" autocomplete="off" autocapitalize="off" spellcheck="false" ${extra}>`;
+
+function devRowsHtml(kind, rows) {
+  return `<div class="dev-rows">` + rows.map((r, i) =>
+    `<div class="dev-row">${devField(kind + 'k', i, r.k, 'key', 'aria-label="Key"')}${devField(kind + 'v', i, r.v, 'value', 'aria-label="Value"')}` +
+    `<button class="dev-x" data-dev="del-${kind}" data-i="${i}" aria-label="Remove row">${devIco('i-close')}</button></div>`).join('') +
+    `</div><button class="dev-add" data-dev="add-${kind}">+ Add row</button>`;
+}
+
+function devPaintReq() {
+  const box = el('dev-req'); if (!box) return;
+  const seg = (name, cur, opts) => `<div class="seg" role="group" aria-label="${name}">` + opts.map(([v, l]) =>
+    `<button data-dev="${name}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('') + `</div>`;
+  const post = dev.method === 'POST';
+  const body = !post ? '' : `<div class="dev-lab">Body</div>` + seg('bodytype', dev.bodyType, [['none', 'None'], ['form', 'Form'], ['json', 'JSON']]) +
+    (dev.bodyType === 'form' ? devRowsHtml('b', dev.bodyRows)
+      : dev.bodyType === 'json' ? `<textarea class="dev-in dev-ta" data-f="bjson" rows="6" placeholder="{ }" spellcheck="false" autocapitalize="off" aria-label="JSON body">${escapeHtml(dev.bodyJson)}</textarea>` : '');
+  box.innerHTML = panelHead('Request') + `<div class="dev-pad dev-stack">
+    <div class="dev-line">${seg('method', dev.method, [['GET', 'GET'], ['POST', 'POST']])}${devField('path', null, dev.path, '/v1/http/', 'aria-label="Path"')}</div>
+    <div class="dev-lab">Query</div>${devRowsHtml('q', dev.q)}
+    ${body}
+    <label class="dev-check"><input type="checkbox" data-f="auth"${dev.auth ? ' checked' : ''}><span>Send authorization header</span></label>
+    <div class="dev-lab">Insert</div>
+    <div class="dev-chips">${DEV_PLACEHOLDERS.map((p) => `<button class="dev-chip mono" data-dev="chip" data-v="${p}">${p}</button>`).join('')}</div>
+    <div class="dev-actions">
+      <button class="btn btn-primary" id="dev-send" data-dev="send">${dev.busy ? 'Waiting…' : 'Send'}</button>
+      <button class="btn btn-ghost" data-dev="copycurl">Copy as curl</button>
+      <button class="btn btn-ghost" data-dev="paste-toggle" aria-expanded="${dev.pasteOpen}">Paste curl</button>
+    </div>
+    ${dev.pasteOpen ? `<div class="dev-paste"><textarea class="dev-in dev-ta" data-f="paste" rows="5" placeholder="curl 'https://dcon.mobitechwireless.com/v1/http/?action=dashboard…'" spellcheck="false" autocapitalize="off" aria-label="curl command">${escapeHtml(dev.pasteText)}</textarea>
+      <div class="dev-actions"><button class="btn btn-ghost" data-dev="paste-fill">Fill the builder</button>
+      <span class="dev-msg ${dev.pasteOk ? '' : 'bad'}">${escapeHtml(dev.pasteMsg)}</span></div>
+      <p class="more-note">Token-shaped values are replaced by {{token}} here, before anything is sent. An authorization header only turns the toggle on.</p></div>` : ''}
+    ${dev.error ? `<p class="dev-err" role="alert">${escapeHtml(dev.error)}</p>` : ''}
+  </div>`;
+  devPaintGate();
+}
+
+/* The collapsible tree. Open to two levels; arrays and objects past 400
+ * children say how many more there are rather than drawing thousands of rows. */
+function devTree(v, key, depth) {
+  const k = key == null ? '' : `<span class="jk">${escapeHtml(key)}</span><span class="jp">: </span>`;
+  const leaf = (cls, text) => `<div class="jl">${k}<span class="jv ${cls}">${escapeHtml(text)}</span></div>`;
+  if (v === null) return leaf('nul', 'null');
+  if (typeof v === 'string') return leaf('str', JSON.stringify(v));
+  if (typeof v === 'number') return leaf('num', String(v));
+  if (typeof v === 'boolean') return leaf('boo', String(v));
+  const isArr = Array.isArray(v);
+  const entries = isArr ? v.map((x, i) => [i, x]) : Object.entries(v);
+  const [o, c] = isArr ? ['[', ']'] : ['{', '}'];
+  if (!entries.length) return `<div class="jl">${k}<span class="jv">${o}${c}</span></div>`;
+  const shown = entries.slice(0, 400);
+  const more = entries.length - shown.length;
+  return `<details class="jt"${depth < 2 ? ' open' : ''}><summary>${k}<span class="jp">${o}</span><span class="jn"> ${entries.length} ${isArr ? (entries.length === 1 ? 'item' : 'items') : (entries.length === 1 ? 'key' : 'keys')}</span></summary>` +
+    `<div class="jc">${shown.map(([kk, x]) => devTree(x, isArr ? kk : kk, depth + 1)).join('')}${more > 0 ? `<div class="jl jn">… ${more} more</div>` : ''}</div><span class="jp jclose">${c}</span></details>`;
+}
+
+const devBytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+
+function devParsed(r) {
+  if (!r || !r.json) return null;
+  if (r.parsed !== undefined) return r.parsed;
+  try { r.parsed = JSON.parse(r.body); } catch (_) { r.parsed = null; }
+  return r.parsed;
+}
+function devShown(r) {
+  const p = devParsed(r);
+  if (p === null || p === undefined) return r.body || '';
+  return dev.mode === 'raw' ? r.body : JSON.stringify(p, null, 2);
+}
+
+function devPaintResp() {
+  const box = el('dev-resp'); if (!box) return;
+  const r = dev.resp;
+  if (dev.busy) { box.innerHTML = panelHead('Response') + `<div class="dev-pad"><div class="dev-wait"><span class="dev-spin"></span>Asking the farm… up to 30 seconds</div></div>`; return; }
+  if (!r) { box.innerHTML = panelHead('Response') + `<div class="dev-pad"><p class="dev-empty">Nothing sent yet. Pick a preset, or paste a curl command, then Send.</p></div>`; return; }
+  const ok = r.status >= 200 && r.status < 300;
+  const pill = `<span class="dev-pill ${ok ? 'ok' : 'bad'}">${r.status ? r.status : 'no answer'}</span>`;
+  const hasJson = devParsed(r) !== null && devParsed(r) !== undefined;
+  const mode = hasJson ? dev.mode : 'raw';
+  const tools = (hasJson
+    ? `<div class="seg" role="group" aria-label="View">` + [['tree', 'Tree'], ['pretty', 'Pretty'], ['raw', 'Raw']].map(([v, l]) =>
+      `<button data-dev="mode" data-v="${v}" aria-pressed="${dev.mode === v}">${l}</button>`).join('') + `</div>` : '') +
+    (hasJson && mode === 'tree' ? `<button class="btn btn-ghost btn-sm" data-dev="expand">Expand all</button><button class="btn btn-ghost btn-sm" data-dev="collapse">Collapse all</button>` : '') +
+    `<button class="btn btn-ghost btn-sm dev-copy" data-dev="copyresp">Copy</button>`;
+  const content = r.error && !r.body ? `<p class="dev-err">${escapeHtml(r.error)}</p>`
+    : mode === 'tree' ? `<div class="dev-tree">${devTree(devParsed(r), null, 0)}</div>`
+    : `<pre class="dev-pre">${escapeHtml(devShown(r))}</pre>`;
+  box.innerHTML = panelHead('Response') + `<div class="dev-pad dev-stack">
+    <div class="dev-meta">${pill}<span class="dev-stat">${r.ms} ms</span><span class="dev-stat">${devBytes(r.size)}</span>${r.truncated ? '<span class="dev-pill warn">truncated</span>' : ''}${r.json ? '' : '<span class="dev-stat">not JSON</span>'}</div>
+    ${r.error && r.body ? `<p class="dev-err">${escapeHtml(r.error)}</p>` : ''}
+    ${r.truncated ? '<p class="more-note dev-note">The farm cut the answer at 256 KB.</p>' : ''}
+    <div class="dev-tools">${tools}</div>
+    ${content}
+  </div>`;
+}
+
+function devPaintHist() {
+  const box = el('dev-hist'); if (!box) return;
+  const h = dev.history;
+  box.innerHTML = panelHead('History', null, h.length || null) + (h.length
+    ? `<div class="dev-pad dev-stack"><div class="dev-hlist">` + h.map((x, i) => {
+        const ok = x.res && x.res.status >= 200 && x.res.status < 300;
+        return `<button class="dev-h" data-dev="hist" data-i="${i}"><span class="dev-pill ${ok ? 'ok' : 'bad'}">${x.res && x.res.status ? x.res.status : 'none'}</span>` +
+          `<span class="dev-hm">${escapeHtml(x.req.method)}</span><span class="dev-hl">${escapeHtml(devLabel(x.req))}</span>` +
+          `<span class="dev-ht">${escapeHtml(devAgo(x.at))}</span></button>`;
+      }).join('') + `</div><div class="dev-actions"><button class="btn btn-ghost btn-sm" data-dev="hist-clear">Clear history</button><span class="dev-msg">Kept on this device only.</span></div></div>`
+    : `<div class="dev-pad"><p class="dev-empty">The last 20 requests and answers appear here, on this device only.</p></div>`);
+}
+const devAgo = (at) => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`; };
+
+function devCopy(text, what) {
+  const done = () => toast('ok', `${what} copied.`);
+  const fallback = () => {
+    const t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); done(); } catch (_) { toast('err', 'Could not copy.'); }
+    t.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+}
+
+function devInput(e) {
+  const t = e.target; const f = t.dataset && t.dataset.f; if (!f) return;
+  const i = Number(t.dataset.i);
+  if (f === 'path') dev.path = t.value;
+  else if (f === 'qk') dev.q[i].k = t.value;
+  else if (f === 'qv') dev.q[i].v = t.value;
+  else if (f === 'bk') dev.bodyRows[i].k = t.value;
+  else if (f === 'bv') dev.bodyRows[i].v = t.value;
+  else if (f === 'bjson') dev.bodyJson = t.value;
+  else if (f === 'paste') dev.pasteText = t.value;
+  else if (f === 'auth') dev.auth = t.checked;
+}
+
+function devClick(e) {
+  const b = e.target.closest('[data-dev]'); if (!b) return;
+  const a = b.dataset.dev, i = Number(b.dataset.i), v = b.dataset.v;
+  if (a === 'preset') { devLoad(devPresets()[i].req); devPaintReq(); }
+  else if (a === 'method') { dev.method = v; devPaintReq(); }
+  else if (a === 'bodytype') { dev.bodyType = v; devPaintReq(); }
+  else if (a === 'add-q') { dev.q.push({ k: '', v: '' }); devPaintReq(); root_focus('qk', dev.q.length - 1); }
+  else if (a === 'add-b') { dev.bodyRows.push({ k: '', v: '' }); devPaintReq(); root_focus('bk', dev.bodyRows.length - 1); }
+  else if (a === 'del-q') { dev.q.splice(i, 1); if (!dev.q.length) dev.q.push({ k: '', v: '' }); devPaintReq(); }
+  else if (a === 'del-b') { dev.bodyRows.splice(i, 1); if (!dev.bodyRows.length) dev.bodyRows.push({ k: '', v: '' }); devPaintReq(); }
+  else if (a === 'chip') devInsert(v);
+  else if (a === 'copycurl') devCopy(devToCurl(devRequest()), 'curl command');
+  else if (a === 'paste-toggle') { dev.pasteOpen = !dev.pasteOpen; devPaintReq(); }
+  else if (a === 'paste-fill') {
+    const r = parseCurl(dev.pasteText);
+    if (!r.ok) { dev.pasteOk = false; dev.pasteMsg = r.error; }
+    else { devLoad(r.req); dev.pasteOk = true; dev.pasteMsg = 'Filled.' + (r.notes.length ? ` (${r.notes.join(', ')})` : ''); dev.pasteText = ''; }
+    devPaintReq();
+  } else if (a === 'send') devSend();
+  else if (a === 'mode') { dev.mode = v; devPaintResp(); }
+  else if (a === 'expand' || a === 'collapse') el('dev-resp').querySelectorAll('details.jt').forEach((d) => { d.open = a === 'expand'; });
+  else if (a === 'copyresp') devCopy(devShown(dev.resp), 'Response');
+  else if (a === 'hist') {
+    const x = dev.history[i]; if (!x) return;
+    devLoad(x.req); dev.resp = x.res ? { ...x.res } : null; devPaintReq(); devPaintResp();
+  } else if (a === 'hist-clear') { dev.history = []; devStore.write([]); devPaintHist(); }
+}
+
+function root_focus(f, i) { el('dev-req')?.querySelector(`[data-f="${f}"][data-i="${i}"]`)?.focus(); }
+
+/** Put a placeholder where the cursor last was in the builder (the path,
+ *  a query or body cell, the JSON body); the first value cell otherwise. */
+function devInsert(text) {
+  const l = dev.last;
+  let node = l && el('dev-req').querySelector(`[data-f="${l.f}"]${l.i != null ? `[data-i="${l.i}"]` : ''}`);
+  if (!node) node = el('dev-req').querySelector('[data-f="qv"]');
+  if (!node) return;
+  const s = node.selectionStart ?? node.value.length, en = node.selectionEnd ?? s;
+  node.value = node.value.slice(0, s) + text + node.value.slice(en);
+  node.focus(); node.setSelectionRange(s + text.length, s + text.length);
+  node.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function devSend() {
+  if (dev.busy) return;
+  const g = devGate();
+  if (!g.ok) { dev.error = g.why; devPaintReq(); return; }
+  const req = devRequest();
+  const why = devRefusal(req);
+  dev.error = why;
+  if (why) { devPaintReq(); return; }
+  dev.busy = true; dev.resp = null;
+  devPaintReq(); devPaintResp();
+  const base = firebase.database().ref(`farms/${FARM}/dev_requests`).push();
+  const resRef = firebase.database().ref(`private/dev_results/${FARM}/${base.key}`);
+  const t0 = Date.now();
+  let done = false, timer = null, cb = null;
+  const finish = (res, err) => {
+    if (done) return; done = true; clearTimeout(timer);
+    try { resRef.off('value', cb); } catch (_) { /* stub */ }
+    dev.busy = false;
+    if (err) { dev.error = err; dev.resp = null; } else {
+      dev.resp = res;
+      dev.history = [{ at: Date.now(), req, res: { ...res, parsed: undefined, body: String(res.body || '').slice(0, 60000) } }, ...dev.history].slice(0, DEV_HIST_MAX);
+      devStore.write(dev.history);
+    }
+    if (el('dev-root')) { devPaintReq(); devPaintResp(); devPaintHist(); }
+  };
+  cb = resRef.on('value', (s) => {
+    const v = s.val(); if (!v) return;
+    const body = String(v.body || '');
+    finish({ status: Number(v.status) || 0, ms: Number(v.ms) || (Date.now() - t0), json: !!v.json, body,
+      size: new TextEncoder().encode(body).length, truncated: !!v.truncated, error: v.error || '' });
+    try { resRef.remove(); } catch (_) { /* the NUC clears it after 10 minutes anyway */ }
+  }, () => finish(null, 'The database refused reading the answer.'));
+  timer = setTimeout(() => finish(null, 'The farm did not answer.'), DEV_TIMEOUT_MS);
+  base.set({ ...req, uid: currentUser.uid, at: firebase.database.ServerValue.TIMESTAMP }, (err) => {
+    if (err) finish(null, err.code === 'PERMISSION_DENIED' ? 'The database refused that request.' : `Could not send: ${err.message}`);
   });
 }
 
