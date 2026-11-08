@@ -85,6 +85,10 @@ Architecture and data shape are in README.md.
   saved program (`ET01-<NNN>-<HH MM>`, option `allow_program_start`, off by
   default, same irrigation_lock) and now sends the app's `V…ON` / `MOFF`
   (decision (b) taken). Strict allow-lists; all of it moves at cut-over.
+  **Armed on 2026-11-08** (add-on 0.11.0, iOS 0.12.0): the log says
+  `Watching irrigation commands (... start programs) as A8` and
+  `meta/bridge.programStart` is true. Disarm with `allow_program_start: false`
+  (merge, restart).
   Pausing/stopping a program, emergency shutdown and schedule edits are not
   built: their formats are unknown until a new app capture.
 
