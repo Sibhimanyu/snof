@@ -101,6 +101,8 @@ Architecture and data shape are in README.md.
   `{{device_id}}` are filled on the NUC; redaction (token, phone book, sim,
   packets 1/4/5/8, 10+ digit numbers) cannot be turned off. Option
   `allow_dev_console`, off by default. docs/dev-console.md.
+  **Armed 2026-11-08** (add-on 0.12.0): log `Watching developer console
+  (reads only)`, `meta/bridge.devConsole` true. Disarm: option false, restart.
 
 - **Add-on update** (owner, 2026-11-01) is a fourth writable path,
   `/farms/<slug>/addon_update_requests` `{uid, at}`: admins only in the rules,
