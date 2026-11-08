@@ -972,7 +972,9 @@ def report_programs(src, params):
     return ([section("facts", "Saved programs", rows,
                      note=f"{len(items)} programs, {on} switched on")],
             f"{len(items)} programs, {on} on", [],
-            {"programs": {"at": SERVER_TIMESTAMP, "items": items}})
+            # Keys are "p<no>": bare numbers make RTDB store an array.
+            {"programs": {"at": SERVER_TIMESTAMP,
+                          "items": {f"p{p['number']}": p for p in items.values()}}})
 
 
 def report_rain(src, params):

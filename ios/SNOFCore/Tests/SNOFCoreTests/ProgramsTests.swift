@@ -12,6 +12,13 @@ final class ProgramsTests: XCTestCase {
         "rain": ["at": 6_000.0, "today": 0.0, "week": 3.2, "last24h": 1.0, "yesterday": 0.5],
     ]
 
+    func testProgramsAsPKeysOrRTDBArray() {
+        let keyed = Parse.programs(["at": 1.0, "items": ["p8": ["number": 8, "name": "Mango1"], "p2": ["number": 2, "name": "Coconut"]]])
+        XCTAssertEqual(keyed?.items.map(\.number), [2, 8])
+        let arr = Parse.programs(["at": 1.0, "items": [NSNull(), NSNull(), ["number": 2, "name": "Coconut"], ["name": "No number"]]])
+        XCTAssertEqual(arr?.items.map(\.number), [2, 3])
+    }
+
     func testParsesProgramsRainAndControllerFacts() {
         let c = Parse.irrigation(tree)
         XCTAssertEqual(c.programs?.items.map(\.number), [2, 3])
