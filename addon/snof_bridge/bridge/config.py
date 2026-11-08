@@ -63,6 +63,8 @@ class Config:
     allow_program_start: bool = False
     # Remote add-on update (bridge/updater.py). Off unless the options turn it on.
     allow_remote_update: bool = False
+    # Developer console (bridge/dev_console.py): owner-only raw Mobitech reads.
+    allow_dev_console: bool = False
 
     # Resolved at construction, not user-facing.
     ha_ws_url: str = field(default="", repr=False)
@@ -146,6 +148,7 @@ def load() -> Config:
         irrigation_max_minutes=max(1, min(180, int(opts.get("irrigation_max_minutes", 60)))),
         allow_program_start=bool(opts.get("allow_program_start", False)),
         allow_remote_update=bool(opts.get("allow_remote_update", False)),
+        allow_dev_console=bool(opts.get("allow_dev_console", False)),
         ha_ws_url=ws_url,
         ha_token=token,
     )

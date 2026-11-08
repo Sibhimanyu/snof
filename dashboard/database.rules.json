@@ -163,6 +163,30 @@
           }
         },
 
+        // Developer console (owner, 2026-11-08): raw READ requests to Mobitech,
+        // owner only. docs/dev-console.md. The write needs the owner's verified
+        // email (acl/owner/email, service account only), the bridge to have
+        // armed it (meta/bridge/devConsole, written only by the NUC), and a
+        // fixed shape. The NUC fills {{token}} / {{serial}} / {{device_id}},
+        // re-validates, refuses commands, sign-in and sign-out, redacts the
+        // answer, writes dev_results and deletes the request. The path
+        // regex has no dot, so no traversal; /v1/command, /v1/otp and
+        // /v1/version are refused by the NUC (a rule regex cannot do lookahead).
+        "dev_requests": {
+          "$req": {
+            ".write": "auth != null && auth.token.email != null && auth.token.email_verified === true && root.child('acl/owner/email').val() === auth.token.email.toLowerCase() && !data.exists() && newData.hasChildren(['uid','at','method','path','bodyType','auth']) && root.child('farms').child($farm).child('meta/bridge/devConsole').val() === true",
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "at": { ".validate": "newData.val() === now" },
+            "method": { ".validate": "newData.isString() && (newData.val() === 'GET' || newData.val() === 'POST')" },
+            "path": { ".validate": "newData.isString() && newData.val().matches(/^[/]v1[/](http|weather[/]cumulative)[/]?$/)" },
+            "query": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+            "body": { ".validate": "newData.isString() && newData.val().length <= 8000" },
+            "bodyType": { ".validate": "newData.isString() && (newData.val() === 'form' || newData.val() === 'json' || newData.val() === 'none')" },
+            "auth": { ".validate": "newData.isBoolean()" },
+            "$other": { ".validate": false }
+          }
+        },
+
         // Report requests for the Mobitech DCON irrigation controller.
         // Same shape of trust as commands: a
         // controller may append a request and nothing else. A Cloud Function
@@ -217,6 +241,17 @@
       // denies.
       "livesky": {
         ".write": false
+      },
+      // Developer console answers (docs/dev-console.md). Outside /farms so no
+      // viewer read grant reaches them. The NUC (service account) writes;
+      // only the owner (verified email = acl/owner/email) may read or delete.
+      "dev_results": {
+        "$farm": {
+          "$res": {
+            ".read": "auth != null && auth.token.email != null && auth.token.email_verified === true && root.child('acl/owner/email').val() === auth.token.email.toLowerCase()",
+            ".write": "auth != null && auth.token.email != null && auth.token.email_verified === true && root.child('acl/owner/email').val() === auth.token.email.toLowerCase() && !newData.exists()"
+          }
+        }
       },
       // The owner alone signs SNOF in to Mobitech (owner, 2026-09-26: "the
       // super admin will be the only one to have to sign in, and everyone

@@ -133,6 +133,7 @@
               <svg viewBox="0 0 24 24" class="ico ico-sm ico-moon"><use href="#i-moon"/></svg>
               <span id="theme-menu-text">Switch theme</span>
             </button>
+            <a class="acct-item nav-dev" href="#/dev" role="menuitem" hidden>Developer</a>
             <a class="acct-item nav-admin" href="#/admin" role="menuitem" hidden>Admin: people and access</a>
             <button id="signout-menu" class="acct-item" role="menuitem">Sign out</button>
           </div>
@@ -169,7 +170,7 @@
            farmhouse:'Farmhouse',cold_store:'Cold Store',nursery:'Nursery'};
   const data={
     meta:{name:'Sibhi Natural Orchards', bridge:{status:'online', lastSeen: now-(params.get('stale')?400000:5000),
-      heartbeatSeconds:30, control:!params.get('controloff')},
+      heartbeatSeconds:30, control:!params.get('controloff'), devConsole:!params.get('devoff')},
       // What the report Cloud Function publishes. ?reportsoff=1 is the kill
       // switch thrown: meta/reports.enabled false, set by the service account.
       reports:{runtime:'cloud-functions', lastSeen: now-60000,
@@ -512,6 +513,20 @@
           }
           // Stand-in for the motor_command function: confirming, then the
           // motor's own report confirms it.
+          // Stand-in for the NUC's developer console: a redacted JSON answer
+          // (?devplain=1: plain text, ?deverr=1: a 403) at /private/dev_results.
+          if(path.endsWith('/dev_requests')){
+            setTimeout(()=>{ const q=(v.query||'')+'&'+(v.body||'');
+              const j={[ '{{serial}}' ]:{state:'ok',version:'V3.4.1',server_time:'2026-11-08 09:04:04',time_zone:'+05:30',
+                packets:{live:{dt:'2026-11-08 09:03:40',p1:231.4,p2:2.1,v:[4,6],run:true},'2':{ph:[451,468,458]},'6':{kw:4.2,amps:[10.2,10.2]}},
+                timers:{current:{name:'Coconut',run_time:'00:20-01:00',valves:[12,15]},next:{name:'Guava',valves:[13,14]}},
+                valve_details:[{id:'4',name:'4 Veg',status:'on'},{id:'6',name:'6 Kulam',status:'off'}],emergency_shutdown:false,users:'<removed>'}};
+              const plain=params.get('devplain'), bad=params.get('deverr');
+              const body=plain?'<html><body>502 Bad Gateway</body></html>':JSON.stringify(bad?{state:'error',message:'Token not valid'}:j);
+              const r={uid:v.uid,at:Date.now(),status:bad?403:plain?502:200,ms:412,json:!plain,body,truncated:false,request:{method:v.method,path:v.path,query:v.query,body:v.body,bodyType:v.bodyType,auth:v.auth}};
+              (data.__dev=data.__dev||{})[k]=r;
+              fire('private/dev_results/snof/'+k,r); },600);
+          }
           if(path.endsWith('/motor_commands')){
             const res=data.motor_command_results=data.motor_command_results||{};
             setTimeout(()=>{ res[k]={ok:true,confirming:true,verified:false,motor:v.motor,action:v.action};

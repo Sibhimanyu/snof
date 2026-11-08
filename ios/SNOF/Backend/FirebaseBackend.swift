@@ -230,6 +230,23 @@ final class FirebaseBackend: FarmBackend {
         _ = try await push("farms/\(Farm.slug)/addon_update_requests", ["uid": uid, "at": ServerValue.timestamp()])
     }
 
+    func sendDev(_ request: DevRequest, uid: String) async throws -> String {
+        var node = DevConsole.node(request, uid: uid)
+        node["at"] = ServerValue.timestamp()
+        return try await push("farms/\(Farm.slug)/dev_requests", node)
+    }
+
+    func observeDevResult(id: String, _ handler: @escaping (Any?) -> Void) -> () -> Void {
+        let ref = db.reference(withPath: "private/dev_results/\(Farm.slug)/\(id)")
+        let h = ref.observe(.value, with: { snap in handler(snap.value is NSNull ? nil : snap.value) },
+                            withCancel: { err in NSLog("SNOF: dev_results listener cancelled: %@", err.localizedDescription) })
+        return { ref.removeObserver(withHandle: h) }
+    }
+
+    func deleteDevResult(id: String) async {
+        try? await db.reference(withPath: "private/dev_results/\(Farm.slug)/\(id)").removeValue()
+    }
+
     /// The function lives beside the database (asia-southeast1). The project
     /// id comes from GoogleService-Info.plist; nothing here is hardcoded.
     func waterSession(_ body: [String: Any]) async throws -> [String: Any] {

@@ -102,6 +102,8 @@ public struct BridgeMeta: Hashable, Sendable {
     /// `meta/bridge.programStart`: both program-start options are on. nil (an
     /// older bridge) is off, like `irrigationControl`.
     public var programStart: Bool?
+    /// `meta/bridge.devConsole`: the owner's raw-request console is on at the farm. nil is off.
+    public var devConsole: Bool?
 
     public init(status: String? = nil, lastSeen: Double? = nil, heartbeatSeconds: Double? = nil,
                 control: Bool? = nil,
@@ -242,6 +244,8 @@ public struct IrrigationCache: Hashable, Sendable {
     public var controllerErrorAt: Double?
     /// Every read type whose last read failed, with why (meta/errors).
     public var readErrors: [String: String] = [:]
+    /// When each of those failed (ms), where the function stamped it.
+    public var readErrorAts: [String: Double] = [:]
     /// Saved programs (`irrigation/programs`), the rain gauge (`irrigation/rain`)
     /// and the controller's own facts. Added 2026-11-08; nil/empty from older functions.
     public var programs: ProgramsCache?

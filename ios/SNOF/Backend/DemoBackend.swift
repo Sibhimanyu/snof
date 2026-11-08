@@ -23,6 +23,7 @@ import SNOFCore
  *   -demo-denied      signed in, but not on the allowlist
  *   -demo-signinfail  sign-in fails the way a real one can (shows the report)
  *   -demo-unread      the controller cannot be read: Mobitech signed SNOF out
+ *   -demo-devoff / -devslow / -devlarge   developer console: off, never answers, truncated
  *   -demo-notowner    an admin who is not the farm owner (only the owner signs in) */
 @MainActor
 final class DemoBackend: FarmBackend {
@@ -90,6 +91,7 @@ final class DemoBackend: FarmBackend {
         bridge["control"] = !flag("controloff")
         bridge["irrigationControl"] = !flag("controloff") && !flag("irrigationoff")
         bridge["irrigationControlStatus"] = ["maxMinutes": 60]
+        bridge["devConsole"] = !flag("controloff") && !flag("devoff")
         bridge["programStart"] = !flag("controloff") && !flag("irrigationoff") && !flag("programoff")
         meta["bridge"] = bridge
         Self.seedPrograms(&tree, now: now)
@@ -538,6 +540,40 @@ final class DemoBackend: FarmBackend {
     }
 
     func requestAddonUpdate(uid: String) async throws {}
+
+    /* Developer console: answer any request with a fake body. -demo-devslow never
+     * answers (the 30 s timeout); -demo-devlarge truncates. */
+    private var devResults: [String: [String: Any]] = [:]
+    private var devWatchers: [String: (Any?) -> Void] = [:]
+
+    func sendDev(_ request: DevRequest, uid: String) async throws -> String {
+        if let why = DevConsole.refusal(request) { throw BackendError.other(why) }
+        let id = "dev\(devResults.count + 1)-\(Int(Date().timeIntervalSince1970))"
+        if flag("devslow") { return id }
+        let body: [String: Any] = [
+            "state": "ok", "path": request.path, "query": request.query,
+            "server_time": "2026-11-08 16:20:11",
+            "packets": ["2": ["pressure": 2.4, "motor": true, "phase": [231.2, 229.8, 233.0]], "6": ["valves": [["id": "V1", "on": true], ["id": "V2", "on": false]]]],
+            "timers": ["current": NSNull(), "next": ["program": "ET01-012", "at": "17:30"]],
+            "note": "Demo response: nothing reached the farm."]
+        let text = (try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        let node: [String: Any] = ["uid": uid, "at": Date().timeIntervalSince1970 * 1000, "status": 200, "ms": 412,
+                                   "json": true, "body": text, "truncated": flag("devlarge")]
+        devResults[id] = node
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            self?.devWatchers[id]?(node)
+        }
+        return id
+    }
+
+    func observeDevResult(id: String, _ handler: @escaping (Any?) -> Void) -> () -> Void {
+        devWatchers[id] = handler
+        if let n = devResults[id] { handler(n) }
+        return { [weak self] in self?.devWatchers[id] = nil }
+    }
+
+    func deleteDevResult(id: String) async { devResults[id] = nil }
 
     func requestWaterRefresh(uid: String) async throws {
         if flag("wateroff") { return }

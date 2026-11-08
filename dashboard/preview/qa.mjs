@@ -734,5 +734,96 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
   check('the pipes are one overlay across the row', r.overlay==='block', r.overlay);
   await c.close();
 }
+
+{
+  // Developer console: the pure helpers.
+  const [p,c]=await open('?owner=1#/dev');
+  await p.waitForSelector('#dev-root');
+  const T='AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdEFGH:APA91bExample-token_value@ios';
+  const r=await p.evaluate((T)=>{
+    const a=parseCurl(`curl -X POST 'https://dcon.mobitechwireless.com/v1/http/' -H 'authorization: ${T}' -H 'content-type: application/x-www-form-urlencoded' --data-raw 'action=dcon_timer&method=select&serial_no=ABC&token_id=${T.replace('@','%40')}'`);
+    const b=parseCurl(`curl 'https://dcon.mobitechwireless.com/v1/http/' -H 'content-type: application/json' -d '{"action":"dashboard","n":1}'`);
+    const g=parseCurl(`curl "https://dcon.mobitechwireless.com/v1/http/?action=reports&type=electricity_day&token_id=${T}&product=DCON" \\\n  -H 'accept: */*'`);
+    const bad=parseCurl(`curl https://example.com/v1/http/`);
+    return {a,b,g,bad,scrub:devScrub(`x=${T}&y=short@ios`),
+      refCmd:devRefusal({method:'POST',path:'/v1/command/',query:'',body:''}),
+      refLogin:devRefusal({method:'POST',path:'/v1/http/',query:'',body:'action=login&type=otp'}),
+      refOk:devRefusal({method:'GET',path:'/v1/http/',query:'action=dashboard',body:''}),
+      curl:devToCurl({method:'POST',path:'/v1/http/',query:'',body:"a=1&b=it's",bodyType:'form',auth:true})};
+  },T);
+  check('curl -X POST with -H authorization and --data-raw form: auth on, token gone, body kept',
+    r.a.ok&&r.a.req.method==='POST'&&r.a.req.auth===true&&r.a.req.bodyType==='form'&&r.a.req.body.includes('token_id={{token}}')&&!JSON.stringify(r.a).includes('@ios')&&!JSON.stringify(r.a).includes('%40ios'), JSON.stringify(r.a));
+  check('curl with a JSON body and no -X is a POST with bodyType json', r.b.ok&&r.b.req.method==='POST'&&r.b.req.bodyType==='json'&&r.b.req.body==='{"action":"dashboard","n":1}'&&!r.b.req.auth, JSON.stringify(r.b));
+  check('curl GET with query: path split, token replaced, continuation handled', r.g.ok&&r.g.req.method==='GET'&&r.g.req.path==='/v1/http/'&&r.g.req.query==='action=reports&type=electricity_day&token_id={{token}}&product=DCON'&&r.g.req.bodyType==='none', JSON.stringify(r.g));
+  check('curl to another host is refused', !r.bad.ok, JSON.stringify(r.bad));
+  check('devScrub replaces only token-shaped values', r.scrub==='x={{token}}&y=short@ios', r.scrub);
+  check('client refuses /v1/command, action=login, allows a read', /Only reads/.test(r.refCmd)&&/Only reads/.test(r.refLogin)&&r.refOk==='', JSON.stringify([r.refCmd,r.refLogin,r.refOk]));
+  check('Copy as curl keeps placeholders and quotes safely', r.curl.includes("-H 'authorization: {{token}}'")&&r.curl.includes(`--data-raw 'a=1&b=it'\\''s'`)&&r.curl.startsWith('curl -X POST'), r.curl);
+  await c.close();
+}
+{
+  // Developer console: send, wait for the answer, show it; owner only.
+  const [p,c]=await open('?owner=1#/dev');
+  await p.waitForSelector('#dev-root');
+  await p.click('[data-dev="preset"][data-i="0"]');
+  await p.click('#dev-send');
+  await p.waitForSelector('#dev-resp .dev-pill.ok',{timeout:4000});
+  const r=await p.evaluate(()=>({status:document.querySelector('#dev-resp .dev-pill').textContent,
+    tree:document.querySelectorAll('#dev-resp details.jt').length, hist:document.querySelectorAll('.dev-h').length,
+    saved:JSON.parse(localStorage.getItem('snof.dev.history')||'[]').length,
+    owner:!document.querySelector('.nav-dev').hidden}));
+  await p.click('[data-dev="collapse"]');
+  const closed=await p.evaluate(()=>document.querySelectorAll('#dev-resp details.jt[open]').length);
+  await p.click('[data-dev="expand"]');
+  const opened=await p.evaluate(()=>document.querySelectorAll('#dev-resp details.jt:not([open])').length);
+  check('Developer: a request round-trips to a JSON tree, is kept in history, menu entry shown', r.status==='200'&&r.tree>3&&r.hist===1&&r.saved===1&&r.owner, JSON.stringify(r));
+  check('Developer: collapse all / expand all', closed===0&&opened===0, `${closed}/${opened}`);
+  await p.fill('[data-f="path"]','/v1/command/');
+  await p.click('#dev-send');
+  const err=await p.textContent('.dev-err');
+  check('Developer: a command path is refused in the page before sending', /Only reads are allowed/.test(err), err);
+  await c.close();
+  const [p2,c2]=await open('#/dev');
+  await p2.waitForSelector('#view .empty');
+  check('Developer: not the owner sees no console and no menu entry', !(await p2.$('#dev-root'))&&await p2.evaluate(()=>document.querySelector('.nav-dev').hidden), '');
+  await c2.close();
+  const [p3,c3]=await open('?owner=1&devoff=1#/dev');
+  await p3.waitForSelector('#dev-root .dev-gate');
+  check('Developer: switched off at the farm renders Send disabled with the reason', await p3.evaluate(()=>document.querySelector('#dev-send').disabled&&/turned off/.test(document.querySelector('.dev-gate').textContent)), '');
+  await c3.close();
+}
+{
+  // Mobitech account: when Mobitech signed SNOF out, lead with that.
+  const [p,c]=await open('?owner=1&mbout=1#/motor/dcon');
+  await p.waitForSelector('#view .page-title');
+  const r=await p.evaluate(()=>{const d=document.createElement('div');d.innerHTML=mobitechPanel();
+    return {t:d.textContent.replace(/\s+/g,' '),lead:d.querySelector('.panel > :first-child')?.textContent,prim:d.querySelector('.btn-primary')?.textContent,kind:mobitechState().kind};});
+  check('Mobitech account says signed out first, shows last signed in as, Sign in again is primary',
+    r.kind==='signedout'&&/^Mobitech signed SNOF out · /.test(r.lead)&&/Last signed in as\s*Sibhi/.test(r.t)&&r.prim==='Sign in again'&&!/Signed in as /.test(r.t), JSON.stringify(r));
+  await c.close();
+}
+{
+  // Developer console: the allow-list and the scrub before send.
+  const [p,c]=await open('?owner=1#/dev');
+  await p.waitForSelector('#dev-root');
+  const T='AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdEFGH:APA91bExample-token_value@ios';
+  const r=await p.evaluate((T)=>{
+    const R=(path,query,body='',bodyType='none')=>devRefusal({method:body?'POST':'GET',path,query,body,bodyType});
+    return {
+      ok:[R('/v1/http/','action=dashboard&p=app'),R('/v1/http/','action=dcon_timer&method=select'),R('/v1/http/','action=reports&type=anything'),
+          R('/v1/http/','action=logs&method=flow_log'),R('/v1/weather/cumulative/','device_id=1&type=rain'),
+          R('/v1/http/','',JSON.stringify({action:'ferti',type:'tank_get'}),'json')],
+      no:[R('/v1/http/','action=dcon_timer&method=insert'),R('/v1/http/','action=something_new'),R('/v1/http/',''),R('/v1/weather/cumulative/','type=snow'),
+          R('/v1/http/','action=dcon_node&method=set_valve'),R('/v1/other/','action=dashboard'),R('/v1/http/','action=dashboard&action=login'),
+          R('/v1/http/','',JSON.stringify({action:'dcon_timer',method:'delete'}),'json'),R('/v1/http/','action=ferti&type=inj_set')],
+      scrubbed:(()=>{ dev.method='POST'; dev.path='/v1/http/'; dev.q=[{k:'token_id',v:T}]; dev.bodyType='form'; dev.bodyRows=[{k:'token_id',v:T}]; return devRequest(); })(),
+      json:(()=>{ dev.bodyType='json'; dev.bodyJson=JSON.stringify({token_id:T}); return devRequest(); })()};
+  },T);
+  check('allow-list: the listed reads pass', r.ok.every(x=>x===''), JSON.stringify(r.ok));
+  check('allow-list: writes, unknown actions, duplicates and other paths are refused with the reads-only message', r.no.every(x=>/Only reads are allowed/.test(x)), JSON.stringify(r.no));
+  check('a typed token is scrubbed from the request (query, form, JSON) before it can be sent or saved',
+    !JSON.stringify([r.scrubbed,r.json]).includes('@ios')&&!JSON.stringify([r.scrubbed,r.json]).includes('%40ios')&&r.scrubbed.query.includes('{{token}}')&&r.scrubbed.body.includes('{{token}}')&&r.json.body.includes('{{token}}'), JSON.stringify([r.scrubbed,r.json]));
+  await c.close();
+}
 await b.close();
 console.log(fail?`\n${fail} issue(s) found`:'\nno issues found');

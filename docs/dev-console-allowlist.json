@@ -1,0 +1,56 @@
+{
+  "/v1/http/": {
+    "param": "action",
+    "actions": {
+      "dashboard": {},
+      "dcon_node_details": {
+        "type": [
+          "get"
+        ]
+      },
+      "dcon_node": {
+        "method": [
+          "get_node",
+          "get_all_valve"
+        ]
+      },
+      "dcon_timer": {
+        "method": [
+          "select"
+        ]
+      },
+      "logs": {
+        "method": [
+          "motor_log",
+          "timer_log",
+          "valve_log",
+          "flow_log"
+        ]
+      },
+      "reports": {
+        "type": null
+      },
+      "ferti": {
+        "type": [
+          "tank_get",
+          "inj_get",
+          "get",
+          "tank_log_web"
+        ]
+      },
+      "fertiSett": {
+        "type": [
+          "get"
+        ]
+      },
+      "getWliData": {},
+      "cmd_status": {}
+    }
+  },
+  "/v1/weather/cumulative/": {
+    "param": null,
+    "fixed": {
+      "type": "rain"
+    }
+  }
+}

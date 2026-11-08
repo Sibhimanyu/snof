@@ -245,7 +245,7 @@ public enum BridgeStatus: Equatable, Sendable {
     }
 }
 
-public enum Capability: Sendable { case control, irrigation, irrigationControl, programStart }
+public enum Capability: Sendable { case control, irrigation, irrigationControl, programStart, devConsole }
 
 public struct Gate: Equatable, Sendable {
     public let ok: Bool
@@ -304,6 +304,8 @@ extension Gate {
             return Gate(ok: false, why: "Switching from the app is turned off at the farm.")
         case .irrigationControl where hb.irrigationControl != true:
             return Gate(ok: false, why: "Valve control is switched off at the farm.")
+        case .devConsole where hb.devConsole != true:
+            return Gate(ok: false, why: "The developer console is switched off at the farm.")
         case .programStart where hb.irrigationControl != true || hb.programStart != true:
             return Gate(ok: false, why: "Starting a saved program is switched off at the farm.")
         default:

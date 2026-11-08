@@ -67,6 +67,7 @@ public enum Parse {
             bridge?.irrigationMaxMinutes = double((b["irrigationControlStatus"] as? [String: Any])?["maxMinutes"])
                 .map { Int($0) }
             bridge?.programStart = bool(b["programStart"])
+            bridge?.devConsole = bool(b["devConsole"])
             bridge?.version = string(b["version"])
             bridge?.versionLatest = string(b["versionLatest"])
             bridge?.updateAvailable = bool(b["updateAvailable"])
@@ -190,7 +191,10 @@ public enum Parse {
             c.lastType = string(m["lastType"])
             c.lastError = string(m["lastError"]).flatMap { $0.isEmpty ? nil : $0 }
             for (k, v) in (m["errors"] as? [String: Any] ?? [:]) {
-                if let e = string((v as? [String: Any])?["error"]), !e.isEmpty { c.readErrors[k] = e }
+                if let e = string((v as? [String: Any])?["error"]), !e.isEmpty {
+                    c.readErrors[k] = e
+                    if let at = double((v as? [String: Any])?["at"]) { c.readErrorAts[k] = at }
+                }
             }
             let ce = (m["errors"] as? [String: Any])?["controller"] as? [String: Any]
             c.controllerError = string(ce?["error"]).flatMap { $0.isEmpty ? nil : $0 }
