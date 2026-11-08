@@ -41,7 +41,7 @@ Architecture and data shape are in README.md.
 - **SNOF has its own Mobitech session** (owner's decision (c), 2026-09-24;
   rebuilt on docs/mobitech-app.md): sign-in is proved with a dashboard read
   before it is kept, senders record lastOk/lastRejected, admins can sign
-  SNOF out. (a) and (b) are still open: commands stay FON/OFF.
+  SNOF out. (a) is still open; (b) was taken on 2026-11-08: commands are `V…ON` / `MOFF`.
 - **The Mobitech command session comes from signing in** (2026-09-24):
   the owner signs in to Mobitech with an SMS code from the controller's page (Water → SibhiSump)
   ("Mobitech account"). On iOS the phone calls Mobitech directly. On the
@@ -79,6 +79,14 @@ Architecture and data shape are in README.md.
   strict argument shapes and answers cut to an allow-list on the NUC, so the
   owner can sign in from the dashboard. It is not a precedent: no other new
   DCON code goes in the add-on, and it moves to direct calls at cut-over.
+  **Second documented exception** (owner, 2026-11-08, option A): the relay
+  also carries the named reads `programs`, `electricity_day`, `pressure_day`,
+  `rain` and the consumer's `cmd_status`, and `irrigation_control.py` starts a
+  saved program (`ET01-<NNN>-<HH MM>`, option `allow_program_start`, off by
+  default, same irrigation_lock) and now sends the app's `V…ON` / `MOFF`
+  (decision (b) taken). Strict allow-lists; all of it moves at cut-over.
+  Pausing/stopping a program, emergency shutdown and schedule edits are not
+  built: their formats are unknown until a new app capture.
 
 - **Add-on update** (owner, 2026-11-01) is a fourth writable path,
   `/farms/<slug>/addon_update_requests` `{uid, at}`: admins only in the rules,

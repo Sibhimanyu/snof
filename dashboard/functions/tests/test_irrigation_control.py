@@ -76,6 +76,12 @@ NODES = {"node1": {"valve": {
 IDLE = {"MCON1": {"timers": {"current": {"completed": "1", "timer_type": "1", "timer_name": "Morning"}}}}
 MANUAL = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "3", "timer_name": "Manual",
                                             "on_valves": "4-6-0-0-0"}}}}
+PROGRAMS = {"1": {
+    "2": {"valve_details": "4-6-0-0-0-0-0-0-0-0", "on_time": "01:00", "off_time": "00:00",
+          "group_name": "Coconut", "timer_status": "1", "data": ""},
+    "4": {"valve_details": "5-0", "on_time": "00:30", "group_name": "Onion", "timer_status": "0"}}}
+RUNNING_2 = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "1", "timer_no": "2",
+                                               "timer_name": "Coconut", "on_valves": "4-6-0"}}}}
 PROGRAM = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "1", "timer_name": "Morning"}}}}
 
 
@@ -88,6 +94,13 @@ class Reads:
 
     def nodes(self):
         return NODES
+
+    def programs(self):
+        return PROGRAMS
+
+    def cmd_status(self, trans_id):
+        self.status_asked = getattr(self, "status_asked", []) + [trans_id]
+        return {"sent": getattr(self, "status_sent", "1")}
 
     def dashboard(self):
         self.dashboard_reads += 1
@@ -105,8 +118,9 @@ class Commander:
         if self.reads is not None:
             self.reads.sent = True
             if self.reads._after == "auto":
-                self.reads._after = IDLE if command.startswith("OFF") else MANUAL
-        return 200, '{"message": "Command sent"}'
+                self.reads._after = (IDLE if command.startswith("MOFF") else
+                                     RUNNING_2 if command.startswith("ET01") else MANUAL)
+        return 200, '{"message": "Command sent", "trans_id": 1234567890}'
 
 
 class Clock:
@@ -161,7 +175,7 @@ def test_switched_off_leaves_the_queue_to_the_nuc():
 def test_run_sends_the_template_and_records_it():
     store = enabled_store()
     result, c = run(store, "-a", cmd())
-    assert c.sent == ["FON 004,006,000,000,000-00 20-" + IC._FON_TAIL + "@A8"], c.sent
+    assert c.sent == ["V004,006ON 00 20@A8"], c.sent
     assert result["ok"] and result["valves"] == "4 Veg, 6 Kulam" and result["runtime"] == "cloud-functions"
     assert store.reference(f"{ROOT}/irrigation_command_results/-a").get()["ok"] is True
     assert store.reference(f"{ROOT}/irrigation_commands/-a").get() is None, "handled node is deleted"
@@ -198,7 +212,7 @@ def test_refusals_never_send():
         "too long": (cmd(minutes=61), Reads()),
         "six valves": (cmd(valves="1,2,3,4,5,6"), Reads()),
         "valve twice": (cmd(valves="4,4"), Reads()),
-        "extra field": (dict(cmd(), command="FON 999"), Reads()),
+        "extra field": (dict(cmd(), command="MOFF"), Reads()),
         "unknown action": (cmd(action="open"), Reads()),
     }
     for why, (command, reads) in cases.items():
@@ -212,13 +226,13 @@ def test_refusals_never_send():
 def test_a_manual_run_starts_while_a_scheduled_cycle_is_going():
     store = enabled_store()
     result, c = run(store, "-a", cmd(), reads=Reads(PROGRAM))
-    assert len(c.sent) == 1 and c.sent[0].startswith("FON 004,006") and result["ok"], result
+    assert len(c.sent) == 1 and c.sent[0].startswith("V004,006ON") and result["ok"], result
 
 
 def test_stop_a_manual_run():
     store = enabled_store()
     result, c = run(store, "-s", {"action": "stop", "uid": "u1", "at": time.time() * 1000}, reads=Reads(MANUAL))
-    assert c.sent == ["OFF@A8"] and result["ok"]
+    assert c.sent == ["MOFF@A8"] and result["ok"]
 
 
 def test_a_bad_slot_is_refused_before_any_read():
@@ -239,14 +253,15 @@ def test_sent_is_not_done_until_the_controller_confirms():
     assert store.reference(f"{ROOT}/irrigation_lock").get() is None, "lock released once confirmed"
 
 
-def test_an_unconfirmed_change_says_so_and_still_releases_the_lock():
+def test_an_unconfirmed_change_says_so_and_keeps_the_lock_until_it_expires():
     store = enabled_store()
     reads = Reads(after=None)          # the controller never shows the run
     result, c = run(store, "-a", cmd(), reads=reads)
     assert len(c.sent) == 1 and result["ok"] and result["verified"] is False
     reads_used = reads.dashboard_reads - 1
     assert reads_used <= IC.VERIFY_WINDOW_SECONDS / IC.VERIFY_EVERY_SECONDS, f"{reads_used} reads: too many for a weak server"
-    assert store.reference(f"{ROOT}/irrigation_lock").get() is None
+    # Sent but never shown: the lock stays until its own `until` expires.
+    assert store.reference(f"{ROOT}/irrigation_lock").get() is not None
 
 
 def test_nothing_is_sent_while_the_last_change_is_being_confirmed():
@@ -284,8 +299,120 @@ def test_the_signed_in_mobitech_session_wins_over_the_secret():
 
 
 def test_command_template_matches_the_add_on():
-    assert IC.run_command([12, 15], 80, "A8") == "FON 012,015,000,000,000-01 20-" + IC._FON_TAIL + "@A8"
-    assert IC.stop_command("A8") == "OFF@A8"
+    assert IC.run_command([12, 15], 80, "A8") == "V012,015ON 01 20@A8"
+    assert IC.run_command([8, 9], 10, "A8") == "V008,009ON 00 10@A8"
+    assert IC.stop_command("A8") == "MOFF@A8"
+    assert IC.program_command(2, 60, "A8") == "ET01-002-01 00@A8"
+
+
+def pcmd(**over):
+    base = {"action": "program", "program": 2, "uid": "u1", "at": time.time() * 1000}
+    base.update(over)
+    return {k: v for k, v in base.items() if v is not None}
+
+
+def test_start_a_saved_program_with_its_own_duration():
+    store = enabled_store(programStart=True)
+    reads = Reads(PROGRAM)
+    result, c = run(store, "-p", pcmd(), reads=reads)
+    assert c.sent == ["ET01-002-01 00@A8"], c.sent
+    assert result["ok"] and result["verified"] is True and result["program"] == 2
+    assert result["minutes"] == 60 and result["valves"] == "Coconut"
+    assert store.reference(f"{ROOT}/irrigation_lock").get() is None
+    assert reads.status_asked == ["1234567890"], "cmd_status is asked while confirming"
+
+
+def test_cmd_status_two_is_an_earlier_yes_but_never_needed():
+    store = enabled_store(programStart=True)
+    reads = Reads(PROGRAM, after=None)
+    reads.status_sent = "2"
+    result, c = run(store, "-p", pcmd(), reads=reads)
+    assert result["verified"] is True and reads.dashboard_reads == 1, "no dashboard read needed once acknowledged"
+    store = enabled_store(programStart=True)
+    reads = Reads(PROGRAM, after=None)
+    result, c = run(store, "-p", pcmd(), reads=reads)
+    assert result["ok"] and result["verified"] is False, "sent 1 and no change: not verified"
+    # a stop never asks cmd_status
+    store = enabled_store()
+    reads = Reads(MANUAL)
+    run(store, "-s", {"action": "stop", "uid": "u1", "at": time.time() * 1000}, reads=reads)
+    assert not hasattr(reads, "status_asked")
+
+
+def test_a_program_start_refusals_never_send():
+    cases = {
+        "gate off": (pcmd(), Reads(), enabled_store()),
+        "gate not true": (pcmd(), Reads(), enabled_store(programStart="yes")),
+        "unknown program": (pcmd(program=3), Reads(), enabled_store(programStart=True)),
+        "disabled program": (pcmd(program=4), Reads(), enabled_store(programStart=True)),
+        "program 0": (pcmd(program=0), Reads(), enabled_store(programStart=True)),
+        "program 100": (pcmd(program=100), Reads(), enabled_store(programStart=True)),
+        "program as text": (pcmd(program="2"), Reads(), enabled_store(programStart=True)),
+        "no program": (pcmd(program=None), Reads(), enabled_store(programStart=True)),
+        "valves with it": (pcmd(valves="4"), Reads(), enabled_store(programStart=True)),
+        "minutes with it": (pcmd(minutes=5), Reads(), enabled_store(programStart=True)),
+        "program on a run": (cmd(program=2), Reads(), enabled_store(programStart=True)),
+        "stale": (pcmd(at=(time.time() - 300) * 1000), Reads(), enabled_store(programStart=True)),
+    }
+    for why, (command, reads, store) in cases.items():
+        result, c = run(store, "-x", command, reads=reads)
+        assert c.sent == [] and result["ok"] is False, f"sent for: {why} -> {result}"
+        assert store.reference(f"{ROOT}/irrigation_commands/-x").get() is None, f"left behind: {why}"
+        assert store.reference(f"{ROOT}/irrigation_lock").get() is None
+
+
+def test_a_program_start_waits_for_a_live_lock_and_for_enabled():
+    store = enabled_store(programStart=True)
+    clock = Clock()
+    store.data["farms"]["snof"]["irrigation_lock"] = {"cmd": "-a", "action": "run",
+                                                      "until": int((clock.t + 60) * 1000)}
+    result, c = run(store, "-b", pcmd(at=clock.t * 1000), clock=clock)
+    assert c.sent == [] and "being confirmed" in result["message"]
+    off = Store({"farms": {"snof": {"meta": {"irrigationControl": {"programStart": True}}}}})
+    assert run(off, "-c", pcmd())[0] is None, "enabled is still the master switch"
+
+
+def test_confirmation_needs_the_program_running_as_a_program():
+    run_2 = IC.controller_state(RUNNING_2)
+    assert IC.confirmed("program", [], run_2, 2) and not IC.confirmed("program", [], run_2, 3)
+    backwash = {"MCON1": {"timers": {"current": {"completed": "0", "timer_type": "4", "timer_no": "2"}}}}
+    assert not IC.confirmed("program", [], IC.controller_state(backwash), 2)
+
+
+def test_the_lock_stays_when_a_send_may_have_gone_out_and_goes_when_nothing_did():
+    class Boom(Commander):
+        def send(self, command):
+            self.sent.append(command)
+            raise TimeoutError("read timed out")
+    store = enabled_store()
+    result, c = run(store, "-a", cmd(), commander=Boom())
+    assert result["ok"] is False and len(c.sent) == 1
+    lock = store.reference(f"{ROOT}/irrigation_lock").get()
+    assert lock and lock["until"] > time.time() * 1000, "a timeout may have reached Mobitech"
+    class Refusal(Commander):
+        def send(self, command):
+            self.sent.append(command)
+            return 500, '{"message":"no"}'
+    store = enabled_store()
+    run(store, "-b", cmd(), commander=Refusal())
+    assert store.reference(f"{ROOT}/irrigation_lock").get() is None, "a definite refusal sent nothing"
+    store = enabled_store()
+    run(store, "-c", cmd(valves="2"))        # refused before the send
+    assert store.reference(f"{ROOT}/irrigation_lock").get() is None
+
+
+def test_a_program_already_running_is_refused_and_numbers_compare_as_numbers():
+    store = enabled_store(programStart=True)
+    result, c = run(store, "-p", pcmd(), reads=Reads(RUNNING_2))
+    assert c.sent == [] and "already running" in result["message"]
+    padded = {"MCON1": {"timers": {"current": {**RUNNING_2["MCON1"]["timers"]["current"], "timer_no": "002"}}}}
+    result, c = run(enabled_store(programStart=True), "-q", pcmd(), reads=Reads(padded))
+    assert c.sent == [], "002 is program 2"
+    assert IC.confirmed("program", [], IC.controller_state(padded), 2)
+    # another program running does not block this one
+    result, c = run(enabled_store(programStart=True), "-r", pcmd(program=2), reads=Reads(
+        {"MCON1": {"timers": {"current": {**RUNNING_2["MCON1"]["timers"]["current"], "timer_no": "13"}}}}))
+    assert c.sent == ["ET01-002-01 00@A8"]
 
 
 if __name__ == "__main__":

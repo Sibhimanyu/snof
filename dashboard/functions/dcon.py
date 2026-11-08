@@ -1,4 +1,4 @@
-"""The Mobitech DCON read API: the eight calls reports use, and no others.
+"""The Mobitech DCON read API: the thirteen calls reports use, and no others.
 
 Two ways to make them:
 
@@ -48,6 +48,7 @@ RELAY_IDLE_LIMIT_SECONDS = 150
 BRIDGE_SILENT_LIMIT_SECONDS = 180
 
 
+RAIN_PATH = "/v1/weather/cumulative/"
 SIGNIN_CALLS = frozenset({"otp", "login", "prove"})
 _UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
@@ -123,13 +124,14 @@ class DirectTransport:
     """Calls the controller API from wherever this code runs."""
 
     def __init__(self, base: str, serial: str, token_id: str,
-                 product: str = "DCON", session=None):
+                 product: str = "DCON", session=None, device_id: str = ""):
         if not (serial and token_id):
             raise DconError("DCON is not configured")
         import requests
 
         self._url = base.rstrip("/") + "/v1/http/"
         self._serial, self._token, self._product = serial, token_id, product or "DCON"
+        self._device_id = device_id
         self._http = session or requests.Session()
 
     def _fields(self, call: str, args: dict) -> tuple[str, dict]:
@@ -152,10 +154,32 @@ class DirectTransport:
             return "GET", {"action": "reports", "type": "pressure_timer", "serial_no": s,
                            "from": f"{args['from']} 00:00:00", "to": f"{args['to']} 23:59:59",
                            "product": p}
+        if call == "programs":
+            return "POST", {"action": "dcon_timer", "method": "select", "serial_no": s}
+        if call == "electricity_day":
+            return "GET", {"action": "reports", "type": "electricity_day", "serial_no": s, "product": p}
+        if call == "pressure_day":
+            return "GET", {"action": "reports", "type": "pressure_day", "serial_no": s,
+                           "dt": args["date"], "product": p}
+        if call == "cmd_status":
+            return "POST", {"action": "cmd_status", "random_no": args["trans_id"], "serial_no": s}
         raise DconError(f"unknown call {call}")
 
     def call(self, call: str, args: dict) -> Any:
         import requests
+
+        if call == "rain":
+            # The weather API: its own path (trailing slash, or a 301) and the
+            # controller's device id, not its serial.
+            if not self._device_id:
+                raise DconError("DCON rain: no device id")
+            try:
+                resp = self._http.get(self._url.removesuffix("/v1/http/") + RAIN_PATH,
+                                      params={"device_id": self._device_id, "type": "rain"},
+                                      timeout=TIMEOUT_SECONDS)
+            except requests.RequestException as err:
+                raise DconError(f"DCON rain: {type(err).__name__}") from None
+            return _answer("rain", resp.status_code, resp.text)
 
         if call in SIGNIN_CALLS:
             path, body = signin_request(call, args)
@@ -281,6 +305,23 @@ class Dcon:
 
     def pressure_range(self, start: str, end: str) -> Any:
         return self._t.call("pressure_range", {"from": start, "to": end})
+
+    # Added 2026-11-08 (same spelling as the relay's; docs/mobitech-app.md).
+    def programs(self) -> Any:
+        return self._t.call("programs", {})
+
+    def electricity_day(self) -> Any:
+        return self._t.call("electricity_day", {})
+
+    def pressure_day(self, date: str) -> Any:
+        return self._t.call("pressure_day", {"date": date})
+
+    def rain(self) -> Any:
+        return self._t.call("rain", {})
+
+    def cmd_status(self, trans_id: str) -> Any:
+        """Read only by the irrigation consumer while it waits for a change to show."""
+        return self._t.call("cmd_status", {"trans_id": str(trans_id)})
 
     # Signing in (mobitech_session only). Answers are already reduced.
     def otp(self, mobile: str) -> Any:

@@ -224,6 +224,8 @@ class Bridge:
                     # What the app gates the irrigation Run/Stop buttons on.
                     "irrigationControl": self.irrigation_control.enabled,
                     "irrigationControlStatus": self.irrigation_control.status(),
+                    # Start-a-program gate: true only with both options on.
+                    "programStart": self.irrigation_control.program_start_enabled,
                     # Running / latest add-on version; may admins update it?
                     **self.updater.heartbeat(),
                 })

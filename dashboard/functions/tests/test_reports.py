@@ -21,7 +21,11 @@ import vendors as V  # noqa: E402
 
 
 def req(**over):
-    base = {"type": "valves", "from": "2026-09-20", "to": "2026-09-22",
+    # Recent dates: power_range refuses a start over 31 days back, so fixed
+    # September dates made this suite fail once the calendar moved on.
+    today = dt.date.today()
+    base = {"type": "valves", "from": (today - dt.timedelta(days=3)).isoformat(),
+            "to": (today - dt.timedelta(days=1)).isoformat(),
             "uid": "u1", "at": time.time() * 1000}
     base.update(over)
     return base
@@ -136,6 +140,17 @@ def valves_payload(count=27):
     return out
 
 
+PROGRAMS = {"action": "dcon_timer", "1": {
+    "2": {"valve_details": "12-15-0-0-0-0-0-0-0-0", "on_time": "01:00", "off_time": "00:00",
+          "on_days": "0", "group_name": "Coconut", "backwash": "0", "motor_status": "0--",
+          "timer_status": "1", "data": f"call {FAKE_PHONE}"},
+    "4": {"valve_details": "5-0-0-0-0", "on_time": "00:30", "off_time": "00:00",
+          "on_days": "0", "group_name": "Onion", "timer_status": "0", "data": ""},
+    "10": {"valve_details": "8-9-0-0-0-0-0-0-0-0", "on_time": "00:05", "off_time": "00:00",
+           "on_days": "1-3-5", "group_name": "House", "timer_status": "1", "data": ""}}}
+RAIN = {"today": 0, "last24hrs": 1.5, "yesterday": 0, "week": 3.2}
+
+
 class Source:
     """Stands in for dcon.Dcon. Any call named in `dead` raises."""
     def __init__(self, dead=()):
@@ -157,6 +172,12 @@ class Source:
                         ELECTRICITY_DAYS if since.endswith("00:00:00") else ELECTRICITY)
     def pressure_now(self, since): return self._go("pressure_now", pressure_day(20))
     def pressure_range(self, a, b): return self._go("pressure_range", pressure_day())
+    def programs(self): return self._go("programs", PROGRAMS)
+    def rain(self): return self._go("rain", RAIN)
+    def electricity_day(self): return self._go("electricity_day", ELECTRICITY_DAYS)
+    def pressure_day(self, date):
+        self.day_asked = date
+        return self._go("pressure_day", pressure_day(400, date))
 
 
 KINDS = ("metrics", "status", "series", "bars", "timeline", "facts",
@@ -394,6 +415,61 @@ def test_controller_report_shows_what_is_running():
     assert prog["next"] == {"name": "Coconut", "plannedMin": 60, "valves": "12 Coco 1, 15 Coco 2"}, prog
     assert set(prog) == {"at", "next", "name", "kind", "running", "valves", "start", "lastSeen",
                          "plannedMin", "remainingMin"}
+
+
+def test_programs_parse_to_an_allow_list_and_cache():
+    items = V.normalize_programs(PROGRAMS)
+    assert set(items) == {"2", "4", "10"}
+    assert items["2"] == {"number": 2, "name": "Coconut", "valves": [12, 15], "start": "",
+                          "duration": "01:00", "days": "", "enabled": True}, items["2"]
+    assert items["4"]["enabled"] is False and items["4"]["valves"] == [5]
+    assert items["10"]["duration"] == "00:05" and items["10"]["days"] == "Mon,Wed,Fri"
+    assert all(set(p) == {"number", "name", "valves", "start", "duration", "days", "enabled"}
+               for p in items.values())
+    assert V.normalize_programs(None) == {} and V.normalize_programs({"1": []}) == {}
+    rep, patch = R.build("programs", {}, Source())
+    assert rep["status"] == "ok" and set(patch) == {"programs"}
+    assert patch["programs"]["at"] == {".sv": "timestamp"} and set(patch["programs"]["items"]) == {"2", "4", "10"}
+    assert FAKE_PHONE not in json.dumps([rep, patch]) and "data" not in patch["programs"]["items"]["2"]
+
+
+def test_rain_is_four_millimetre_figures():
+    assert V.normalize_rain(RAIN) == {"today": 0.0, "last24h": 1.5, "yesterday": 0.0, "week": 3.2}
+    assert V.normalize_rain("nope") == {"today": 0.0, "last24h": 0.0, "yesterday": 0.0, "week": 0.0}
+    rep, patch = R.build("rain", {}, Source())
+    assert rep["status"] == "ok" and set(patch["rain"]) == {"at", "today", "last24h", "yesterday", "week"}
+
+
+def test_whole_day_reports_are_ordinary_reports_for_today():
+    assert R.REPORT_TYPES["power_day"] == "live" and R.REPORT_TYPES["pressure_day"] == "live"
+    assert R.validate(req(type="power_day")) [0] == "power_day"
+    assert R.validate(req(type="pressure_day"))[1] == {}
+    src = Source()
+    rep, _ = R.build("pressure_day", {}, src)
+    assert rep["status"] == "ok" and src.day_asked == R.farm_now().date().isoformat()
+    assert rep["label"] == "Pressure, whole day"
+    rep, _ = R.build("power_day", {}, Source())
+    assert rep["status"] in ("ok", "partial") and rep["label"] == "Power, whole day"
+    for t in ("programs", "rain"):
+        assert t in R.REPORT_TYPES and t in R.REPORT_LABELS
+
+
+def test_the_controller_read_adds_firmware_expiry_shutdown_and_the_program_chain():
+    dash = json.loads(json.dumps(DASHBOARD))
+    inner = dash["MCON000TEST000"]
+    inner.update(expiry_dt="2050-12-31", emergency_shutdown_state=0, emergency_shutdown_status=0)
+    info = V.normalize_dcon_dashboard(dash)
+    assert info["firmware"] == "V68" and info["simExpiry"] == "2050-12-31" and info["shutdown"] is False
+    inner["emergency_shutdown_state"] = 1
+    assert V.normalize_dcon_dashboard(dash)["shutdown"] is True
+    inner["expiry_dt"] = "soon"
+    assert V.normalize_dcon_dashboard(dash)["simExpiry"] == ""
+    rep, patch = R.build("controller", {}, Source())
+    d = patch["dcon"]
+    assert d["firmware"] == "V68" and "simExpiry" in d and "shutdown" in d, "scrub must keep simExpiry"
+    assert d["current"]["name"] == "Vegetable" and d["next"]["name"] == "Coconut"
+    assert d["previous"]["name"] == "Backwash Mode"
+    assert "sim" not in d and "packets" not in d and "users" not in d
 
 
 def test_no_phone_number_or_imei_reaches_any_report():
@@ -664,7 +740,7 @@ def test_dcon_client_cannot_reach_the_command_endpoint():
     # /v1/http/ for every read (and the sign-in calls, 2026-11-01), /v1/otp/
     # for the SMS code; nothing else.
     import re
-    assert set(re.findall(r"/v1/[a-z]+/\??", body)) == {"/v1/http/", "/v1/http/?", "/v1/otp/"}
+    assert set(re.findall(r"/v1/[a-z]+/\??", body)) == {"/v1/http/", "/v1/http/?", "/v1/otp/", "/v1/weather/"}
 
 def test_a_valve_that_did_not_answer_is_named():
     dash = json.loads(json.dumps(DASHBOARD))

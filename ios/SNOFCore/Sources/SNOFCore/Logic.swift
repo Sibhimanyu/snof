@@ -245,7 +245,7 @@ public enum BridgeStatus: Equatable, Sendable {
     }
 }
 
-public enum Capability: Sendable { case control, irrigation, irrigationControl }
+public enum Capability: Sendable { case control, irrigation, irrigationControl, programStart }
 
 public struct Gate: Equatable, Sendable {
     public let ok: Bool
@@ -287,7 +287,7 @@ extension Gate {
         }
         // Valve control is spoken of as valve control: the owner thinks of the
         // Mobitech side as its own thing, not as "the bridge".
-        let valves = capability == .irrigationControl
+        let valves = capability == .irrigationControl || capability == .programStart
         guard let hb, let last = hb.lastSeen else {
             return Gate(ok: false, why: valves ? "Valve control has not checked in yet."
                         : reads ? "The bridge has not checked in yet, so the controller cannot be read."
@@ -304,6 +304,8 @@ extension Gate {
             return Gate(ok: false, why: "Switching from the app is turned off at the farm.")
         case .irrigationControl where hb.irrigationControl != true:
             return Gate(ok: false, why: "Valve control is switched off at the farm.")
+        case .programStart where hb.irrigationControl != true || hb.programStart != true:
+            return Gate(ok: false, why: "Starting a saved program is switched off at the farm.")
         default:
             return .open
         }
@@ -434,6 +436,8 @@ public enum IrrigationTypes {
         .init(type: "pressure_range", label: "Pressure range", needsRange: true, combined: false),
         .init(type: "pressure_hour", label: "Pressure, last hour", needsRange: false, combined: false),
         .init(type: "power_range", label: "Power over time", needsRange: true, combined: false),
+        .init(type: "power_day", label: "Power, whole day", needsRange: false, combined: false),
+        .init(type: "pressure_day", label: "Pressure, whole day", needsRange: false, combined: false),
     ]
 
     public static func find(_ type: String) -> IrrigationType? { all.first { $0.type == type } }
@@ -643,6 +647,18 @@ public struct IrrigationCommand: Equatable, Sendable {
 
     public static let stop = IrrigationCommand(action: "stop", valves: nil, minutes: nil)
 
+    /// Start a saved program by its number (1-99): `{action:"program", program}`.
+    public let program: Int?
+
+    public static func startProgram(_ number: Int) -> IrrigationCommand? {
+        guard (1...99).contains(number) else { return nil }
+        return IrrigationCommand(action: "program", valves: nil, minutes: nil, program: number)
+    }
+
+    init(action: String, valves: String?, minutes: Int?, program: Int? = nil) {
+        self.action = action; self.valves = valves; self.minutes = minutes; self.program = program
+    }
+
     public static func run(valves: [Int], minutes: Int, cap: Int = maxMinutes) -> IrrigationCommand? {
         guard (1...maxValves).contains(valves.count), Set(valves).count == valves.count,
               valves.allSatisfy({ (1...99).contains($0) }),
@@ -655,6 +671,7 @@ public struct IrrigationCommand: Equatable, Sendable {
         var p: [String: Any] = ["action": action]
         if let valves { p["valves"] = valves }
         if let minutes { p["minutes"] = minutes }
+        if let program { p["program"] = program }
         return p
     }
 }

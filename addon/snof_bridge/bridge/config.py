@@ -58,6 +58,9 @@ class Config:
     dcon_command_auth: str = field(default="", repr=False)
     dcon_user_slot: str = ""
     irrigation_max_minutes: int = 60
+    # Start a saved program (ET01-…): a second switch on top of the one above,
+    # off by default. Mobitech does not guard programs the way the valves are.
+    allow_program_start: bool = False
     # Remote add-on update (bridge/updater.py). Off unless the options turn it on.
     allow_remote_update: bool = False
 
@@ -141,6 +144,7 @@ def load() -> Config:
         dcon_command_auth=(opts.get("dcon_command_auth") or "").strip(),
         dcon_user_slot=(opts.get("dcon_user_slot") or "").strip().upper(),
         irrigation_max_minutes=max(1, min(180, int(opts.get("irrigation_max_minutes", 60)))),
+        allow_program_start=bool(opts.get("allow_program_start", False)),
         allow_remote_update=bool(opts.get("allow_remote_update", False)),
         ha_ws_url=ws_url,
         ha_token=token,

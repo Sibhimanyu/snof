@@ -74,8 +74,15 @@ def status_of(value: Any) -> str:
     return "unknown"
 
 
+# Keys that contain a hint word but hold nothing secret: the date the SIM's
+# plan ends (never the SIM's number, which is `sim` and stays out).
+_SAFE_KEYS = frozenset({"simexpiry"})
+
+
 def _is_secret_key(key: str) -> bool:
     lowered = key.lower()
+    if lowered in _SAFE_KEYS:
+        return False
     return any(hint in lowered for hint in _SECRET_HINTS)
 
 
@@ -237,7 +244,22 @@ def normalize_dcon_dashboard(payload: Any) -> dict:
             if (not name and field and not re.match(r"^V?\d", field)
                     and re.fullmatch(r"[A-Za-z][A-Za-z0-9 _-]{1,40}", field)):
                 name = field
+    # Also an allow-list: the firmware tag from the live packet (V68), the date
+    # the SIM's plan ends, and whether the emergency shutdown is on. Never the
+    # SIM's number (`sim`), never the packets.
+    firmware = ""
+    if live and "!" in live:
+        for field in [f.strip() for f in live.split("!", 1)[1].split(",")][:6]:
+            if re.fullmatch(r"V\d+(\.\d+)*", field):
+                firmware = field
+                break
+    expiry = _text(inner.get("expiry_dt") or "")
+    shutdown = any(str(inner.get(k)) == "1" for k in
+                   ("emergency_shutdown_state", "emergency_shutdown_status"))
     return {
+        "firmware": firmware,
+        "simExpiry": expiry if re.fullmatch(r"\d{4}-\d{2}-\d{2}", expiry) else "",
+        "shutdown": shutdown,
         "device": _text(name or _pick(inner, "device_name", "name",
                                       default="Irrigation Controller")),
         "serial": _text(serial or _pick(inner, "serial_no", "serial", default="")),
@@ -294,6 +316,55 @@ def dcon_next(entry: Any) -> dict | None:
     valves = [v for v in _slots(entry.get("valves") or entry.get("on_valves")) if v and v != "0"]
     return {"name": _text(entry.get("timer_name")), "number": _text(entry.get("timer_no") or ""),
             "valves": valves[:10], "plannedMin": hhmm_minutes(entry.get("on_time"))}
+
+
+_DAY_NAMES = {"1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat", "7": "Sun"}
+
+
+def normalize_programs(payload: Any) -> dict:
+    """action=dcon_timer&method=select -> {"<no>": {number, name, valves,
+    start, duration, days, enabled}}, an allow-list of the record.
+
+    Found in the capture (2026-09-24, docs/mobitech-app.md): `on_time` is the
+    program's DURATION (HH:MM; "01:00" for Coconut, whose command is
+    ET01-002-01 00); `off_time` is "00:00" on all 25 programs and means
+    nothing; `data` is empty. There is no start time in the record at all:
+    this controller chains its programs (timers.next), so `start` is "".
+    `on_days` is "0" on every program and is read as "no day rule": days is ""
+    unless it spells weekdays 1-7, which has never been seen.
+    """
+    group = payload.get("1") if isinstance(payload, dict) else None
+    out: dict[str, dict] = {}
+    for key, rec in (group.items() if isinstance(group, dict) else []):
+        if not isinstance(rec, dict) or not str(key).isdigit():
+            continue
+        minutes = hhmm_minutes(rec.get("on_time"))
+        digits = [d for d in re.split(r"[^0-9]+", str(rec.get("on_days") or "")) if d]
+        days = ",".join(_DAY_NAMES[d] for d in digits) if digits and all(d in _DAY_NAMES for d in digits) else ""
+        out[str(int(key))] = {
+            "number": int(key),
+            "name": _text(rec.get("group_name") or f"Program {int(key)}")[:40],
+            "valves": [int(v) for v in _slots(rec.get("valve_details")) if v.isdigit() and int(v)][:10],
+            "start": "",
+            "duration": f"{minutes // 60:02d}:{minutes % 60:02d}" if minutes else "",
+            "days": days,
+            "enabled": str(rec.get("timer_status")) == "1",
+        }
+    return out
+
+
+def normalize_rain(payload: Any) -> dict:
+    """/v1/weather/cumulative/?type=rain -> millimetres, four named numbers."""
+    src = payload if isinstance(payload, dict) else {}
+
+    def mm(*keys):
+        for k in keys:
+            n = number_of(src.get(k))
+            if n is not None:
+                return round(n, 1)
+        return 0.0
+    return {"today": mm("today"), "last24h": mm("last24hrs", "last24h"),
+            "yesterday": mm("yesterday"), "week": mm("week")}
 
 
 def dcon_timers(payload: Any) -> dict:

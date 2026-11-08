@@ -14,6 +14,7 @@ import SNOFCore
  *   -demo-viewer      viewer, not controller
  *   -demo-admin       admin: sees irrigation Run / Stop
  *   -demo-irrigationoff  bridge publishes irrigationControl: false
+ *   -demo-programoff  bridge publishes programStart: false
  *   -demo-controloff  bridge publishes control: false
  *   -demo-reportsoff  meta/reports.enabled: false (the report kill switch)
  *   -demo-stale       bridge heartbeat 400 s old
@@ -89,7 +90,9 @@ final class DemoBackend: FarmBackend {
         bridge["control"] = !flag("controloff")
         bridge["irrigationControl"] = !flag("controloff") && !flag("irrigationoff")
         bridge["irrigationControlStatus"] = ["maxMinutes": 60]
+        bridge["programStart"] = !flag("controloff") && !flag("irrigationoff") && !flag("programoff")
         meta["bridge"] = bridge
+        Self.seedPrograms(&tree, now: now)
         if flag("reportsoff") { meta["reports"] = ["enabled": false] }
         // The water chain, as the water functions write it. -demo-wateroff is
         // the kill switch off; -demo-liveskyexpired an ended Livesky session.
@@ -370,8 +373,48 @@ final class DemoBackend: FarmBackend {
         handler?(.entities(ents))
     }
 
+    /// Saved programs, rain and the controller's facts, as the functions write
+    /// them (contract 2026-11-08), when the fixture has none.
+    static func seedPrograms(_ tree: inout [String: Any], now: Double) {
+        var irr = tree["irrigation"] as? [String: Any] ?? [:]
+        if irr["programs"] == nil {
+            irr["programs"] = ["at": now - 40_000, "items": [
+                "1": ["number": 1, "name": "Mango", "valves": [4, 5, 6], "start": "", "duration": "00:45", "days": "", "enabled": true],
+                "2": ["number": 2, "name": "Coconut", "valves": [12, 13, 14, 15], "start": "", "duration": "01:00", "days": "", "enabled": true],
+                "3": ["number": 3, "name": "Coconut", "valves": [16, 17], "start": "", "duration": "00:30", "days": "", "enabled": true],
+                "8": ["number": 8, "name": "Coconut", "valves": [8, 9], "start": "", "duration": "00:30", "days": "", "enabled": true],
+                "9": ["number": 9, "name": "Banana", "valves": [8, 9], "start": "", "duration": "00:30", "days": "", "enabled": false],
+            ]]
+        }
+        if irr["rain"] == nil {
+            irr["rain"] = ["at": now - 40_000, "today": 0.0, "last24h": 0.4, "yesterday": 0.4, "week": 3.2]
+        }
+        var dcon = irr["dcon"] as? [String: Any] ?? [:]
+        if dcon["firmware"] == nil {
+            dcon["firmware"] = "V9.2"; dcon["simExpiry"] = "2027-03-01"; dcon["shutdown"] = false
+            dcon["current"] = ["number": "2", "name": "Coconut", "running": true, "valves": "12, 13, 14, 15"]
+            dcon["next"] = ["number": "8", "name": "Coconut", "valves": "8, 9"]
+            irr["dcon"] = dcon
+        }
+        tree["irrigation"] = irr
+    }
+
     func requestReport(type: String, from: String?, to: String?, uid: String) async throws -> String {
         if flag("viewer") { throw BackendError.refused }
+        // programs / rain are cache reads: they refresh a node, not a report.
+        if type == "programs" || type == "rain" {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let self else { return }
+                var irr = self.tree["irrigation"] as? [String: Any] ?? [:]
+                var node = irr[type] as? [String: Any] ?? [:]
+                node["at"] = Date().timeIntervalSince1970 * 1000
+                irr[type] = node
+                self.tree["irrigation"] = irr
+                self.handler?(.irrigation(irr))
+            }
+            return "demo_\(type)"
+        }
         let key = "demo_\(Int(Date().timeIntervalSince1970 * 1000))_\(UUID().uuidString.prefix(6))"
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1200))
@@ -456,7 +499,16 @@ final class DemoBackend: FarmBackend {
             f.dateFormat = "yyyy-MM-dd HH:mm:ss"
             let now = Date(), at = now.timeIntervalSince1970 * 1000
             var program = irr["program"] as? [String: Any] ?? [:]
-            if command.action == "run" {
+            if command.action == "program" {
+                let items = ((irr["programs"] as? [String: Any])?["items"] as? [String: Any]) ?? [:]
+                let node = items[String(command.program ?? 0)] as? [String: Any]
+                let names = Parse.rows(irr["valveNames"])
+                let ids = (node?["valves"] as? [Int] ?? []).map(String.init)
+                let vt = ids.map { id in names.first { $0["id"] == id }?["name"] ?? "valve \(id)" }.joined(separator: ", ")
+                program = ["at": at, "name": node?["name"] as? String ?? "Program", "kind": "Program", "running": true,
+                           "valves": vt, "start": f.string(from: now), "lastSeen": f.string(from: now),
+                           "plannedMin": 60, "remainingMin": 60, "next": program["next"] ?? NSNull()]
+            } else if command.action == "run" {
                 program = ["at": at, "name": "Manual Mode", "kind": "Manual", "running": true, "valves": valveText,
                            "start": f.string(from: now), "lastSeen": f.string(from: now),
                            "plannedMin": command.minutes ?? 0, "remainingMin": command.minutes ?? 0,
@@ -471,7 +523,7 @@ final class DemoBackend: FarmBackend {
             self.handler?(.irrigationLock(["cmd": key, "action": command.action, "until": at + 180_000]))
             var results = self.tree["irrigation_command_results"] as? [String: Any] ?? [:]
             let sent: [String: Any] = ["ok": true, "action": command.action, "status": 200, "valves": valveText,
-                                       "minutes": command.minutes ?? 0, "message": "Command has been sent successfully", "at": at]
+                                       "minutes": command.minutes ?? 0, "program": command.program ?? 0, "message": "Command has been sent successfully", "at": at]
             results[key] = sent.merging(["verified": false, "confirming": true]) { $1 }
             self.handler?(.irrigationResults(results))
             try? await Task.sleep(for: .seconds(4))

@@ -141,7 +141,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     groups:[...document.querySelectorAll('#irr-type optgroup')].map(o=>o.label),
     seeded:document.querySelectorAll('.rep-card').length,
     scripts:[...document.documentElement.innerHTML].join('').includes('token_id')}));
-  check('report builder offers every collection endpoint', r.options.length===12,
+  check('report builder offers every collection endpoint', r.options.length===14,
     `${r.options.length} options`);
   check('combined pulls are offered first and labelled as such',
     r.groups[0]==='Combined'&&r.groups[1]==='Single endpoint', r.groups.join('|'));
@@ -155,7 +155,7 @@ const open=async(url='')=>{const c=await b.newContext({viewport:{width:1440,heig
     const block=rules.slice(rules.indexOf('"irrigation_requests"'));
     const allowed=(/\^\(([a-z_|]+)\)\$/.exec(block)||[,''])[1].split('|').filter(Boolean);
     const missing=r.options.filter(t=>!allowed.includes(t));
-    const unreachable=allowed.filter(t=>!r.options.includes(t));
+    const unreachable=allowed.filter(t=>!r.options.includes(t)&&!['programs','rain'].includes(t)); // cache reads: asked by Refresh, not picked
     check('every offered report type is on the rules allow-list',
       missing.length===0&&unreachable.length===0,
       `missing:${missing.join(',')||'none'} unreachable:${unreachable.join(',')||'none'}`);

@@ -679,6 +679,11 @@ function render() {
   syncWaterPolling(r.name === 'water' || r.name === 'overview' || r.name === 'motor');
   syncControllerPolling(r.name === 'water' || r.name === 'overview' || (r.name === 'motor' && r.arg === DCON_KEY));
   if (r.name === 'overview' || (r.name === 'motor' && r.arg === DCON_KEY)) autoRefreshIrrigation();
+  // Programs and rain: once per opening of the controller's page (and on its
+  // Refresh), never on the poll.
+  if (r.name === 'motor' && r.arg === DCON_KEY) {
+    if (!extrasAsked && canControl && currentUser) { extrasAsked = true; setTimeout(() => refreshIrrigation(true, true, true), 0); }
+  } else extrasAsked = false;
 
   // Chrome above stays live regardless; only the view body is held back.
   if (interacting) {
@@ -1693,6 +1698,8 @@ const IRR_TYPES = [
   { type: 'pressure_range', label: 'Pressure range', needs: 'range', group: 'Single endpoint' },
   { type: 'pressure_hour', label: 'Pressure, last hour', needs: 'live', group: 'Single endpoint' },
   { type: 'power_range', label: 'Power over time', needs: 'range', group: 'Single endpoint' },
+  { type: 'power_day', label: 'Power, whole day', needs: 'live', group: 'Single endpoint' },
+  { type: 'pressure_day', label: 'Pressure, whole day', needs: 'live', group: 'Single endpoint' },
 ];
 const IRR_TIMEOUT_MS = 60000;
 // Builder selections survive re-renders (a sensor update mid-form must not
@@ -1710,6 +1717,7 @@ const irrReports = () => Object.entries(state.irrigation_reports || {})
 function latestReports() {
   const seen = new Map();
   for (const [k, r] of irrReports()) {
+    if (r.type === 'programs' || r.type === 'rain') continue;   // cache reads, shown on their own cards
     const p = r.params || {};
     seen.set(`${r.type}|${p.from || ''}|${p.to || ''}`, [k, r]);
   }
@@ -2459,7 +2467,7 @@ function settleIrrigation(results) {
   if (node.ok && node.confirming === true) { irrConfirming = true; return; }
   irrPending = null; irrConfirming = false; clearTimeout(irrPendingTimer);
   if (node.ok) {
-    const what = node.action === 'stop' ? 'Stopped' : `Valves ${node.valves || ''} for ${node.minutes || '?'} min`;
+    const what = node.action === 'stop' ? 'Stopped' : node.action === 'program' ? `Started program ${node.program || ''}`.trim() : `Valves ${node.valves || ''} for ${node.minutes || '?'} min`;
     if (node.verified === false) toast('err', 'Sent, but not confirmed after 2 minutes. Check the controller.');
     else toast('ok', node.verified === true ? `Confirmed: ${what}.` : `Sent: ${what}.`);
     setTimeout(() => refreshIrrigation(true), 20000);
@@ -2620,19 +2628,32 @@ function motorControls(m, part = 'both') {
  * and-today's runs. Each is a press, never a poll, so the rules, the kill
  * switch and the function's own checks apply unchanged. */
 const irrRefreshing = new Set();
-function refreshIrrigation(quiet = false, liveOnly = false) {
+let irrExtrasAt = 0, extrasAsked = false;
+const onControllerPage = () => { const r = route(); return r.name === 'motor' && r.arg === DCON_KEY; };
+function refreshIrrigation(quiet = false, liveOnly = false, extrasOnly = false) {
   if (!canControl) { if (!quiet) toast('err', 'Your account can view, but not refresh.'); return; }
   const g = reportsGate();
   if (!g.ok) { if (!quiet) toast('err', g.why); return; }
-  if (irrRefreshing.size) return;
+  // Programs and rain (controller page only: on open and on Refresh, never
+  // on the 60 s poll) have their own 45 s guard on their own read times.
+  if (extrasOnly) {
+    const lastX = Math.max(irrig().programs?.at || 0, irrig().rain?.at || 0);
+    if (serverNow() - lastX < 45000 || Date.now() - irrExtrasAt < 45000) return;
+    irrExtrasAt = Date.now();
+  } else if (irrRefreshing.size) return;
   // Three reads through the farm box per press: a second press within 45 s
   // of the last read adds load and nothing new (2026-09-24: 27 presses).
   const last = irrig().program?.at || irrig().meta?.lastUpdated || 0;
-  if (serverNow() - last < 45000) { if (!quiet) toast('ok', `Just checked, ${agoText(last)}.`); return; }
+  if (!extrasOnly && serverNow() - last < 45000) {
+    // The press still asks for the page's own extras (programs, rain).
+    if (!quiet) { toast('ok', `Just checked, ${agoText(last)}.`); if (onControllerPage()) refreshIrrigation(true, true, true); }
+    return;
+  }
   const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
   const db = firebase.database();
-  const reads = [['controller'], ['live_readings']];
-  if (!liveOnly) reads.push(['session_log', yesterday, today]);
+  const reads = extrasOnly ? [['programs'], ['rain']] : [['controller'], ['live_readings']];
+  if (!extrasOnly && !liveOnly) reads.push(['session_log', yesterday, today]);
+  if (!extrasOnly && !liveOnly && onControllerPage()) reads.push(['programs'], ['rain']);
   for (const [type, from, to] of reads) {
     const ref = db.ref(`farms/${FARM}/irrigation_requests`).push();
     const key = ref.key;
@@ -2839,7 +2860,7 @@ function irrCropsModule() {
   if (unreadLog) {
     // No old figures on a failed read (owner, 2026-09-26).
     return `<section class="panel irr-mod"><div class="panel-head"><h2 class="panel-title">Watered</h2><span class="card-age is-warn">can't read</span></div>` +
-      `<p class="more-note note-off" style="padding:0 22px 16px">Can't read the run log: ${escapeHtml(unreadLog)}.</p></section>`;
+      `<p class="more-note note-off" style="padding:0 22px 16px;border:0">Can't read the run log: ${escapeHtml(unreadLog)}.</p></section>`;
   }
   const now = serverNow(), today = farmDay(now), yesterday = farmDay(now - 864e5);
   const hasToday = irrRuns().some((r) => r.day === today && r.valves);
@@ -2883,7 +2904,7 @@ function irrSupplyModule() {
   if (why) {
     // No old figures on a failed read (owner, 2026-09-26).
     return `<section class="panel irr-mod" aria-label="Pump and power"><div class="panel-head"><h2 class="panel-title">Pump &amp; power</h2>` +
-      `<span class="card-age is-warn">can't read</span></div><p class="more-note note-off" style="padding:0 22px 16px">Can't read the pump's power and pressure: ${escapeHtml(why)}.</p></section>`;
+      `<span class="card-age is-warn">can't read</span></div><p class="more-note note-off" style="padding:0 22px 16px;border:0">Can't read the pump's power and pressure: ${escapeHtml(why)}.</p></section>`;
   }
   const bars = s && s.v.length ? phaseBars(s.v) : '';
   const tags = [];
@@ -2901,6 +2922,106 @@ function irrSupplyModule() {
     `<div class="supply">${bars}${p ? `<div class="pressure"><span class="fig-v">${escapeHtml(p.value)}</span><span class="fig-l">Inlet pressure</span>` +
       (outlet ? `<span class="pressure-out">outlet ${escapeHtml(outlet[1])}</span>` : '') + `</div>` : ''}</div>` +
     (tags.length ? `<div class="tags">${tags.join('')}</div>` : '') + `</section>`;
+}
+
+/* ---- programs, rain, controller facts (controller page) ----
+ * Programs and rain are read when the page opens and on Refresh (never
+ * polled) into irrigation/programs and irrigation/rain. Start writes
+ * irrigation_commands {action:'program'}; the consumer re-checks everything,
+ * and the same lock rules as a valve run apply. */
+const irrValveLabel = (id) => (irrig().valveNames || []).find((v) => Number(v.id) === Number(id))?.name || `Valve ${id}`;
+const hhmmMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+const dayShort = (d) => String(d || '').split(',').map((x) => (/^daily$/i.test(x.trim()) ? 'Daily' : x.trim().slice(0, 3))).filter(Boolean).join(' ');
+function programRefusal() {
+  const why = irrRefusal();
+  if (why) return why;
+  if (state.meta?.bridge?.programStart !== true) return 'Starting a saved program from the app is switched off at the farm.';
+  return null;
+}
+function programRows() {
+  const items = irrig().programs?.items || {};
+  return Object.values(items).filter((p) => p && typeof p === 'object')
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0));
+}
+function startProgram(n) {
+  const p = programRows().find((x) => Number(x.number) === n);
+  const why = programRefusal();
+  if (why) { toast('err', why); render(); return; }
+  if (!p || p.enabled === false) { toast('err', 'That program is switched off on the controller.'); return; }
+  const mins = hhmmMin(p.duration);
+  if (!window.confirm(`Start ${p.name || 'program'} (#${p.number})${mins != null ? ` for ${fmtMin(mins)}` : ''}? It takes over from any run going now.`)) return;
+  sendIrrigation({ action: 'program', program: n });
+}
+function irrProgramsModule() {
+  const c = irrig(), pr = c.programs;
+  const unread = unreadRead('programs');
+  if (unread) {
+    return `<section class="panel irr-mod" aria-label="Programs"><div class="panel-head"><h2 class="panel-title">Programs</h2><span class="card-age is-warn">can't read</span></div>` +
+      `<p class="more-note note-off" style="padding:0 22px 16px;border:0">Can't read the saved programs: ${escapeHtml(unread)}.</p></section>`;
+  }
+  const rows = programRows();
+  if (!pr || !rows.length) {
+    return `<section class="panel irr-mod" aria-label="Programs"><div class="panel-head"><h2 class="panel-title">Programs</h2></div>` +
+      `<p class="more-note" style="padding:0 22px 16px">${canControl ? 'Not read yet. Press Refresh to ask the controller.' : 'Not read yet.'}</p></section>`;
+  }
+  // The controller's own record of what runs now and what is next.
+  // irrigation/dcon.current / .next, by timer number (names repeat); the
+  // older irrigation/program only when dcon.current is absent.
+  const cur = c.dcon?.current || c.program;
+  const runNo = cur && irrNowState().running && !isManualProgram(cur) ? Number(cur.number) || null : null;
+  const runName = runNo || c.dcon?.current ? null : (irrNowState().running && !isManualProgram(c.program) ? c.program?.name : null);
+  const nx = c.dcon?.next || (c.dcon?.current ? null : c.program?.next);
+  const nextNo = nx ? Number(nx.number) || null : null;
+  const refusal = isAdmin ? programRefusal() : null;
+  const note = isAdmin && refusal && !irrPending ? `<p class="more-note note-off" style="padding:0 22px 14px">${escapeHtml(refusal)}</p>` : '';
+  const list = rows.map((p) => {
+    const off = p.enabled === false;
+    const running = !off && (runNo ? Number(p.number) === runNo : !!runName && p.name === runName);
+    const isNext = !off && !running && (nextNo ? Number(p.number) === nextNo : !!nx?.name && p.name === nx.name);
+    const mins = hhmmMin(p.duration);
+    const valves = (p.valves || []).map(irrValveLabel).join(', ');
+    const meta = [valves, p.start || '', dayShort(p.days), mins != null ? fmtMin(mins) : ''].filter(Boolean).join(' · ');
+    const mark = off ? '<span class="tag tag-plain">Off</span>' : running ? '<span class="tag tag-on">Running</span>'
+      : isNext ? `<span class="tag">Next${p.start ? ` · ${escapeHtml(p.start)}` : ''}</span>` : '';
+    const go = isAdmin && !off ? `<button class="btn btn-ghost btn-sm" data-act="prog-start" data-program="${Number(p.number)}"${refusal || running ? ' disabled' : ''}>Start</button>` : '';
+    return `<div class="prog-row${off ? ' is-faded' : ''}${running ? ' is-running' : ''}">
+      <span class="prog-no">${escapeHtml(String(p.number))}</span>
+      <span class="crop-main"><span class="crop-name">${escapeHtml(p.name || `Program ${p.number}`)}${mark}</span>
+        <span class="crop-valves">${escapeHtml(meta)}</span></span>
+      ${go}</div>`;
+  }).join('');
+  const age = pr.at ? `<span class="card-age">${escapeHtml(agoText(pr.at))}</span>` : '';
+  return `<section class="panel irr-mod prog-mod" aria-label="Programs"><div class="panel-head"><h2 class="panel-title">Programs</h2>${age}</div>` +
+    `<div class="prog-list">${list}</div>${note}${irrPending && isAdmin ? `<p class="more-note" style="padding:0 22px 14px">${irrConfirming ? 'Confirming with the controller…' : 'Sent. Waiting for the farm…'}</p>` : ''}</section>`;
+}
+const mm = (v) => (Number.isFinite(Number(v)) ? `${Math.round(Number(v) * 10) / 10}` : '?');
+function irrRainModule() {
+  const unread = unreadRead('rain');
+  const head = (age) => `<div class="panel-head"><h2 class="panel-title">Rain</h2>${age}</div>`;
+  if (unread) {
+    return `<section class="panel irr-mod" aria-label="Rain">${head(`<span class="card-age is-warn">can't read</span>`)}` +
+      `<p class="more-note note-off" style="padding:0 22px 16px;border:0">Can't read the rain gauge: ${escapeHtml(unread)}.</p></section>`;
+  }
+  const r = irrig().rain;
+  if (!r) return '';
+  return `<section class="panel irr-mod" aria-label="Rain">${head(r.at ? `<span class="card-age">${escapeHtml(agoText(r.at))}</span>` : '')}` +
+    `<p class="rain-line">Rain today <b>${mm(r.today)} mm</b> · week <b>${mm(r.week)} mm</b></p></section>`;
+}
+function irrControllerModule() {
+  const p = irrig().dcon || {};
+  const has = p.firmware || p.simExpiry || typeof p.shutdown === 'boolean';
+  if (!has) return '';
+  const sim = /^(\d{4})-(\d{2})-(\d{2})$/.exec(p.simExpiry || '');
+  const simMs = sim ? Date.parse(`${p.simExpiry}T00:00:00+05:30`) : NaN;
+  const simOver = Number.isFinite(simMs) && simMs < serverNow();
+  const simText = sim ? new Date(simMs).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '';
+  const fig = (v, l, cls = '') => `<div class="fig${cls}"><span class="fig-v fig-t">${v}</span><span class="fig-l">${l}</span></div>`;
+  return `<section class="panel irr-mod" aria-label="Controller"><div class="panel-head"><h2 class="panel-title">Controller</h2>` +
+    `${irrChecked() ? `<span class="card-age">${escapeHtml(irrChecked())}</span>` : ''}</div><div class="figs">` +
+    (p.firmware ? fig(escapeHtml(p.firmware), 'Firmware') : '') +
+    (simText ? fig(escapeHtml(simText), simOver ? 'SIM ended' : 'SIM valid until', simOver ? ' is-warn' : '') : '') +
+    (typeof p.shutdown === 'boolean' ? fig(p.shutdown ? 'On' : 'Off', 'Emergency shutdown', p.shutdown ? ' is-warn' : '') : '') +
+    `</div></section>`;
 }
 
 function irrReportsModule() {
@@ -3715,6 +3836,8 @@ function motorView(key) {
     return head(t.name, t.sub, '', back) + waterFrame(DCON_KEY, false,
       `<div class="irr-page"><div class="irr-hero">${irrNowModule()}</div>` +
       `<div class="irr-duo">${irrCropsModule()}${irrSupplyModule()}</div>` +
+      irrProgramsModule() +
+      `<div class="irr-duo">${irrRainModule()}${irrControllerModule()}</div>` +
       irrReportsModule() + account + `</div>` + drawer);
   }
   const m = waterMotors().find((x) => x.key === key);
@@ -4532,6 +4655,7 @@ function wire(all) {
   });
   view.querySelectorAll('[data-act="run-min"]').forEach((sel) => { sel.onchange = () => { runMinutes = Number(sel.value); }; });
   view.querySelectorAll('[data-act="run-go"]').forEach((btn) => { btn.onclick = () => runValves(); });
+  view.querySelectorAll('[data-act="prog-start"]').forEach((btn) => { btn.onclick = () => startProgram(Number(btn.dataset.program)); });
   view.querySelectorAll('[data-act="irr-stop"]').forEach((btn) => { btn.onclick = () => stopIrrigation(); });
   // A <details> is opened by hand; keep it open across the live rebuilds.
   view.querySelectorAll('details.acct-sec, details.wdetails').forEach((d, i) => {

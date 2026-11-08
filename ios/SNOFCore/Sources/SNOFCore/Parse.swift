@@ -66,6 +66,7 @@ public enum Parse {
             bridge?.irrigationControl = bool(b["irrigationControl"])
             bridge?.irrigationMaxMinutes = double((b["irrigationControlStatus"] as? [String: Any])?["maxMinutes"])
                 .map { Int($0) }
+            bridge?.programStart = bool(b["programStart"])
             bridge?.version = string(b["version"])
             bridge?.versionLatest = string(b["versionLatest"])
             bridge?.updateAvailable = bool(b["updateAvailable"])
@@ -159,7 +160,10 @@ public enum Parse {
             c.lastPacket = string(dcon["lastPacket"])
             c.serverTime = string(dcon["serverTime"])
             c.timeZone = string(dcon["timeZone"]).flatMap { $0.isEmpty ? nil : $0 }
+            c.controllerInfo = controllerInfo(dcon)
         }
+        c.programs = programs(d["programs"])
+        c.rain = rain(d["rain"])
         c.timerLog = rows(d["timerLog"])
         c.timerLogAt = double(d["timerLogAt"])
         c.motorLog = rows(d["motorLog"])

@@ -11,8 +11,12 @@ is accepted, so the NUC does the fetching and nothing else:
     Function ◀─reads, parses, builds the report, deletes the result
 
 Everything that makes a report — parsing, joining, charts — stays in the
-Function. This module knows eight read calls (and the three sign-in calls below) by name and how to spell each
-one; it never sees a report type.
+Function. This module knows thirteen read calls (and the three sign-in calls below) by name and how to spell each
+one; it never sees a report type. The five added 2026-11-08 (owner's option A,
+the SECOND documented exception to "no new DCON code in the add-on"; docs/dcon-off-the-nuc.md)
+are `programs`, `electricity_day`, `pressure_day`, `rain` and `cmd_status`.
+Each is reduced on the NUC (reduce_read) to an allow-list, and `cmd_status` is
+there for the irrigation consumer's confirmation, which builds it with form_for.
 
 Safety, in the same spirit as commands.py:
   * off unless `dcon_relay` is true in the add-on options
@@ -73,6 +77,7 @@ _CODE = re.compile(r"^\d{4,8}$")
 # A device token as the Mobitech app (and SNOF) registers one: an FCM-shaped
 # token + "@ios", url-safe characters and ":" only, at least 40 long in all.
 _TOKEN = re.compile(r"^[A-Za-z0-9_:\-]{36,400}@ios$")
+_TRANS_ID = re.compile(r"^\d{10}$")
 
 # call -> (HTTP method, the argument names it takes, and their shape)
 CALLS = {
@@ -84,6 +89,13 @@ CALLS = {
     "electricity":    ("GET", {"since": _STAMP}),
     "pressure_now":   ("GET", {"since": _STAMP}),
     "pressure_range": ("GET", {"from": _DATE, "to": _DATE}),
+    # Added 2026-11-08 (docs/mobitech-app.md). `rain` is the weather API, not
+    # /v1/http/, and takes its device id from the add-on options.
+    "programs":        ("POST", {}),
+    "electricity_day": ("GET", {}),
+    "pressure_day":    ("GET", {"date": _DATE}),
+    "rain":            ("GET", {}),
+    "cmd_status":      ("POST", {"trans_id": _TRANS_ID}),
     # Signing in (docs/mobitech-app.md); see the module docstring.
     "otp":            ("POST", {"mobile": _MOBILE}),
     "login":          ("POST", {"mobile": _MOBILE, "code": _CODE, "token": _TOKEN}),
@@ -159,7 +171,24 @@ def form_for(call: str, args: dict, serial: str, token: str,
         return {"action": "reports", "type": "pressure_timer", "serial_no": serial,
                 "from": f"{args['from']} 00:00:00", "to": f"{args['to']} 23:59:59",
                 "product": product}
+    if call == "programs":
+        return {"action": "dcon_timer", "method": "select", "serial_no": serial}
+    if call == "electricity_day":
+        return {"action": "reports", "type": "electricity_day", "serial_no": serial,
+                "product": product}
+    if call == "pressure_day":
+        return {"action": "reports", "type": "pressure_day", "serial_no": serial,
+                "dt": args["date"], "product": product}
+    if call == "cmd_status":
+        return {"action": "cmd_status", "random_no": args["trans_id"], "serial_no": serial}
     raise ValueError(call)
+
+
+RAIN_PATH = "/v1/weather/cumulative/"      # the trailing slash matters: without it, a 301
+
+
+def rain_params(device_id: str) -> dict:
+    return {"device_id": device_id, "type": "rain"}
 
 
 _UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
@@ -247,6 +276,54 @@ def trim_dashboard(body: Any) -> Any:
     return out
 
 
+_DIGITS10 = re.compile(r"\d{10,}")
+
+_PROGRAM_KEEP = ("group_name", "valve_details", "on_time", "off_time", "on_days",
+                 "backwash", "motor_status", "timer_status")
+
+
+def _clean(value: Any, limit: int = 120) -> str:
+    return _DIGITS10.sub("", str(value if value is not None else ""))[:limit]
+
+
+def reduce_read(call: str, body: Any) -> Any:
+    """What leaves the NUC from the five reads added 2026-11-08. Allow-lists
+    only, then any run of ten or more digits is cut anyway. The programs answer
+    carries a free-text `data` field; cmd_status carries the serial, the
+    device id and the user id; the packets carry the serial. None survive."""
+    if call == "programs":
+        group = body.get("1") if isinstance(body, dict) else None
+        out: dict = {}
+        if isinstance(group, dict):
+            for no, prog in list(group.items())[:99]:
+                if isinstance(prog, dict) and str(no).isdigit():
+                    out[str(no)] = {k: _clean(prog.get(k)) for k in _PROGRAM_KEEP if k in prog}
+        return {"1": out}
+    if call == "rain":
+        src = body if isinstance(body, dict) else {}
+        return {k: (src[k] if isinstance(src.get(k), (int, float)) and not isinstance(src.get(k), bool) else 0)
+                for k in ("today", "last24hrs", "yesterday", "week")}
+    if call == "cmd_status":
+        src = body if isinstance(body, dict) else {}
+        return {"sent": _clean(src.get("sent"), 4), "dt": _clean(src.get("dt"), 19)}
+    if call in ("electricity_day", "pressure_day"):
+        rows = body.get("data") if isinstance(body, dict) else None
+        keep = ("dt", "raw_data") if call == "electricity_day" else ("dt", "pressure", "flow_rate")
+        def cut(k, v):
+            # The Function reads only what follows "!" in a packet; the head
+            # carries the serial, so it never leaves the NUC.
+            if k == "raw_data":
+                return "!" + str(v).split("!", 1)[1][:400] if "!" in str(v) else ""
+            return _clean(v, 400)
+        return {"status": "success",
+                "data": [{k: cut(k, r.get(k)) for k in keep if k in r}
+                         for r in (rows if isinstance(rows, list) else []) if isinstance(r, dict)]}
+    return body
+
+
+READ_REDUCED = frozenset({"programs", "rain", "cmd_status", "electricity_day", "pressure_day"})
+
+
 def pack(text: str) -> str:
     """gzip + base64: a month of electricity packets is ~11 MB of JSON, over
     RTDB's 10 MB string limit, and compresses about tenfold."""
@@ -301,6 +378,14 @@ class DconRelay:
                 return resp.status, json.dumps(
                     reduce_signin(call, resp.status, text, args.get("token", "")))
         method = CALLS[call][0]
+        if call == "rain":
+            if not cfg.dcon_device_id:
+                raise RuntimeError("no device id")
+            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
+            async with self._session.get(f"{cfg.dcon_base}{RAIN_PATH}",
+                                         params=rain_params(cfg.dcon_device_id),
+                                         timeout=timeout) as resp:
+                return resp.status, await resp.text()
         # Only the dashboard call carries the token; the rest need none.
         token = await self._token() if call == "dashboard" else cfg.dcon_token_id
         fields = form_for(call, args, cfg.dcon_serial, token,
@@ -335,6 +420,15 @@ class DconRelay:
                     if call == "dashboard" and status < 400:
                         try:
                             text = json.dumps(trim_dashboard(json.loads(text)))
+                        except ValueError:
+                            text = "{}"
+                    if call in READ_REDUCED and status >= 400:
+                        # Never pack Mobitech's raw error body: status and a
+                        # short scrubbed message only.
+                        text = json.dumps({"state": "failed", "message": _clean(f"HTTP {status}", 40)})
+                    elif call in READ_REDUCED:
+                        try:
+                            text = json.dumps(reduce_read(call, json.loads(text)))
                         except ValueError:
                             text = "{}"
                     result = {"ok": status < 400, "status": status, "gz": pack(text),

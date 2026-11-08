@@ -51,6 +51,9 @@ struct IrrigationView: View {
             IrrigationNowCard()
             PumpPowerCard()
             WateredCard()
+            ProgramsCard()
+            RainLine()
+            ControllerCard()
 
             HStack(alignment: .firstTextBaseline) {
                 Text("Reports").font(Theme.panelTitle).foregroundStyle(Theme.text)
@@ -82,6 +85,7 @@ struct IrrigationView: View {
         // Again once meta arrives: before it the gate is closed.
         .task(id: store.metaLoaded) { await store.autoRefreshIrrigationIfStale() }
         .task(id: "\(store.metaLoaded)-controller") { await store.keepControllerFresh() }
+        .task(id: "\(store.metaLoaded)-programs") { await store.requestProgramsAndRain() }
         .sheet(item: $opened) { open in
             ReportSheet(reportKey: open.id).environment(store)
         }

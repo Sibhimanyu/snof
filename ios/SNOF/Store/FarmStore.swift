@@ -559,6 +559,9 @@ final class FarmStore {
         var sent = 0
         var reads: [(String, String?, String?)] = [("controller", nil, nil), ("live_readings", nil, nil)]
         if !liveOnly { reads.append(("session_log", yesterday, today)) }
+        // Saved programs and the rain gauge: page open and Refresh only,
+        // never the 60 s poll (contract, 2026-11-08).
+        if !liveOnly { reads.append(("programs", nil, nil)); reads.append(("rain", nil, nil)) }
         for (type, from, to) in reads {
             do {
                 let key = try await backend.requestReport(type: type, from: from, to: to, uid: uid)
@@ -606,6 +609,17 @@ final class FarmStore {
     var controllerCurrent: Bool {
         guard let at = irrigation.program?.at ?? irrigation.lastUpdated else { return false }
         return nowMs + skewMs - at <= Double(Farm.controllerCurrentMs)
+    }
+
+    /// Opening the controller's page: programs and rain if the last read is
+    /// older than the shared 45 s guard. Once per open, never polled.
+    func requestProgramsAndRain() async {
+        guard canControl, connected, gate(.irrigation).ok, let uid = user?.uid else { return }
+        let last = max(irrigation.programs?.at ?? 0, irrigation.rain?.at ?? 0)
+        guard nowMs + skewMs - last > 45_000 else { return }
+        for type in ["programs", "rain"] {
+            _ = try? await backend.requestReport(type: type, from: nil, to: nil, uid: uid)
+        }
     }
 
     func autoRefreshIrrigationIfStale() async {
@@ -969,6 +983,20 @@ final class FarmStore {
         return nil
     }
 
+    /// Why Start on a saved program cannot be pressed, or nil. The same lock
+    /// as Run/Stop, plus `meta/bridge.programStart`.
+    func programRefusal() -> String? {
+        if let why = irrigationRefusal() { return why }
+        let g = gate(.programStart)
+        return g.ok ? nil : g.why
+    }
+
+    func startProgram(_ p: SavedProgram) async {
+        guard let cmd = IrrigationCommand.startProgram(p.number) else { return }
+        if let why = programRefusal(), !why.isEmpty { show(.err, why); return }
+        await sendIrrigation(cmd)
+    }
+
     var irrigationMaxMinutes: Int {
         let cap = meta.cloudIrrigationControl == true ? meta.cloudIrrigationMaxMinutes : meta.bridge?.irrigationMaxMinutes
         return min(IrrigationCommand.maxMinutes, cap ?? IrrigationCommand.maxMinutes)
@@ -1024,6 +1052,7 @@ final class FarmStore {
         if ok {
             let verified = Parse.bool(node["verified"])
             let what = action == "stop" ? "Stopped"
+                : action == "program" ? "Program \(Parse.string(node["program"]) ?? "") started"
                 : "\(Parse.string(node["valves"]) ?? "Valves") running for \(Parse.string(node["minutes"]) ?? "?") min"
             if verified == false {
                 show(.err, "Sent, but the controller has not confirmed it after 2 minutes. Check it before trying again.")

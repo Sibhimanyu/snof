@@ -124,8 +124,21 @@ about 4 minutes behind `server_time` during the capture, and changes took
 
 `{"action":"dcon_timer","1":{"<timer_no>":{group_name, valve_details, on_time,
 off_time, on_days, backwash, motor_status, timer_status, data}}}`.
-`valve_details` is ten dash-separated valve numbers. `on_time` is HH:MM.
-`timer_status` 1/0 is enabled/disabled. On this farm: 25 programs, numbered
+`valve_details` is ten dash-separated valve numbers. `timer_status` 1/0 is
+enabled/disabled.
+
+**`on_time` is the program's DURATION, not a start time** (settled 2026-11-08
+from the capture): *Coconut* (#2) is `on_time: "01:00"` and the app's command
+to start it is `ET01-002-01 00`, the same `HH MM`; *Mango1* (#8) is `01:00` and
+`ET01-008-01 00`. The 25 programs hold only 00:05, 00:30 and 01:00 there, and
+`timers.current.run_time` for a running program is `remaining-planned` with
+planned equal to `on_time`. **`off_time` is `"00:00"` on all 25 programs** and
+unused, and `data` is empty, so **the record has no start time at all**: this
+controller chains its programs (`timers.next` names the one after the current,
+with its own `on_time`), it does not start them at clock times. `on_days` is
+`"0"` on every program (no day rule seen; its encoding for a real rule is
+unknown, so SNOF shows days only when it spells weekdays 1-7). SNOF therefore
+stores `start: ""` and `days: ""` and says nothing it cannot read. On this farm: 25 programs, numbered
 1–26 with no 5, including duplicate names (three `Coconut`, two `House`).
 The number, not the name, identifies a program.
 
@@ -174,12 +187,12 @@ So:
   can send the `@A8` suffix or leave it off. A doubled `@A8@A8` was still
   carried out.
 
-**This is not what our code sends.** `irrigation_control.py` sends
-`FON …-HH MM-<tail>!0--@A8` to run and `OFF@A8` to stop. Both appear in the
-controller's command history and so were accepted at some point, but the
-app itself uses `V…ON` and `MOFF`. Moving to the app's forms is the safer
-choice. That is a change to the valve path and goes through the usual
-review.
+**Decision (b) taken, 2026-11-08 (add-on 0.11.0):** `irrigation_control.py`
+(and the dormant Function twin) now send the app's own forms, `V008,009ON 00
+10@A8` to run, `MOFF@A8` to stop and `ET01-002-01 00@A8` to start a program.
+The older `FON …!0--@A8` / `OFF@A8` templates, which were accepted in the
+controller's history, are removed. Program duration is the record's `on_time`
+(above), read from `programs` just before sending.
 
 ### Confirmation: `cmd_status`
 
@@ -193,7 +206,8 @@ POST /v1/http/  action=cmd_status&random_no=<trans_id>&serial_no=<serial>
 
 `sent` went from `1` to `2` at the moment the change showed in the
 dashboard, for both `ET01` (42 s) and `V…ON` (47 s). `2` therefore reads
-as "the controller acknowledged it". `MOFF` stayed at `1` for the 51 s the
+as "the controller acknowledged it" (the consumer accepts it as an earlier
+yes while confirming a run or a program start; never for a stop). `MOFF` stayed at `1` for the 51 s the
 app kept polling, although the dashboard showed it had worked by then. So
 `sent: 2` confirms faster than the dashboard, but its absence doesn't prove
 failure. Our 2-minute confirmation should keep reading `timers.current`

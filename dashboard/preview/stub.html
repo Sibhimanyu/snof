@@ -100,6 +100,7 @@
   // what the controller is doing (?watering=1: a manual run in progress).
   data.meta.bridge.irrigationControl=!params.get('irroff');
   data.meta.bridge.irrigationControlStatus={maxMinutes:60};
+  data.meta.bridge.programStart=!params.get('progoff');
   if(data.irrigation){
     const farm=(ms)=>new Date(ms+330*60000).toISOString().slice(0,19).replace('T',' ');
     data.irrigation.program=params.get('watering')
@@ -108,7 +109,25 @@
       : {name:'Coconut',kind:'Program',running:false,valves:'12 Coco 1, 15 Coco 2',start:farm(now-5*3600000),
          at:now-1800000,next:{name:'Coconut',valves:'12 Coco 1, 15 Coco 2',plannedMin:60}};
     data.irrigation.dcon=Object.assign({timeZone:'+05:30'},data.irrigation.dcon||{});
+    // Mobitech-more: controller facts, saved programs (read on page open and
+    // on Refresh), rain. ?progerr=1: those two reads failing.
+    Object.assign(data.irrigation.dcon,{firmware:'V3.4.1',simExpiry:'2027-03-12',
+      current:params.get('watering')?{name:'Manual Mode',kind:'Manual',number:'',valves:[4,6]}:{name:'Coconut',kind:'Program',number:'2',valves:[12,15]},
+      next:{name:'Guava',kind:'Program',number:'3',valves:[13,14]}});
+    if(params.get('shutdown')) data.irrigation.dcon.shutdown=true;
+    {const have=data.irrigation.valveNames=data.irrigation.valveNames||[];
+     for(const [id,name] of [['4','4 Veg'],['6','6 Kulam'],['12','12 Coco 1'],['13','13 Gova 1'],['14','14 Gova 2'],['15','15 Coco 2'],['30','30 Jamun 6']])
+       if(!have.some(v=>String(v.id)===id)) have.push({id,name,type:'Irrigation'});}
+    data.irrigation.programs={at:now-120000,items:{
+      '1':{number:1,name:'Vegetable',valves:[4,6],start:'',duration:'00:30',days:'',enabled:true},
+      '2':{number:2,name:'Coconut',valves:[12,15],start:'',duration:'01:00',days:'',enabled:true},
+      '3':{number:3,name:'Guava',valves:[13,14],start:'',duration:'00:30',days:'',enabled:true},
+      '4':{number:4,name:'Jamun',valves:[30],start:'',duration:'00:45',days:'',enabled:false}}};
+    data.irrigation.rain={at:now-120000,today:0,last24h:1.2,yesterday:1.2,week:3.2};
+    if(params.get('progerr')) data.irrigation.meta.errors=Object.assign(data.irrigation.meta.errors||{},{
+      programs:{error:'DCON programs: timeout',at:now-30000},rain:{error:'DCON rain: timeout',at:now-30000}});
   }
+  if(params.get('lock')) data.irrigation_lock={until:now+90000,uid:'u9'};
   if(params.get('noirrig')) delete data.irrigation;
   // ?mobitech=ok|rejected seeds SNOF's Mobitech status line (never a token).
   if(params.get('mobitech')){
@@ -234,7 +253,8 @@
     performance:'Valve runtime against pressure',controller:'Controller dashboard',
     electricity:'Electricity snapshot',pressure:'Pressure snapshot',valves:'Valve runtime',
     timer_log:'Timer log',motor_log:'Motor log',pressure_range:'Pressure range',
-    power_range:'Power over time',pressure_hour:'Pressure, last hour'};
+    power_range:'Power over time',pressure_hour:'Pressure, last hour',
+    power_day:'Power, whole day',pressure_day:'Pressure, whole day'};
   // Stands in for the bridge's section builders: same kinds, same row shapes,
   // so what renders here is what renders against the NUC.
   const irrCanned=(type,from,to)=>{
@@ -268,6 +288,10 @@
       sections:[SEC('metrics','Electricity',[M('Electricity',4.2,'kWh','2026-02-22 06:00')]),
         SEC('metrics','Pressure',[M('Pressure',2.1,'bar','2026-02-22 06:00')])]};
     if(type==='valves') return {...base,summary:'3 valves · 1 open'+range,sections:valveSecs};
+    if(type==='pressure_day') return {...base,summary:'1.6–2.6 bar · today',sections:pressSecs};
+    if(type==='power_day') return {...base,summary:'4.2 kWh · today',
+      sections:[SEC('metrics','Electricity',[M('Energy',4.2,'kWh','today')]),
+        SEC('series','Power over time',[{at:'2026-02-22 06:00',value:'1.1',unit:'kW'},{at:'2026-02-22 09:00',value:'4.8',unit:'kW'},{at:'2026-02-22 12:00',value:'3.9',unit:'kW'}])]};
     if(type==='pressure_range') return {...base,summary:'1.6–2.6 bar'+range,sections:pressSecs};
     if(type==='performance') return {...base,
       summary:'4h 5m of valve runtime · pressure 1.6–2.6 bar'+range,
